@@ -1,0 +1,18 @@
+server:
+  port: ${BOOKING_SERVICE_PORT:8083}
+
+spring:
+  application:
+    name: booking-service
+
+  mongodb:
+    uri: ${MONGODB_URI:mongodb://localhost:27017/driverapp_booking_db}
+    representation:
+      uuid: standard
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${JWT_JWK_SET_URI:http://localhost:8081/.well-known/jwks.json}
+          issuer-uri: ${JWT_ISSUER_URI:http://localhost:8081}

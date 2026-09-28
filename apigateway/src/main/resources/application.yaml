@@ -1,0 +1,66 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8081
+          jwk-set-uri: http://localhost:8081/.well-known/jwks.json
+
+  cloud:
+    gateway:
+      server:
+        webflux:
+          globalcors:
+            add-to-simple-url-handler-mapping: true
+            cors-configurations:
+              '[/**]':
+                allowedOrigins:
+                  - http://localhost:3000
+                  - http://localhost:4200
+                allowedMethods:
+                  - GET
+                  - POST
+                  - PUT
+                  - PATCH
+                  - DELETE
+                  - OPTIONS
+                allowedHeaders:
+                  - Authorization
+                  - Content-Type
+
+          routes:
+            - id: user-service
+              uri: http://localhost:8081
+              predicates:
+                - Path=/api/auth/**,/api/users/**
+
+            - id: driver-service
+              uri: http://localhost:8082
+              predicates:
+                - Path=/api/drivers/**,/api/vehicles/**
+
+            - id: booking-service
+              uri: http://localhost:8083
+              predicates:
+                - Path=/api/trips/**,/api/bookings/**
+
+            - id: payment-service
+              uri: http://localhost:8084
+              predicates:
+                - Path=/api/payments/**,/api/vouchers/**
+
+            - id: notification-service
+              uri: http://localhost:8085
+              predicates:
+                - Path=/api/notifications/**
+
+            - id: feedback-service
+              uri: http://localhost:8086
+              predicates:
+                - Path=/api/feedback/**,/api/complaints/**
