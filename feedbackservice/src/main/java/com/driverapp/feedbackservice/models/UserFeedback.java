@@ -5,7 +5,6 @@ import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.UUID;
 
 @Entity
@@ -17,6 +16,7 @@ import java.util.UUID;
 @Builder
 public class UserFeedback {
     @Id
+    @Builder.Default
     private UUID id = UUID.randomUUID();
 
     @Column(name = "user_id", nullable = false)

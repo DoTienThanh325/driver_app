@@ -18,6 +18,7 @@ import java.util.UUID;
 @Builder
 public class UserComplaination {
     @Id
+    @Builder.Default
     private UUID id = UUID.randomUUID();
 
     @Column(name = "user_id", nullable = false)
@@ -32,6 +33,7 @@ public class UserComplaination {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 32)
+    @Builder.Default
     private ComplainationStatus status = ComplainationStatus.PENDING;
 
     @CreationTimestamp

@@ -12,55 +12,101 @@ spring:
           issuer-uri: http://localhost:8081
           jwk-set-uri: http://localhost:8081/.well-known/jwks.json
 
+  # cloud:
+  #   gateway:
+  #     server:
+  #       webflux:
+  #         globalcors:
+  #           add-to-simple-url-handler-mapping: true
+  #           cors-configurations:
+  #             '[/**]':
+  #               allowedOrigins:
+  #                 - http://localhost:3000
+  #                 - http://localhost:4200
+  #               allowedMethods:
+  #                 - GET
+  #                 - POST
+  #                 - PUT
+  #                 - PATCH
+  #                 - DELETE
+  #                 - OPTIONS
+  #               allowedHeaders:
+  #                 - Authorization
+  #                 - Content-Type
+
+  #         routes:
+  #           - id: user-service
+  #             uri: http://localhost:8081
+  #             predicates:
+  #               - Path=/api/auth/**,/api/users/**
+
+  #           - id: driver-service
+  #             uri: http://localhost:8082
+  #             predicates:
+  #               - Path=/api/drivers/**,/api/vehicles/**
+
+  #           - id: booking-service
+  #             uri: http://localhost:8083
+  #             predicates:
+  #               - Path=/api/trips/**,/api/bookings/**
+
+  #           - id: payment-service
+  #             uri: http://localhost:8084
+  #             predicates:
+  #               - Path=/api/payments/**,/api/vouchers/**
+
+  #           - id: notification-service
+  #             uri: http://localhost:8085
+  #             predicates:
+  #               - Path=/api/notifications/**
+
+  #           - id: feedback-service
+  #             uri: http://localhost:8086
+  #             predicates:
+  #               - Path=/api/feedback/**,/api/complaints/**
+
   cloud:
     gateway:
       server:
         webflux:
-          globalcors:
-            add-to-simple-url-handler-mapping: true
-            cors-configurations:
-              '[/**]':
-                allowedOrigins:
-                  - http://localhost:3000
-                  - http://localhost:4200
-                allowedMethods:
-                  - GET
-                  - POST
-                  - PUT
-                  - PATCH
-                  - DELETE
-                  - OPTIONS
-                allowedHeaders:
-                  - Authorization
-                  - Content-Type
-
+          discovery:
+            locator:
+              enabled: true
+              lower-case-service-id: true
           routes:
-            - id: user-service
-              uri: http://localhost:8081
+            - id: userservice
+              uri: lb://userservice
               predicates:
-                - Path=/api/auth/**,/api/users/**
+                - Path=/api/auth/**,/api/users/**,/.well-known/jwks.json
 
-            - id: driver-service
-              uri: http://localhost:8082
+            - id: driverservice
+              uri: lb://driverservice
               predicates:
                 - Path=/api/drivers/**,/api/vehicles/**
 
-            - id: booking-service
-              uri: http://localhost:8083
+            - id: bookingservice
+              uri: lb://bookingservice
               predicates:
                 - Path=/api/trips/**,/api/bookings/**
 
-            - id: payment-service
-              uri: http://localhost:8084
+            - id: paymentservice
+              uri: lb://paymentservice
               predicates:
                 - Path=/api/payments/**,/api/vouchers/**
 
-            - id: notification-service
-              uri: http://localhost:8085
+            - id: notificationservice
+              uri: lb://notificationservice
               predicates:
                 - Path=/api/notifications/**
 
-            - id: feedback-service
-              uri: http://localhost:8086
+            - id: feedbackservice
+              uri: lb://feedbackservice
               predicates:
-                - Path=/api/feedback/**,/api/complaints/**
+                - Path=/api/feedback/**,/api/feedbacks/**,/api/complaints/**
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_DEFAULT_ZONE:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: ${EUREKA_PREFER_IP_ADDRESS:true}

@@ -4,6 +4,7 @@ import com.driverapp.bookingservice.models.enums.ShippingType;
 import com.driverapp.bookingservice.models.enums.TripStatus;
 import com.driverapp.bookingservice.models.enums.VehicleType;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -34,8 +35,8 @@ public class Trip {
     private UUID customerId;
     private UUID driverId;
 
-    private UUID foodId;
-    private Double foodPrice;
+    private List<FoodSelected> foodSelectedsList;
+    private Double totalFoodPrice;
 
     private double shippFare;
     private TripStatus status;

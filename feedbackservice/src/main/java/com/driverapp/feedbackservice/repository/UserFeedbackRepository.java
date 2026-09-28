@@ -2,7 +2,6 @@ package com.driverapp.feedbackservice.repository;
 
 import com.driverapp.feedbackservice.models.UserFeedback;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.repository.CrudRepository;
 
 import java.util.UUID;
 
