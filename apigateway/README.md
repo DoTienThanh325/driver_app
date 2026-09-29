@@ -6,14 +6,14 @@
 
 - Port: `8080`.
 - JWT issuer/JWKS: lấy từ `userservice` tại `http://localhost:8081`.
-- CORS cho phép origin `http://localhost:3000` và `http://localhost:4200`.
+- Khối cấu hình CORS mẫu cho `http://localhost:3000` và `http://localhost:4200` hiện đang được comment trong `application.yaml`, vì vậy chưa được áp dụng.
 - Route hiện tại:
-  - `/api/auth/**`, `/api/users/**` -> `userservice` port `8081`.
-  - `/api/drivers/**`, `/api/vehicles/**` -> `driverservice` port `8082`.
-  - `/api/trips/**`, `/api/bookings/**` -> `bookingservice` port `8083`.
-  - `/api/payments/**`, `/api/vouchers/**` -> `paymentservice` port `8084`.
-  - `/api/notifications/**` -> port `8085`.
-  - `/api/feedback/**`, `/api/complaints/**` -> port `8086`.
+  - `/api/auth/**`, `/api/users/**`, `/.well-known/jwks.json` -> `lb://userservice`.
+  - `/api/drivers/**`, `/api/vehicles/**` -> `lb://driverservice`.
+  - `/api/trips/**`, `/api/bookings/**` -> `lb://bookingservice`.
+  - `/api/payments/**`, `/api/vouchers/**` -> `lb://paymentservice`.
+  - `/api/notifications/**` -> `lb://notificationservice`.
+  - `/api/feedback/**`, `/api/feedbacks/**`, `/api/complaints/**` -> `lb://feedbackservice`.
 
 ## Giải thích file
 
@@ -22,7 +22,7 @@
 - `.gitignore`, `.gitattributes`: cấu hình Git cho service.
 - `HELP.md`: file hướng dẫn mặc định được tạo bởi Spring Initializr.
 - `src/main/java/com/driverapp/apigateway/ApigatewayApplication.java`: class main khởi động Spring Boot application.
-- `src/main/java/com/driverapp/apigateway/config/SecurityConfig.java`: cấu hình security WebFlux, tắt CSRF, bật CORS, đọc role từ claim `roles`, cho phép các API auth public và yêu cầu JWT cho các API còn lại. Endpoint `GET /api/drivers/test` yêu cầu role `CUSTOMER`.
+- `src/main/java/com/driverapp/apigateway/config/SecurityConfig.java`: cấu hình security WebFlux, tắt CSRF, đọc role từ claim `roles`, cho phép `OPTIONS` và các API auth public, yêu cầu JWT cho các API còn lại. `GET /api/drivers/test` và `POST /api/drivers/register` yêu cầu role `CUSTOMER`.
 - `src/main/resources/application.yaml`: cấu hình port, JWT resource server, CORS và route gateway.
 - `src/test/java/com/driverapp/apigateway/ApigatewayApplicationTests.java`: test khởi tạo context mặc định.
 - `target/`: thư mục build sinh ra bởi Maven, không phải source chính.

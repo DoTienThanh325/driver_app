@@ -9,7 +9,7 @@
 - JWT issuer/JWKS: `http://localhost:8081`.
 - Migration: Flyway trong `src/main/resources/db/migration`.
 
-Lưu ý: gateway hiện đang route `/api/feedback/**` và `/api/complaints/**` đến port `8086`, khác với port `8085` của service này. Migration SQL hiện dùng giá trị `REJECT` trong check constraint, còn enum Java dùng `REJECTED`.
+Gateway định tuyến `/api/feedback/**`, `/api/feedbacks/**` và `/api/complaints/**` đến service name `feedbackservice` qua Eureka. Lưu ý: migration SQL hiện dùng giá trị `REJECT` trong check constraint, còn enum Java dùng `REJECTED`.
 
 ## Giải thích file
 

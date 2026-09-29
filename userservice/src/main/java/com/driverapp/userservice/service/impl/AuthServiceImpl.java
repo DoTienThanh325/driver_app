@@ -1,13 +1,13 @@
 package com.driverapp.userservice.service.impl;
 
-import com.driverapp.userservice.dto.LoginRequest;
-import com.driverapp.userservice.dto.LoginResponse;
-import com.driverapp.userservice.dto.OtpChallengeResult;
-import com.driverapp.userservice.dto.RefreshRequest;
-import com.driverapp.userservice.dto.RegisterRequest;
-import com.driverapp.userservice.dto.TokenResponse;
-import com.driverapp.userservice.dto.UserResponse;
-import com.driverapp.userservice.dto.VerifyOtpRequest;
+import com.driverapp.userservice.dto.request.LoginRequest;
+import com.driverapp.userservice.dto.request.RefreshRequest;
+import com.driverapp.userservice.dto.request.RegisterRequest;
+import com.driverapp.userservice.dto.request.VerifyOtpRequest;
+import com.driverapp.userservice.dto.response.LoginResponse;
+import com.driverapp.userservice.dto.response.OtpChallengeResult;
+import com.driverapp.userservice.dto.response.TokenResponse;
+import com.driverapp.userservice.dto.response.UserResponse;
 import com.driverapp.userservice.models.RefreshToken;
 import com.driverapp.userservice.models.Role;
 import com.driverapp.userservice.models.RoleCode;

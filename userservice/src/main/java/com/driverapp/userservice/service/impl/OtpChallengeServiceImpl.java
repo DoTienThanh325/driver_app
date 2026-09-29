@@ -1,7 +1,7 @@
 package com.driverapp.userservice.service.impl;
 
 import com.driverapp.userservice.config.OtpProperties;
-import com.driverapp.userservice.dto.OtpChallengeResult;
+import com.driverapp.userservice.dto.response.OtpChallengeResult;
 import com.driverapp.userservice.service.OtpChallengeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;

@@ -1,5 +1,5 @@
 // models/VerificationStatus.java
-package com.driverapp.driverservice.models;
+package com.driverapp.driverservice.models.enums;
 
 public enum VerificationStatus {
     PENDING,

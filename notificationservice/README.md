@@ -9,7 +9,7 @@
 - JWT issuer/JWKS: `http://localhost:8081`.
 - Migration: Flyway trong `src/main/resources/db/migration`.
 
-Lưu ý: `spring.application.name` hiện đang là `driver-service` và gateway đang route `/api/notifications/**` đến port `8085`, khác với port `8086` của service này.
+Service đăng ký Eureka với tên `notificationservice`; gateway định tuyến `/api/notifications/**` đến service name này.
 
 ## Giải thích file
 

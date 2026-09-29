@@ -1,5 +1,5 @@
 // dto/LoginResponse.java
-package com.driverapp.userservice.dto;
+package com.driverapp.userservice.dto.response;
 
 public record LoginResponse(
         String challengeToken,

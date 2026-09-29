@@ -1,8 +1,8 @@
 package com.driverapp.userservice.service;
 
-import com.driverapp.userservice.dto.OtpChallengeResult;
-
 import java.util.UUID;
+
+import com.driverapp.userservice.dto.response.OtpChallengeResult;
 
 public interface OtpChallengeService {
 

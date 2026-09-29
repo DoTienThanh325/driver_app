@@ -1,5 +1,5 @@
 // dto/OtpChallengeResult.java
-package com.driverapp.userservice.dto;
+package com.driverapp.userservice.dto.response;
 
 public record OtpChallengeResult(
         String challengeToken,

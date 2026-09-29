@@ -1,5 +1,5 @@
 // dto/VerifyOtpRequest.java
-package com.driverapp.userservice.dto;
+package com.driverapp.userservice.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;

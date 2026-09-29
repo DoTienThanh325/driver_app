@@ -9,6 +9,8 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+import com.driverapp.driverservice.models.enums.VehicleType;
+
 @Entity
 @Table(name = "driver_vehicles")
 @Getter

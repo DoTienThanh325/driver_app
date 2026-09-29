@@ -1,5 +1,5 @@
 // dto/UserResponse.java
-package com.driverapp.userservice.dto;
+package com.driverapp.userservice.dto.response;
 
 import java.util.List;
 import java.util.UUID;

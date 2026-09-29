@@ -34,14 +34,14 @@
 - `config/SecurityConfig.java`: cấu hình stateless security, password encoder BCrypt, public các endpoint auth/JWKS và yêu cầu JWT cho endpoint còn lại.
 - `controller/AuthController.java`: REST controller cho đăng ký, đăng nhập, OTP, refresh, logout và `/api/users/me`.
 - `controller/JwkController.java`: expose public key tại `/.well-known/jwks.json`.
-- `dto/LoginRequest.java`: request đăng nhập bằng `phoneNumber` và `password`.
-- `dto/LoginResponse.java`: response sau login gồm `challengeToken`, thời gian hết hạn và message.
-- `dto/OtpChallengeResult.java`: kết quả nội bộ khi tạo OTP challenge, gồm token, OTP và TTL.
-- `dto/RefreshRequest.java`: request refresh/logout gồm `refreshToken`.
-- `dto/RegisterRequest.java`: request đăng ký, validate username, password tối thiểu 8 ký tự và số điện thoại.
-- `dto/TokenResponse.java`: response token gồm access token, refresh token, token type và TTL.
-- `dto/UserResponse.java`: response thông tin user gồm id, username, phone number và roles.
-- `dto/VerifyOtpRequest.java`: request xác minh OTP 6 chữ số.
+- `dto/request/LoginRequest.java`: request đăng nhập bằng `phoneNumber` và `password`.
+- `dto/request/RefreshRequest.java`: request refresh/logout gồm `refreshToken`.
+- `dto/request/RegisterRequest.java`: request đăng ký, validate username, password tối thiểu 8 ký tự và số điện thoại.
+- `dto/request/VerifyOtpRequest.java`: request xác minh OTP 6 chữ số.
+- `dto/response/LoginResponse.java`: response sau login gồm `challengeToken`, thời gian hết hạn và message.
+- `dto/response/OtpChallengeResult.java`: kết quả nội bộ khi tạo OTP challenge, gồm token, OTP và TTL.
+- `dto/response/TokenResponse.java`: response token gồm access token, refresh token, token type và TTL.
+- `dto/response/UserResponse.java`: response thông tin user gồm id, username, phone number và roles.
 - `models/User.java`: entity bảng `users`, lưu username, password hash, phone, status, roles và timestamp.
 - `models/Role.java`: entity bảng `roles`, lưu role code.
 - `models/RoleCode.java`: enum `CUSTOMER`, `DRIVER`, `ADMIN`.
@@ -61,6 +61,7 @@
 - `src/main/resources/application.yaml`: cấu hình port, datasource, JPA, Flyway, JWT và OTP.
 - `src/main/resources/db/migration/V0__create_user_tables.sql`: tạo bảng users, roles, user_roles, refresh_tokens.
 - `src/main/resources/db/migration/V1__insert_roles_table.sql`: seed 3 role mặc định.
+- `src/main/resources/db/migration/V2__insert_admin_users.sql`: seed hai tài khoản admin local (`admin1`, `admin2`) và gán role `ADMIN`; mật khẩu mặc định được ghi trong migration và phải thay khi triển khai.
 - `src/test/java/com/driverapp/userservice/UserserviceApplicationTests.java`: test khởi tạo context mặc định.
 - `target/`: thư mục build sinh ra bởi Maven.
 

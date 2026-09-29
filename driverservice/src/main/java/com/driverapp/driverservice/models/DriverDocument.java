@@ -10,6 +10,8 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+import com.driverapp.driverservice.models.enums.DocumentType;
+
 @Entity
 @Table(name = "driver_documents")
 @Getter

@@ -38,6 +38,7 @@ public class SecurityConfig {
                                 "/api/auth/logout"
                         ).permitAll()
                         .pathMatchers(HttpMethod.GET, "/api/drivers/test").hasRole("CUSTOMER")
+                        .pathMatchers(HttpMethod.POST, "/api/drivers/register").hasRole("CUSTOMER")
                         .anyExchange().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 ->

@@ -16,6 +16,8 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+import com.driverapp.driverservice.models.enums.VerificationStatus;
+
 @Entity
 @Table(name = "drivers")
 @Getter

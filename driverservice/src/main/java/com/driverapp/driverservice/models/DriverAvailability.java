@@ -9,6 +9,8 @@ import lombok.NoArgsConstructor;
 
 import java.util.UUID;
 
+import com.driverapp.driverservice.models.enums.AvailabilityStatus;
+
 @Entity
 @Table(name = "driver_availability")
 @Getter

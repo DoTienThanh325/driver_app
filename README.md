@@ -11,7 +11,7 @@ Client
 API Gateway :8080
   |
   +--> User Service         :8081  --> PostgreSQL
-  +--> Driver Service       :8082  --> PostgreSQL + Redis
+  +--> Driver Service       :8082  --> PostgreSQL + Redis + MinIO
   +--> Booking Service      :8083  --> MongoDB
   +--> Payment Service      :8084  --> MongoDB
   +--> Feedback Service     :8085  --> PostgreSQL
@@ -33,6 +33,8 @@ API Gateway sử dụng Eureka và Spring Cloud LoadBalancer để định tuy�
 - PostgreSQL, Spring Data JPA và Flyway
 - MongoDB
 - Redis
+- MinIO (S3-compatible object storage)
+- Docker Compose (khởi động MinIO cho môi trường local)
 - Maven Wrapper
 - Lombok
 
@@ -70,6 +72,7 @@ API Gateway: `http://localhost:8080`
 - PostgreSQL chạy tại `localhost:5432`
 - MongoDB chạy tại `localhost:27017`
 - Redis chạy tại `localhost:6379`
+- MinIO chạy tại `localhost:9000` (API) và `localhost:9001` (Web Console)
 
 Tạo các database PostgreSQL sau trước khi khởi động service:
 
@@ -101,10 +104,23 @@ Flyway tự động tạo/cập nhật schema cho các service sử dụng Postg
 | `JWT_JWK_SET_URI` | Endpoint JWKS cho booking/payment | `http://localhost:8081/.well-known/jwks.json` |
 | `JWT_ISSUER_URI` | JWT issuer cho booking/payment | `http://localhost:8081` |
 | `BOOKING_SERVICE_PORT` | Port của Booking Service | `8083` |
+| `STORAGE_ENDPOINT` | Endpoint nội bộ để Driver Service kết nối MinIO | `http://localhost:9000` |
+| `STORAGE_PUBLIC_ENDPOINT` | Endpoint dùng để tạo URL đọc ảnh đã ký | `http://localhost:9000` |
+| `STORAGE_ACCESS_KEY` | Access key của MinIO | `minioadmin` |
+| `STORAGE_SECRET_KEY` | Secret key của MinIO | `minioadmin` |
+| `STORAGE_BUCKET` | Bucket lưu ảnh giấy tờ tài xế/phương tiện | `driver-documents` |
 
 > Lưu ý: `paymentservice` hiện cũng đọc biến `BOOKING_SERVICE_PORT` cho port của nó, với giá trị mặc định là `8084`. Không đặt biến này dùng chung khi chạy cả Booking Service và Payment Service trên cùng máy, nếu không hai service có thể bị trùng port.
 
 ## Khởi động dự án
+
+Khởi động MinIO cho Driver Service:
+
+```powershell
+docker compose up -d minio
+```
+
+Truy cập MinIO Console tại `http://localhost:9001`, đăng nhập bằng thông tin trong `docker-compose.yml` và tạo bucket `driver-documents` trước khi gọi API đăng ký tài xế hoặc thêm phương tiện.
 
 Mỗi service có Maven Wrapper riêng. Trên Windows, mở một terminal cho từng service và chạy:
 
@@ -141,6 +157,7 @@ Chạy trong thư mục của service cần kiểm thử:
 
 ```text
 backend/
+├── docker-compose.yml
 ├── apigateway/
 ├── bookingservice/
 ├── driverservice/
