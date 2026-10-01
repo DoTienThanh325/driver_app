@@ -39,6 +39,9 @@ public class SecurityConfig {
                         ).permitAll()
                         .pathMatchers(HttpMethod.GET, "/api/drivers/test").hasRole("CUSTOMER")
                         .pathMatchers(HttpMethod.POST, "/api/drivers/register").hasRole("CUSTOMER")
+                        .pathMatchers(HttpMethod.POST, "/api/bookings/foods").hasRole("ADMIN")
+                        .pathMatchers("/api/bookings/foods/**").hasRole("ADMIN")
+                        .pathMatchers("/api/trips").hasAnyRole("CUSTOMER", "DRIVER")
                         .anyExchange().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 ->

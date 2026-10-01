@@ -27,7 +27,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
@@ -148,9 +147,7 @@ public class AuthServiceImpl implements AuthService {
                 )
                 .orElseThrow(this::invalidCredentials);
 
-        LocalDateTime now = LocalDateTime.now(
-                Clock.systemUTC()
-        );
+        LocalDateTime now = LocalDateTime.now();
 
         if (!token.getExpiredAt().isAfter(now)
                 || token.getRevokedAt() != null
@@ -174,7 +171,7 @@ public class AuthServiceImpl implements AuthService {
         ).ifPresent(token -> {
             if (token.getRevokedAt() == null) {
                 token.setRevokedAt(
-                        LocalDateTime.now(Clock.systemUTC())
+                        LocalDateTime.now()
                 );
             }
         });

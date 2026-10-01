@@ -1,7 +1,6 @@
 package com.driverapp.bookingservice.models;
 
 import java.time.LocalDateTime;
-import java.util.UUID;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -14,7 +13,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @Document(collection = "restaurants")
 public class Restaurant {
     @Id
-    private UUID id;
+    private String id;
 
     private String name;
     private String locationAddress;

@@ -29,4 +29,12 @@ public class DriverAvailability {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private AvailabilityStatus status;
+
+    public DriverAvailability withStatus(AvailabilityStatus newStatus) {
+        return DriverAvailability.builder()
+                .id(this.id)
+                .driver(this.driver)
+                .status(newStatus)
+                .build();
+    }
 }

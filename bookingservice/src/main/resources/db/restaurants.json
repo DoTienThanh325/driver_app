@@ -1,0 +1,122 @@
+[
+  {
+    "name": "Phở Hà Nội",
+    "locationAddress": "12 Lý Thường Kiệt, Hoàn Kiếm, Hà Nội",
+    "locationLatitude": 21.0285,
+    "locationLongitude": 105.8542,
+    "createdAt": {
+      "$date": "2025-01-10T08:00:00.000Z"
+    },
+    "updatedAt": {
+      "$date": "2025-01-10T08:00:00.000Z"
+    }
+  },
+  {
+    "name": "Bún Bò Huế Bà Lan",
+    "locationAddress": "45 Trần Hưng Đạo, Hải Châu, Đà Nẵng",
+    "locationLatitude": 16.0678,
+    "locationLongitude": 108.2208,
+    "createdAt": {
+      "$date": "2025-01-11T08:00:00.000Z"
+    },
+    "updatedAt": {
+      "$date": "2025-01-11T08:00:00.000Z"
+    }
+  },
+  {
+    "name": "Cơm Tấm Sài Gòn",
+    "locationAddress": "78 Nguyễn Trãi, Quận 1, TP. Hồ Chí Minh",
+    "locationLatitude": 10.7769,
+    "locationLongitude": 106.6956,
+    "createdAt": {
+      "$date": "2025-01-12T08:00:00.000Z"
+    },
+    "updatedAt": {
+      "$date": "2025-01-12T08:00:00.000Z"
+    }
+  },
+  {
+    "name": "Lẩu Thái Sườn Bò",
+    "locationAddress": "23 Lê Duẩn, Bến Nghé, Quận 1, TP. Hồ Chí Minh",
+    "locationLatitude": 10.7802,
+    "locationLongitude": 106.6985,
+    "createdAt": {
+      "$date": "2025-01-13T08:00:00.000Z"
+    },
+    "updatedAt": {
+      "$date": "2025-01-13T08:00:00.000Z"
+    }
+  },
+  {
+    "name": "Bánh Mì Phượng",
+    "locationAddress": "2B Phan Châu Trinh, Minh An, Hội An, Quảng Nam",
+    "locationLatitude": 15.8801,
+    "locationLongitude": 108.3380,
+    "createdAt": {
+      "$date": "2025-01-14T08:00:00.000Z"
+    },
+    "updatedAt": {
+      "$date": "2025-01-14T08:00:00.000Z"
+    }
+  },
+  {
+    "name": "Gà Nướng Mật Ong Thuý",
+    "locationAddress": "56 Đinh Tiên Hoàng, Đakao, Quận 1, TP. Hồ Chí Minh",
+    "locationLatitude": 10.7891,
+    "locationLongitude": 106.7012,
+    "createdAt": {
+      "$date": "2025-01-15T08:00:00.000Z"
+    },
+    "updatedAt": {
+      "$date": "2025-01-15T08:00:00.000Z"
+    }
+  },
+  {
+    "name": "Mì Quảng Tâm",
+    "locationAddress": "99 Hùng Vương, Hải Châu, Đà Nẵng",
+    "locationLatitude": 16.0600,
+    "locationLongitude": 108.2100,
+    "createdAt": {
+      "$date": "2025-01-16T08:00:00.000Z"
+    },
+    "updatedAt": {
+      "$date": "2025-01-16T08:00:00.000Z"
+    }
+  },
+  {
+    "name": "Bún Chả Obama",
+    "locationAddress": "24 Lê Văn Hưu, Hai Bà Trưng, Hà Nội",
+    "locationLatitude": 21.0200,
+    "locationLongitude": 105.8500,
+    "createdAt": {
+      "$date": "2025-01-17T08:00:00.000Z"
+    },
+    "updatedAt": {
+      "$date": "2025-01-17T08:00:00.000Z"
+    }
+  },
+  {
+    "name": "Hải Sản Trọng Nghĩa",
+    "locationAddress": "Đường Trần Phú, Nha Trang, Khánh Hoà",
+    "locationLatitude": 12.2388,
+    "locationLongitude": 109.1967,
+    "createdAt": {
+      "$date": "2025-01-18T08:00:00.000Z"
+    },
+    "updatedAt": {
+      "$date": "2025-01-18T08:00:00.000Z"
+    }
+  },
+  {
+    "name": "Pizza 4P's",
+    "locationAddress": "8 Thủ Khoa Huân, Bến Thành, Quận 1, TP. Hồ Chí Minh",
+    "locationLatitude": 10.7726,
+    "locationLongitude": 106.7016,
+    "createdAt": {
+      "$date": "2025-01-19T08:00:00.000Z"
+    },
+    "updatedAt": {
+      "$date": "2025-01-19T08:00:00.000Z"
+    }
+  }
+]

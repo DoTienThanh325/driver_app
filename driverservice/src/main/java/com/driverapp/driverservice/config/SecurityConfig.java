@@ -20,6 +20,8 @@ public class SecurityConfig {
                         )
                 )
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/api/drivers/check-available/**").permitAll()
+                        .requestMatchers("/api/drivers/availability").permitAll()
                         .anyRequest().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 ->

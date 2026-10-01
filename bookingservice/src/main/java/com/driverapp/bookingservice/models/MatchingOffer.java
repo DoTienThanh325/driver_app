@@ -15,10 +15,10 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @Document(collection = "matching_offers")
 public class MatchingOffer {
     @Id
-    private UUID id;
+    private String id;
 
     private UUID driverId;
-    private UUID tripId;
+    private String tripId;
     private MatchingOfferStatus status;
 
     private LocalDateTime createdAt;

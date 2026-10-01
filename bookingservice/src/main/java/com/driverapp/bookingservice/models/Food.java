@@ -2,7 +2,9 @@ package com.driverapp.bookingservice.models;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.UUID;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -11,15 +13,17 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 @Getter
 @Setter
+@Builder 
+@AllArgsConstructor 
 @NoArgsConstructor
 @Document(collection = "foods")
 public class Food {
     @Id
-    private UUID id;
+    private String id;
 
     private String name;
     private List<FoodOption> options;
-    private UUID restaurantId;
+    private String restaurantId;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
