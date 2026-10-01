@@ -1,6 +1,6 @@
 # User Service
 
-`userservice` phụ trách đăng ký, đăng nhập bằng mật khẩu + OTP, cấp access token/refresh token, logout, refresh token và trả về thông tin người dùng hiện tại. Service này đóng vai trò issuer JWT cho toàn bộ backend.
+`userservice` phụ trách đăng ký, đăng nhập bằng mật khẩu + OTP, cấp access token/refresh token, logout, refresh token, quản lý thông tin người dùng và phân quyền role. Service này đóng vai trò issuer JWT cho toàn bộ hệ thống microservices.
 
 ## Cấu hình chính
 
@@ -13,59 +13,64 @@
 
 ## Endpoint hiện có
 
-- `POST /api/auth/register`: đăng ký user mới với role mặc định `CUSTOMER`.
-- `POST /api/auth/login`: kiểm tra số điện thoại + mật khẩu, tạo OTP challenge.
-- `POST /api/auth/verify-otp`: xác minh OTP và cấp token.
-- `POST /api/auth/refresh`: đổi refresh token lấy cặp token mới.
-- `POST /api/auth/logout`: revoke refresh token.
-- `GET /api/users/me`: lấy thông tin user hiện tại từ JWT.
-- `GET /.well-known/jwks.json`: public JWK Set cho gateway/service khác xác thực JWT.
+### Public / Client Endpoints
+- `POST /api/auth/register`: Đăng ký user mới với role mặc định `CUSTOMER`.
+- `POST /api/auth/login`: Kiểm tra số điện thoại + mật khẩu, trả về `challengeToken` OTP.
+- `POST /api/auth/verify-otp`: Xác minh `challengeToken` + mã OTP 6 số để cấp cặp token (`accessToken`, `refreshToken`).
+- `POST /api/auth/refresh`: Đổi `refreshToken` lấy cặp token mới.
+- `POST /api/auth/logout`: Revoke `refreshToken`.
+- `GET /api/users/me`: Lấy thông tin user hiện tại từ JWT.
+- `GET /.well-known/jwks.json`: Public JWK Set cho API Gateway và các microservice khác xác thực JWT.
 
-## Giải thích file
+### Internal Endpoints (Inter-service)
+- `PUT /internal/users/{userId}/roles/{roleCode}`: Gán role cho user (dành cho `driverservice` gọi khi phê duyệt tài xế).
+- `GET /internal/users/{userId}`: Lấy thông tin user theo ID.
 
-- `pom.xml`: khai báo Spring WebMVC, Spring Data JPA, Security, OAuth2 Resource Server, Validation, PostgreSQL, Flyway, Lombok và test dependency.
-- `mvnw`, `mvnw.cmd`, `.mvn/wrapper/maven-wrapper.properties`: Maven Wrapper.
-- `.gitignore`, `.gitattributes`: cấu hình Git.
-- `HELP.md`: file hướng dẫn mặc định của Spring Initializr.
-- `src/main/java/com/driverapp/userservice/UserserviceApplication.java`: class main khởi động service.
-- `config/JwtConfig.java`: tạo RSA key pair lúc runtime, cấu hình `JwtEncoder` và `JwtDecoder`.
-- `config/JwtProperties.java`: bind cấu hình `app.jwt` gồm issuer, thời gian access token và refresh token.
-- `config/OtpProperties.java`: bind cấu hình `app.otp` gồm thời gian OTP và secret ký challenge.
-- `config/SecurityConfig.java`: cấu hình stateless security, password encoder BCrypt, public các endpoint auth/JWKS và yêu cầu JWT cho endpoint còn lại.
-- `controller/AuthController.java`: REST controller cho đăng ký, đăng nhập, OTP, refresh, logout và `/api/users/me`.
-- `controller/JwkController.java`: expose public key tại `/.well-known/jwks.json`.
-- `dto/LoginRequest.java`: request đăng nhập bằng `phoneNumber` và `password`.
-- `dto/LoginResponse.java`: response sau login gồm `challengeToken`, thời gian hết hạn và message.
-- `dto/OtpChallengeResult.java`: kết quả nội bộ khi tạo OTP challenge, gồm token, OTP và TTL.
-- `dto/RefreshRequest.java`: request refresh/logout gồm `refreshToken`.
-- `dto/RegisterRequest.java`: request đăng ký, validate username, password tối thiểu 8 ký tự và số điện thoại.
-- `dto/TokenResponse.java`: response token gồm access token, refresh token, token type và TTL.
-- `dto/UserResponse.java`: response thông tin user gồm id, username, phone number và roles.
-- `dto/VerifyOtpRequest.java`: request xác minh OTP 6 chữ số.
-- `models/User.java`: entity bảng `users`, lưu username, password hash, phone, status, roles và timestamp.
-- `models/Role.java`: entity bảng `roles`, lưu role code.
-- `models/RoleCode.java`: enum `CUSTOMER`, `DRIVER`, `ADMIN`.
-- `models/UserStatus.java`: enum trạng thái user `ACTIVE`, `BANNED`.
-- `models/RefreshToken.java`: entity bảng `refresh_tokens`, lưu hash refresh token, hạn dùng và thời điểm revoke.
-- `repository/UserRepository.java`: JPA repository cho user, tìm theo phone và kiểm tra trùng username/phone.
-- `repository/RoleRepository.java`: JPA repository tìm role theo `RoleCode`.
-- `repository/RefreshTokenRepository.java`: JPA repository tìm refresh token theo hash với pessimistic lock.
-- `service/AuthService.java`: interface nghiệp vụ auth.
-- `service/JwtService.java`: interface cấp token và hash SHA-256.
-- `service/OtpChallengeService.java`: interface tạo/xác minh OTP challenge.
-- `service/SmsSender.java`: interface gửi OTP.
-- `service/impl/AuthServiceImpl.java`: hiện thực luồng register, login, verify OTP, refresh, logout và current user.
-- `service/impl/JwtServiceImpl.java`: tạo JWT access token, tạo refresh token random, lưu hash refresh token.
-- `service/impl/OtpChallengeServiceImpl.java`: tạo OTP 6 số, ký challenge bằng HMAC-SHA256 và xác minh challenge.
-- `service/impl/LocalSmsSender.java`: sender local, ghi OTP ra log thay vì gửi SMS thật.
-- `src/main/resources/application.yaml`: cấu hình port, datasource, JPA, Flyway, JWT và OTP.
-- `src/main/resources/db/migration/V0__create_user_tables.sql`: tạo bảng users, roles, user_roles, refresh_tokens.
-- `src/main/resources/db/migration/V1__insert_roles_table.sql`: seed 3 role mặc định.
-- `src/test/java/com/driverapp/userservice/UserserviceApplicationTests.java`: test khởi tạo context mặc định.
-- `target/`: thư mục build sinh ra bởi Maven.
+## Cấu trúc thư mục & Giải thích file
+
+- `pom.xml`: Khai báo dependencies Spring Web, Spring Data JPA, Security, OAuth2 Resource Server, Validation, PostgreSQL, Flyway, Lombok, Eureka Client...
+- `src/main/java/com/driverapp/userservice/`:
+  - `UserserviceApplication.java`: Class main khởi động service.
+  - `config/JwtConfig.java`: Cấu hình RSA key pair, `JwtEncoder` và `JwtDecoder`.
+  - `config/JwtProperties.java`: Bind cấu hình `app.jwt` (issuer, expiration).
+  - `config/OtpProperties.java`: Bind cấu hình `app.otp` (TTL, secret).
+  - `config/SecurityConfig.java`: Cấu hình stateless security, BCrypt encoder, permitAll các auth/JWKS/internal endpoints.
+  - `controller/AuthController.java`: REST controller đăng ký, đăng nhập, verify OTP, refresh token, logout và me.
+  - `controller/InternalUserController.java`: REST controller cho các giao tiếp nội bộ inter-service.
+  - `controller/JwkController.java`: Expose public key tại `/.well-known/jwks.json`.
+  - `dto/request/`:
+    - `LoginRequest.java`: DTO đăng nhập bằng `phoneNumber` và `password`.
+    - `OtpVerifyRequest.java`: DTO xác minh OTP bằng `challengeToken` và `otpCode`.
+    - `RefreshTokenRequest.java`: DTO refresh token / logout bằng `refreshToken`.
+    - `RegisterRequest.java`: DTO đăng ký user mới (`username`, `password`, `phoneNumber`).
+  - `dto/response/`:
+    - `LoginChallengeResponse.java`: Response sau login chứa `challengeToken`.
+    - `OtpChallengeResult.java`: Kết quả tạo challenge OTP nội bộ.
+    - `TokenResponse.java`: Response cấp `accessToken` và `refreshToken`.
+    - `UserResponse.java`: Response thông tin user (`id`, `username`, `phoneNumber`, `roles`).
+  - `models/`:
+    - `User.java`: Entity `users`.
+    - `Role.java`: Entity `roles`.
+    - `RefreshToken.java`: Entity `refresh_tokens`.
+    - `enums/RoleCode.java`: Enum `CUSTOMER`, `DRIVER`, `ADMIN`.
+    - `enums/UserStatus.java`: Enum `ACTIVE`, `BANNED`.
+  - `repository/`:
+    - `UserRepository.java`: Repository tìm user theo phone/username.
+    - `RoleRepository.java`: Repository tìm role theo `RoleCode`.
+    - `RefreshTokenRepository.java`: Repository quản lý refresh token với pessimistic lock.
+  - `service/`:
+    - `AuthService.java` & `impl/AuthServiceImpl.java`: Nghiệp vụ đăng ký, login, verify OTP, refresh, logout.
+    - `UserService.java` & `impl/UserServiceImpl.java`: Nghiệp vụ quản lý user và gán role.
+    - `JwtService.java` & `impl/JwtServiceImpl.java`: Tạo/xác thực JWT và hash refresh token.
+    - `OtpChallengeService.java` & `impl/OtpChallengeServiceImpl.java`: Tạo và ký HMAC OTP challenge.
+    - `SmsSender.java` & `impl/LocalSmsSender.java`: Mock gửi tin nhắn OTP ra log console.
+- `src/main/resources/`:
+  - `application.yaml`: Cấu hình port 8081, PostgreSQL, JPA, Flyway, JWT, OTP và Eureka.
+  - `db/migration/`: Các file SQL Flyway tạo bảng và seed roles.
 
 ## Cách chạy
 
 ```powershell
 .\mvnw.cmd spring-boot:run
 ```
+

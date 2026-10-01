@@ -17,6 +17,8 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import com.driverapp.userservice.models.enums.UserStatus;
+
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;

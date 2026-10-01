@@ -1,5 +1,4 @@
-// dto/LoginRequest.java
-package com.driverapp.userservice.dto;
+package com.driverapp.userservice.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
 

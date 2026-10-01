@@ -7,6 +7,8 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import com.driverapp.driverservice.models.enums.DocumentType;
+
 import java.time.LocalDateTime;
 import java.util.UUID;
 

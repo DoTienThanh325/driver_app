@@ -1,6 +1,8 @@
-// dto/LoginResponse.java
-package com.driverapp.userservice.dto;
+package com.driverapp.userservice.dto.response;
 
+import lombok.Builder;
+
+@Builder
 public record LoginResponse(
         String challengeToken,
         long expiresInSeconds,

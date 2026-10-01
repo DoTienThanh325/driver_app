@@ -1,7 +1,7 @@
 package com.driverapp.userservice.service.impl;
 
 import com.driverapp.userservice.config.JwtProperties;
-import com.driverapp.userservice.dto.TokenResponse;
+import com.driverapp.userservice.dto.response.TokenResponse;
 import com.driverapp.userservice.models.RefreshToken;
 import com.driverapp.userservice.models.Role;
 import com.driverapp.userservice.models.User;

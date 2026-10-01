@@ -20,7 +20,7 @@ API Gateway :8080
 Các service và API Gateway <--> Eureka Server :8761
 ```
 
-API Gateway sử dụng Eureka và Spring Cloud LoadBalancer để định tuyến bằng service name (`lb://userservice`, `lb://driverservice`, ...), không phụ thuộc trực tiếp vào địa chỉ của từng instance.
+API Gateway và các microservice sử dụng Eureka Server và Spring Cloud LoadBalancer để định tuyến bằng service name (`lb://userservice`, `lb://driverservice`, ...). Các service giao tiếp nội bộ (như `driverservice` gọi `userservice` để cập nhật role hoặc gọi `notificationservice` để phát thông báo) thông qua `@LoadBalanced RestClient`.
 
 ## Công nghệ chính
 

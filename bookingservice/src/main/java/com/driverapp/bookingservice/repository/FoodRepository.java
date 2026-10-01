@@ -5,4 +5,5 @@ import java.util.UUID;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
 public interface FoodRepository extends MongoRepository<Food, UUID> {
+    void deleteByRestaurantId(UUID restaurantId);
 }

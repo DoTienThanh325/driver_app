@@ -12,6 +12,9 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+import com.driverapp.driverservice.models.enums.VerificationStatus;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -19,6 +22,7 @@ import java.util.UUID;
 @Entity
 @Table(name = "drivers")
 @Getter
+@Setter
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
