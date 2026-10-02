@@ -42,6 +42,7 @@ public class DriverVehicleController {
             // Loại xe: MOTORBIKE hoặc CAR
             @RequestParam("vehicleType") VehicleType vehicleType) {
         UUID userId = UUID.fromString(jwt.getSubject());
+        String username = jwt.getClaim("username");
 
         AddVehicleRequest request = new AddVehicleRequest(
                 registrationFront,
@@ -50,6 +51,6 @@ public class DriverVehicleController {
                 driverLicenseBack,
                 vehicleType);
 
-        return vehicleService.addVehicle(userId, request);
+        return vehicleService.addVehicle(userId, username, request);
     }
 }

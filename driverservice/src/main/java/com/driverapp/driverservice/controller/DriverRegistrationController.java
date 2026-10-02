@@ -44,8 +44,8 @@ public class DriverRegistrationController {
                 registrationFront,
                 plate,
                 vehicleType);
-
+        String username = jwt.getClaim("username");
         UUID userId = UUID.fromString(jwt.getSubject());
-        return registrationService.register(userId, request);
+        return registrationService.register(userId, username, request);
     }
 }

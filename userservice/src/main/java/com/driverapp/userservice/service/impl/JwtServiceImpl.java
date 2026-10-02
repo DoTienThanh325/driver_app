@@ -54,6 +54,7 @@ public class JwtServiceImpl implements JwtService {
                         )
                 )
                 .claim("roles", roles)
+                .claim("username", user.getUsername())
                 .build();
 
         String accessToken = jwtEncoder.encode(

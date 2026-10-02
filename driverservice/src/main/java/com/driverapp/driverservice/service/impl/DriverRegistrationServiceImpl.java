@@ -21,7 +21,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
@@ -32,9 +31,9 @@ public class DriverRegistrationServiceImpl implements DriverRegistrationService 
     private final DriverVehicleRepository vehicleRepository;
     private final DriverImageStorage imageStorage;
 
-    @Override 
+    @Override
     @Transactional
-    public RegisterDriverResponse register(UUID userId, RegisterDriverRequest request) {
+    public RegisterDriverResponse register(UUID userId, String username, RegisterDriverRequest request) {
         if (driverRepository.existsByUserId(userId)) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
@@ -71,35 +70,19 @@ public class DriverRegistrationServiceImpl implements DriverRegistrationService 
                     @Override
                     public void afterCompletion(int status) {
                         if (status != STATUS_COMMITTED) {
-                            uploadedUrls.forEach(
-                                    imageStorage::deleteQuietly
-                            );
+                            uploadedUrls.forEach(imageStorage::deleteQuietly);
                         }
                     }
                 }
         );
 
-        String idCardFrontUrl = upload(
-                userId, "id-card", request.idCardFront(), uploadedUrls
-        );
-        String idCardBackUrl = upload(
-                userId, "id-card", request.idCardBack(), uploadedUrls
-        );
-        String licenseFrontUrl = upload(
-                userId, "driver-license",
-                request.driverLicenseFront(), uploadedUrls
-        );
-        String licenseBackUrl = upload(
-                userId, "driver-license",
-                request.driverLicenseBack(), uploadedUrls
-        );
-        String registrationUrl = upload(
-                userId, "registration",
-                request.registrationFront(), uploadedUrls
-        );
-        String plateUrl = upload(
-                userId, "plate", request.plate(), uploadedUrls
-        );
+        // Upload từng ảnh theo đường dẫn mới: driver/{username}/{folder}/{fileName}
+        String idCardFrontUrl  = track(imageStorage.uploadIdCardFront(username, request.idCardFront()), uploadedUrls);
+        String idCardBackUrl   = track(imageStorage.uploadIdCardBack(username, request.idCardBack()), uploadedUrls);
+        String licenseFrontUrl = track(imageStorage.uploadDriverLicenseFront(username, request.driverLicenseFront()), uploadedUrls);
+        String licenseBackUrl  = track(imageStorage.uploadDriverLicenseBack(username, request.driverLicenseBack()), uploadedUrls);
+        String registrationUrl = track(imageStorage.uploadRegistrationFront(username, request.registrationFront()), uploadedUrls);
+        String plateUrl        = track(imageStorage.uploadPlate(username, request.plate()), uploadedUrls);
 
         documentRepository.save(
                 document(driver, DocumentType.ID_CARD, idCardFrontUrl, idCardBackUrl)
@@ -124,13 +107,7 @@ public class DriverRegistrationServiceImpl implements DriverRegistrationService 
         );
     }
 
-    private String upload(
-            UUID userId,
-            String kind,
-            MultipartFile file,
-            List<String> uploadedUrls
-    ) {
-        String url = imageStorage.upload(userId, kind, file);
+    private String track(String url, List<String> uploadedUrls) {
         uploadedUrls.add(url);
         return url;
     }
@@ -138,7 +115,7 @@ public class DriverRegistrationServiceImpl implements DriverRegistrationService 
     private DriverDocument document(
             Driver driver,
             DocumentType type,
-            String frontUrl, 
+            String frontUrl,
             String backUrl
     ) {
         return DriverDocument.builder()

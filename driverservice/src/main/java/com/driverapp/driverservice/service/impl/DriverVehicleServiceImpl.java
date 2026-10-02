@@ -18,7 +18,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,7 +33,7 @@ public class DriverVehicleServiceImpl implements DriverVehicleService {
 
     @Override
     @Transactional
-    public AddVehicleResponse addVehicle(UUID userId, AddVehicleRequest request) {
+    public AddVehicleResponse addVehicle(UUID userId, String username, AddVehicleRequest request) {
         // ── BƯỚC 1: Tìm driver từ userId ─────────────────────────────────────
         Driver driver = driverRepository.findByUserId(userId)
                 .orElseThrow(() -> new ResponseStatusException(
@@ -79,7 +78,10 @@ public class DriverVehicleServiceImpl implements DriverVehicleService {
             imageStorage.validate(request.driverLicenseBack());
         }
 
-        // ── BƯỚC 5: Đăng ký dọn dẹp ảnh nếu transaction DB bị rollback ──────
+        // ── BƯỚC 5: Tính index xe (để đặt tên file không trùng) ──────────────
+        long vehicleIndex = vehicleRepository.countByDriver(driver) + 1;
+
+        // ── BƯỚC 6: Đăng ký dọn dẹp ảnh nếu transaction DB bị rollback ──────
         // Pattern giống hệt DriverRegistrationServiceImpl
         List<String> uploadedUrls = new ArrayList<>();
         TransactionSynchronizationManager.registerSynchronization(
@@ -92,18 +94,22 @@ public class DriverVehicleServiceImpl implements DriverVehicleService {
                     }
                 });
 
-        // ── BƯỚC 6: Upload ảnh xe lên MinIO ──────────────────────────────────
-        String registrationUrl = upload(
-                userId, "registration", request.registrationFront(), uploadedUrls);
-        String plateUrl = upload(
-                userId, "plate", request.plate(), uploadedUrls);
+        // ── BƯỚC 7: Upload ảnh xe lên MinIO ──────────────────────────────────
+        String registrationUrl = track(
+                imageStorage.uploadRegistrationFrontIndexed(username, vehicleIndex, request.registrationFront()),
+                uploadedUrls);
+        String plateUrl = track(
+                imageStorage.uploadPlateIndexed(username, vehicleIndex, request.plate()),
+                uploadedUrls);
 
-        // ── BƯỚC 7: Lưu DRIVER_LICENSE nếu cần ───────────────────────────────
+        // ── BƯỚC 8: Lưu DRIVER_LICENSE nếu cần ───────────────────────────────
         if (needLicense) {
-            String licenseFrontUrl = upload(
-                    userId, "driver-license", request.driverLicenseFront(), uploadedUrls);
-            String licenseBackUrl = upload(
-                    userId, "driver-license", request.driverLicenseBack(), uploadedUrls);
+            String licenseFrontUrl = track(
+                    imageStorage.uploadDriverLicenseFront(username, request.driverLicenseFront()),
+                    uploadedUrls);
+            String licenseBackUrl = track(
+                    imageStorage.uploadDriverLicenseBack(username, request.driverLicenseBack()),
+                    uploadedUrls);
             documentRepository.save(
                     DriverDocument.builder()
                             .driver(driver)
@@ -113,7 +119,7 @@ public class DriverVehicleServiceImpl implements DriverVehicleService {
                             .build());
         }
 
-        // ── BƯỚC 8: Lưu thông tin xe mới ─────────────────────────────────────
+        // ── BƯỚC 9: Lưu thông tin xe mới ─────────────────────────────────────
         DriverVehicle vehicle = vehicleRepository.save(
                 DriverVehicle.builder()
                         .driver(driver)
@@ -128,13 +134,8 @@ public class DriverVehicleServiceImpl implements DriverVehicleService {
                 "Vehicle added successfully.");
     }
 
-    // ── Helper: upload ảnh và track URL để rollback nếu cần ──────────────────
-    private String upload(
-            UUID userId,
-            String kind,
-            MultipartFile file,
-            List<String> uploadedUrls) {
-        String url = imageStorage.upload(userId, kind, file);
+    // ── Helper: track URL để rollback nếu cần ──────────────────────────────
+    private String track(String url, List<String> uploadedUrls) {
         uploadedUrls.add(url);
         return url;
     }

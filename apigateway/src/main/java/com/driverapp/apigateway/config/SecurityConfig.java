@@ -42,6 +42,8 @@ public class SecurityConfig {
                         .pathMatchers(HttpMethod.POST, "/api/bookings/foods").hasRole("ADMIN")
                         .pathMatchers("/api/bookings/foods/**").hasRole("ADMIN")
                         .pathMatchers("/api/trips").hasAnyRole("CUSTOMER", "DRIVER")
+                        .pathMatchers("/api/businesses/registration").hasRole("CUSTOMER")
+                        .pathMatchers("/api/businesses/*/review").hasRole("ADMIN")
                         .anyExchange().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 ->
