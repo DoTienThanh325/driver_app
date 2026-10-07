@@ -61,6 +61,47 @@ Response `201 Created` gồm `vehicleId`, `vehicleType` và `message`.
 
 Nếu transaction database thất bại, service sẽ cố gắng xóa các ảnh vừa upload để tránh object rác trên MinIO.
 
+### `GET /api/drivers/by-user/{userId}`
+
+Tra cứu nhanh `driverId` từ `userId` mà **không kiểm tra trạng thái AVAILABLE** (dành cho `bookingservice` gọi nội bộ khi tài xế đang chạy chuyến `ON_TRIP` để cập nhật trạng thái chuyến đi).
+
+- **HTTP Method**: `GET`
+- **Response `200 OK`**:
+  ```json
+  {
+    "driverId": "b4c80242-63b7-4a0b-8d02-1a3b5a77c8e9",
+    "userId": "fa2fbb48-5231-4775-8025-a7bdf064f7bc"
+  }
+  ```
+
+### `GET /api/drivers/check-available/{userId}`
+
+Kiểm tra tài xế có tồn tại, đã `APPROVED` và đang `AVAILABLE` hay không (dùng khi tài xế nhận chuyến `acceptTrip`).
+
+- **HTTP Method**: `GET`
+- **Response `200 OK`**:
+  ```json
+  {
+    "driverId": "b4c80242-63b7-4a0b-8d02-1a3b5a77c8e9",
+    "userId": "fa2fbb48-5231-4775-8025-a7bdf064f7bc",
+    "status": "AVAILABLE"
+  }
+  ```
+
+### `PATCH /api/drivers/availability`
+
+Cập nhật trạng thái sẵn sàng nhận chuyến của tài xế (`AVAILABLE`, `ON_TRIP`, `OFFLINE`). Khi `bookingservice` hoàn tất chuyến (`COMPLETED`), endpoint này được gọi để giải phóng tài xế về trạng thái `AVAILABLE`.
+
+- **HTTP Method**: `PATCH`
+- **Request Body**:
+  ```json
+  {
+    "driverId": "b4c80242-63b7-4a0b-8d02-1a3b5a77c8e9",
+    "status": "AVAILABLE"
+  }
+  ```
+- **Response**: `200 OK`
+
 ## Giải thích file
 
 - `pom.xml`: khai báo Spring WebMVC, JPA, Security, OAuth2 Resource Server, Validation, PostgreSQL, Flyway, Redis, MinIO SDK, Lombok và test dependency.
@@ -70,6 +111,7 @@ Nếu transaction database thất bại, service sẽ cố gắng xóa các ản
 - `config/ObjectStorageConfig.java`: tạo MinIO client nội bộ và client dùng endpoint public.
 - `controller/DriverRegistrationController.java`: nhận request multipart đăng ký tài xế.
 - `controller/DriverVehicleController.java`: nhận request multipart thêm phương tiện.
+- `controller/DriverAvailabilityController.java`: kiểm tra tài xế khả dụng (`check-available`), tra cứu driverId theo userId (`by-user`) và cập nhật availability.
 - `controller/DriverTestController.java`: controller test route `GET /api/drivers/test`.
 - `dto/request/`: các record request cho đăng ký tài xế và thêm phương tiện.
 - `dto/response/`: các record response tương ứng.
