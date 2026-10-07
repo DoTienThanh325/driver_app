@@ -1,17 +1,12 @@
 package com.driverapp.userservice.controller;
 
 import com.driverapp.userservice.dto.request.GrantRoleRequest;
-import com.driverapp.userservice.models.Role;
-import com.driverapp.userservice.models.RoleCode;
-import com.driverapp.userservice.models.User;
-import com.driverapp.userservice.repository.RoleRepository;
-import com.driverapp.userservice.repository.UserRepository;
+import com.driverapp.userservice.dto.response.UserInfoResponse;
+import com.driverapp.userservice.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.UUID;
 
@@ -20,8 +15,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class UserController {
 
-    private final UserRepository userRepository;
-    private final RoleRepository roleRepository;
+    private final UserService userService;
 
     /**
      * POST /api/users/{userId}/roles
@@ -32,34 +26,31 @@ public class UserController {
      */
     @PostMapping("/{userId}/roles")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @Transactional
     public void grantRole(
             @PathVariable UUID userId,
             @Valid @RequestBody GrantRoleRequest request) {
+        userService.grantRole(userId, request.roleCode());
+    }
 
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Không tìm thấy user với id: " + userId));
+    /**
+     * DELETE /api/users/{userId}/roles/{roleCode}
+     * Thu hồi role của user (tổng quát, idempotent).
+     * Được gọi bởi các service khác (bookingservice, ...).
+     */
+    @DeleteMapping("/{userId}/roles/{roleCode}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void revokeRole(
+            @PathVariable UUID userId,
+            @PathVariable String roleCode) {
+        userService.revokeRole(userId, roleCode);
+    }
 
-        RoleCode roleCode;
-        try {
-            roleCode = RoleCode.valueOf(request.roleCode().toUpperCase());
-        } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST, "RoleCode không hợp lệ: " + request.roleCode());
-        }
-
-        Role role = roleRepository.findByRoleCode(roleCode)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Role chưa được khởi tạo trong DB: " + roleCode));
-
-        // Idempotent: không thêm nếu đã có
-        boolean alreadyHas = user.getRoles().stream()
-                .anyMatch(r -> r.getRoleCode() == roleCode);
-
-        if (!alreadyHas) {
-            user.getRoles().add(role);
-            userRepository.save(user);
-        }
+    /**
+     * GET /api/users/{userId}
+     * Lấy thông tin cơ bản của user (dành cho các service nội bộ như driverservice gọi).
+     */
+    @GetMapping("/{userId}")
+    public UserInfoResponse getUserInfo(@PathVariable UUID userId) {
+        return userService.getUserInfo(userId);
     }
 }

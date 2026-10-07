@@ -5,6 +5,8 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
+
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -13,11 +15,12 @@ import java.util.List;
 import java.util.UUID;
 
 @Getter
+@Setter 
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
 @Document(collection = "business_registrations")
-public class BusinessRegistration {
+public class Business {
 
     @Id
     private String id;
@@ -28,6 +31,8 @@ public class BusinessRegistration {
     private BusinessRegistrationStatus status = BusinessRegistrationStatus.PENDING;
 
     private String rejectReason;
+
+    private String banReason;
 
     private String restaurantId;
 

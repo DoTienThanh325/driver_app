@@ -6,8 +6,14 @@ import com.driverapp.driverservice.models.enums.DocumentType;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface DriverDocumentRepository extends JpaRepository<DriverDocument, UUID> {
     boolean existsByDriverAndDocumentType(Driver driver, DocumentType documentType);
+
+    List<DriverDocument> findByDriver(Driver driver);
+
+    Optional<DriverDocument> findByDriverAndDocumentType(Driver driver, DocumentType documentType);
 }

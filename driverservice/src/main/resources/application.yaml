@@ -49,3 +49,7 @@ storage:
   access-key: ${STORAGE_ACCESS_KEY:minioadmin}
   secret-key: ${STORAGE_SECRET_KEY:minioadmin}
   bucket: ${STORAGE_BUCKET:driver-documents}
+
+services:
+  user:
+    base-url: ${USER_SERVICE_URL:http://userservice}

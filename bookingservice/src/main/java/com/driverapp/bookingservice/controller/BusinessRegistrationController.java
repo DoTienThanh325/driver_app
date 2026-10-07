@@ -3,9 +3,9 @@ package com.driverapp.bookingservice.controller;
 import com.driverapp.bookingservice.dto.request.RegisterBusinessRequest;
 import com.driverapp.bookingservice.dto.request.ReviewBusinessRequest;
 import com.driverapp.bookingservice.dto.response.RegisterBusinessResponse;
-import com.driverapp.bookingservice.models.BusinessRegistration;
+import com.driverapp.bookingservice.models.Business;
 import com.driverapp.bookingservice.models.enums.BusinessRegistrationStatus;
-import com.driverapp.bookingservice.service.BusinessRegistrationService;
+import com.driverapp.bookingservice.service.BusinessService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -15,18 +15,17 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 
 @RestController
 @RequestMapping("/api/businesses")
 @RequiredArgsConstructor
 public class BusinessRegistrationController {
     
-    private final BusinessRegistrationService businessRegistrationService;
+    private final BusinessService businessService;
 
     /**
-     * POST /api/business-registrations
+     * POST /api/businesses
      * multipart/form-data: text fields (tên, địa chỉ nhà hàng) + files (ảnh giấy phép)
      */
     @PostMapping(value = "/registration", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -45,38 +44,38 @@ public class BusinessRegistrationController {
                 restaurantLatitude, restaurantLongitude,
                 businessLicenseImages);
 
-        return businessRegistrationService.register(userId, request);
+        return businessService.register(userId, request);
     }
 
     /**
-     * GET /api/business-registrations/me
+     * GET /api/businesses/me
      * Customer xem đơn của mình (trả về 1 đơn duy nhất).
      */
     @GetMapping("/me")
-    public BusinessRegistration getMyRegistration(@AuthenticationPrincipal Jwt jwt) {
+    public Business getMyBusiness(@AuthenticationPrincipal Jwt jwt) {
         UUID userId = UUID.fromString(jwt.getSubject());
-        return businessRegistrationService.getMyRegistration(userId);
+        return businessService.getMyBusiness(userId);
     }
 
     /**
-     * GET /api/business-registrations?status=PENDING
+     * GET /api/businesses?status=PENDING
      * Admin xem danh sách đơn theo trạng thái.
      */
     @GetMapping
-    public List<BusinessRegistration> listByStatus(
+    public List<Business> listByStatus(
             @RequestParam(defaultValue = "PENDING") BusinessRegistrationStatus status) {
-        return businessRegistrationService.listByStatus(status);
+        return businessService.listByStatus(status);
     }
 
     /**
-     * PATCH /api/business-registrations/{id}/review
+     * PATCH /api/businesses/{id}/status
      * Admin duyệt hoặc từ chối đơn (1 API gộp).
      * Body JSON: { "status": "ACCEPTED" } hoặc { "status": "REJECTED", "rejectReason": "..." }
      */
-    @PatchMapping("/{id}/review")
-    public BusinessRegistration review(
+    @PatchMapping("/{id}/status")
+    public Map<String, String> updateStatus(
             @PathVariable String id,
             @Valid @RequestBody ReviewBusinessRequest request) {
-        return businessRegistrationService.review(id, request);
+        return businessService.updateStatus(id, request);
     }
 }

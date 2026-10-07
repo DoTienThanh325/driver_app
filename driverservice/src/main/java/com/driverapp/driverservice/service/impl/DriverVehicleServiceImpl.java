@@ -34,13 +34,13 @@ public class DriverVehicleServiceImpl implements DriverVehicleService {
     @Override
     @Transactional
     public AddVehicleResponse addVehicle(UUID userId, String username, AddVehicleRequest request) {
-        // ── BƯỚC 1: Tìm driver từ userId ─────────────────────────────────────
+        // ── STEP 1: Find driver by userId ────────────────────────────────────
         Driver driver = driverRepository.findByUserId(userId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "Driver profile not found. Please register as a driver first."));
 
-        // ── BƯỚC 2: Chỉ tài xế APPROVED mới được thêm phương tiện ───────────
+        // ── STEP 2: Only APPROVED drivers can add vehicles ──────────────────
         if (driver.getVerificationStatus() != VerificationStatus.APPROVED) {
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN,
@@ -48,7 +48,7 @@ public class DriverVehicleServiceImpl implements DriverVehicleService {
                             + driver.getVerificationStatus());
         }
 
-        // ── BƯỚC 3: Validate các ảnh bắt buộc ───────────────────────────────
+        // ── STEP 3: Validate mandatory images ────────────────────────────────
         if (request.vehicleType() == null) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST, "vehicleType is required");
@@ -57,10 +57,10 @@ public class DriverVehicleServiceImpl implements DriverVehicleService {
         imageStorage.validate(request.registrationFront());
         imageStorage.validate(request.plate());
 
-        // ── BƯỚC 4: Kiểm tra có cần lưu DRIVER_LICENSE không ─────────────────
+        // ── STEP 4: Check if DRIVER_LICENSE is needed ────────────────────────
         boolean hasLicense = documentRepository.existsByDriverAndDocumentType(
                 driver, DocumentType.DRIVER_LICENSE);
-        boolean needLicense = !hasLicense; // Yêu cầu bằng lái cho tất cả loại xe
+        boolean needLicense = !hasLicense; // Require driver license for all vehicle types
 
         if (needLicense) {
             // Nếu cần bằng lái mà client không gửi ảnh -> báo lỗi rõ ràng

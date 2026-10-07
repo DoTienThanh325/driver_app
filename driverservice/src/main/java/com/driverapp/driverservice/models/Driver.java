@@ -12,6 +12,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -21,6 +22,7 @@ import com.driverapp.driverservice.models.enums.VerificationStatus;
 @Entity
 @Table(name = "drivers")
 @Getter
+@Setter
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
@@ -49,5 +51,17 @@ public class Driver {
     @PrePersist
     void onCreate() {
         createdAt = LocalDateTime.now();
+    }
+
+    public void approve() {
+        this.verificationStatus = VerificationStatus.APPROVED;
+        this.rejectionReason = null;
+        this.approvedAt = LocalDateTime.now();
+    }
+
+    public void reject(String reason) {
+        this.verificationStatus = VerificationStatus.REJECTED;
+        this.rejectionReason = reason;
+        this.approvedAt = LocalDateTime.now();
     }
 }

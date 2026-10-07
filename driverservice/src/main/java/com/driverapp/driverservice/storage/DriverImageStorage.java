@@ -103,6 +103,68 @@ public class DriverImageStorage {
         return upload(username, "plate", "plate_img_" + index, file);
     }
 
+    // ─────────────────────────────────── OVERWRITE METHODS (IN-PLACE OVERWRITE)
+
+    /**
+     * Ghi đè vào đường dẫn cũ nếu có cùng extension, hoặc xóa file cũ và ghi file mới nếu extension thay đổi.
+     */
+    public String overwriteOrUpload(String username, String folder, String fileName, String existingS3Url, MultipartFile file) {
+        ImageFormat format = detectFormat(file);
+        String targetKey;
+
+        if (existingS3Url != null && existingS3Url.startsWith("s3://" + bucket + "/")) {
+            String oldKey = keyOf(existingS3Url);
+            if (oldKey.endsWith(format.extension)) {
+                // Cùng định dạng -> Giữ nguyên key cũ và ghi đè trực tiếp
+                targetKey = oldKey;
+            } else {
+                // Khác định dạng -> Xóa key cũ, tạo key mới
+                deleteQuietly(existingS3Url);
+                targetKey = "driver/" + username + "/" + folder + "/" + fileName + format.extension;
+            }
+        } else {
+            targetKey = "driver/" + username + "/" + folder + "/" + fileName + format.extension;
+        }
+
+        try (InputStream stream = file.getInputStream()) {
+            client.putObject(
+                    PutObjectArgs.builder()
+                            .bucket(bucket)
+                            .object(targetKey)
+                            .stream(stream, file.getSize(), -1L)
+                            .contentType(format.contentType)
+                            .build());
+
+            return "s3://" + bucket + "/" + targetKey;
+        } catch (Exception exception) {
+            throw new ObjectStorageException("Could not upload/overwrite driver image", exception);
+        }
+    }
+
+    public String overwriteIdCardFront(String username, String existingUrl, MultipartFile file) {
+        return overwriteOrUpload(username, "id-card", "id_card_front", existingUrl, file);
+    }
+
+    public String overwriteIdCardBack(String username, String existingUrl, MultipartFile file) {
+        return overwriteOrUpload(username, "id-card", "id_card_back", existingUrl, file);
+    }
+
+    public String overwriteDriverLicenseFront(String username, String existingUrl, MultipartFile file) {
+        return overwriteOrUpload(username, "driver-license", "license_front", existingUrl, file);
+    }
+
+    public String overwriteDriverLicenseBack(String username, String existingUrl, MultipartFile file) {
+        return overwriteOrUpload(username, "driver-license", "license_back", existingUrl, file);
+    }
+
+    public String overwriteRegistrationFront(String username, String existingUrl, MultipartFile file) {
+        return overwriteOrUpload(username, "registration-front", "registration_front", existingUrl, file);
+    }
+
+    public String overwritePlate(String username, String existingUrl, MultipartFile file) {
+        return overwriteOrUpload(username, "plate", "plate_img", existingUrl, file);
+    }
+
     // ─────────────────────────────────── COMMON METHODS
 
     public void validate(MultipartFile file) {

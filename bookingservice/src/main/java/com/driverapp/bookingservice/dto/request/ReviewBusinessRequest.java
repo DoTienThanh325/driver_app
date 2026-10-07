@@ -8,5 +8,8 @@ public record ReviewBusinessRequest(
         BusinessRegistrationStatus status,
 
         /** Bắt buộc khi status = REJECTED */
-        String rejectReason
+        String rejectReason,
+
+        /** Bắt buộc khi status = BANNED */
+        String banReason
 ) {}

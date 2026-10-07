@@ -37,13 +37,18 @@ public class SecurityConfig {
                                 "/api/auth/refresh",
                                 "/api/auth/logout"
                         ).permitAll()
-                        .pathMatchers(HttpMethod.GET, "/api/drivers/test").hasRole("CUSTOMER")
-                        .pathMatchers(HttpMethod.POST, "/api/drivers/register").hasRole("CUSTOMER")
-                        .pathMatchers(HttpMethod.POST, "/api/bookings/foods").hasRole("ADMIN")
-                        .pathMatchers("/api/bookings/foods/**").hasRole("ADMIN")
+                        .pathMatchers("/api/drivers/test").hasRole("CUSTOMER")
+                        .pathMatchers("/api/drivers/register").hasRole("CUSTOMER")
+                        .pathMatchers(HttpMethod.PATCH, "/api/drivers/registration").hasRole("CUSTOMER")
+                        .pathMatchers("/api/bookings/foods", "/api/bookings/foods/**").hasRole("BUSINESS")
+                        .pathMatchers("/api/bookings/restaurants", "/api/bookings/restaurants/**").hasRole("BUSINESS")
+                        .pathMatchers(HttpMethod.PATCH, "/api/trips/status").hasRole("DRIVER")
                         .pathMatchers("/api/trips").hasAnyRole("CUSTOMER", "DRIVER")
                         .pathMatchers("/api/businesses/registration").hasRole("CUSTOMER")
                         .pathMatchers("/api/businesses/*/review").hasRole("ADMIN")
+                        .pathMatchers("/api/drivers/*/verification-status").hasRole("ADMIN")
+                        .pathMatchers("/api/drivers/candidates").hasRole("ADMIN")
+                        .pathMatchers(HttpMethod.GET, "/api/drivers/{driverId}").hasAnyRole("ADMIN", "DRIVER", "CUSTOMER")
                         .anyExchange().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 ->

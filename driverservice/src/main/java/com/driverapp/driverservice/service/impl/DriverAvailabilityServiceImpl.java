@@ -27,31 +27,31 @@ public class DriverAvailabilityServiceImpl implements DriverAvailabilityService 
     @Override
     @Transactional(readOnly = true)
     public DriverProfileResponse checkAndGetAvailableDriver(UUID userId) {
-        // 1. Tìm hồ sơ Driver từ userId
+        // 1. Find driver profile by userId
         Driver driver = driverRepository.findByUserId(userId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
-                        "Không tìm thấy hồ sơ tài xế cho user: " + userId));
+                        "Driver profile not found for user: " + userId));
 
         if (driver.getVerificationStatus() != VerificationStatus.APPROVED) {
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN,
-                    "Hồ sơ tài xế chưa được duyệt (trạng thái: " + driver.getVerificationStatus() + ")");
+                    "Driver profile is not approved yet (status: " + driver.getVerificationStatus() + ")");
         }
 
-        // 2. Tìm trạng thái availability theo driverId
+        // 2. Find driver availability by driverId
         DriverAvailability availability = availabilityRepository.findByDriverId(driver.getId())
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
-                        "Chưa thiết lập trạng thái hoạt động cho tài xế"));
+                        "Driver availability is not initialized"));
 
         if (availability.getStatus() != AvailabilityStatus.AVAILABLE) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
-                    "Tài xế đang không ở trạng thái AVAILABLE (trạng thái: " + availability.getStatus() + ")");
+                    "Driver is not currently in AVAILABLE status (status: " + availability.getStatus() + ")");
         }
 
-        // 3. Trả về đúng driverId (id bảng drivers)
+        // 3. Return driverId
         return new DriverProfileResponse(
                 driver.getId(),
                 driver.getUserId(),
@@ -65,14 +65,14 @@ public class DriverAvailabilityServiceImpl implements DriverAvailabilityService 
         try {
             newStatus = AvailabilityStatus.valueOf(request.status());
         } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Status không hợp lệ: " + request.status());
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid status: " + request.status());
         }
 
-        // Cập nhật trực tiếp theo driverId
+        // Update directly by driverId
         DriverAvailability availability = availabilityRepository.findByDriverId(request.driverId())
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
-                        "Không tìm thấy availability cho driverId: " + request.driverId()));
+                        "Availability not found for driverId: " + request.driverId()));
 
         availabilityRepository.save(availability.withStatus(newStatus));
     }

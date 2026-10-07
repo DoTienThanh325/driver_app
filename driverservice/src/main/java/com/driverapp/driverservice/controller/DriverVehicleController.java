@@ -30,16 +30,10 @@ public class DriverVehicleController {
     @ResponseStatus(HttpStatus.CREATED)
     public AddVehicleResponse addVehicle(
             @AuthenticationPrincipal Jwt jwt,
-
-            // Bắt buộc: Giấy tờ xe & Biển số
             @RequestPart("registrationFront") MultipartFile registrationFront,
             @RequestPart("plate") MultipartFile plate,
-
-            // Tuỳ chọn: Bằng lái xe (chỉ bắt buộc khi thêm CAR lần đầu)
             @RequestPart(value = "driverLicenseFront", required = false) MultipartFile driverLicenseFront,
             @RequestPart(value = "driverLicenseBack", required = false) MultipartFile driverLicenseBack,
-
-            // Loại xe: MOTORBIKE hoặc CAR
             @RequestParam("vehicleType") VehicleType vehicleType) {
         UUID userId = UUID.fromString(jwt.getSubject());
         String username = jwt.getClaim("username");

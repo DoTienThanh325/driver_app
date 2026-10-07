@@ -1,5 +1,7 @@
-package com.driverapp.bookingservice.client;
+package com.driverapp.driverservice.client;
 
+import com.driverapp.driverservice.dto.response.UserInfoResponse;
+import com.driverapp.driverservice.exception.UserServiceException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.client.loadbalancer.LoadBalancerInterceptor;
@@ -26,9 +28,8 @@ public class UserServiceClient {
     }
 
     /**
-     * Tổng quát: cấp bất kỳ role nào cho user.
-     * @param userId   UUID của user
-     * @param roleCode tên role cần cấp (ví dụ: "BUSINESS", "DRIVER")
+     * Grant role to user via User Service (endpoint /api/users/{userId}/roles).
+     * Throws exception on failure to trigger transaction rollback.
      */
     public void grantRole(UUID userId, String roleCode) {
         try {
@@ -38,26 +39,25 @@ public class UserServiceClient {
                     .body(Map.of("roleCode", roleCode))
                     .retrieve()
                     .toBodilessEntity();
-            log.info("Cấp role {} thành công cho userId={}", roleCode, userId);
+            log.info("Successfully granted role {} to userId={}", roleCode, userId);
         } catch (Exception e) {
-            log.warn("Không thể cấp role {} cho userId={}: {}", roleCode, userId, e.getMessage());
+            log.error("Failed to grant role {} to userId={}: {}", roleCode, userId, e.getMessage());
+            throw new UserServiceException("Failed to grant role " + roleCode + " to user " + userId, e);
         }
     }
 
     /**
-     * Thu hồi role của user.
-     * @param userId   UUID của user
-     * @param roleCode tên role cần thu hồi (ví dụ: "BUSINESS")
+     * Get user info (username, phoneNumber) from User Service.
      */
-    public void revokeRole(UUID userId, String roleCode) {
+    public UserInfoResponse getUserInfo(UUID userId) {
         try {
-            restClient.delete()
-                    .uri("/api/users/{userId}/roles/{roleCode}", userId, roleCode)
+            return restClient.get()
+                    .uri("/api/users/{userId}", userId)
                     .retrieve()
-                    .toBodilessEntity();
-            log.info("Thu hồi role {} thành công cho userId={}", roleCode, userId);
+                    .body(UserInfoResponse.class);
         } catch (Exception e) {
-            log.warn("Không thể thu hồi role {} cho userId={}: {}", roleCode, userId, e.getMessage());
+            log.warn("Cannot fetch user info for userId={}: {}", userId, e.getMessage());
+            return new UserInfoResponse(userId, "N/A", "N/A");
         }
     }
 }
