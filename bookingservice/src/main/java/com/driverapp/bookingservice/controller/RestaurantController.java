@@ -1,7 +1,6 @@
 package com.driverapp.bookingservice.controller;
 
 import com.driverapp.bookingservice.dto.request.RestaurantRequest;
-import com.driverapp.bookingservice.models.Restaurant;
 import com.driverapp.bookingservice.service.RestaurantService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -22,7 +21,8 @@ public class RestaurantController {
 
     /**
      * PUT /api/bookings/restaurants/{restaurantId}
-     * Update 4 restaurant fields (name, locationAddress, locationLatitude, locationLongitude).
+     * Update 4 restaurant fields (name, locationAddress, locationLatitude,
+     * locationLongitude).
      */
     @PatchMapping("/{restaurantId}")
     public Map<String, String> updateRestaurant(

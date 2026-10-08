@@ -15,6 +15,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import org.springframework.web.server.ResponseStatusException;
+
 import java.util.*;
 
 @RestController
@@ -77,5 +79,22 @@ public class BusinessRegistrationController {
             @PathVariable String id,
             @Valid @RequestBody ReviewBusinessRequest request) {
         return businessService.updateStatus(id, request);
+    }
+
+    /**
+     * GET /api/businesses/internal/restaurant?userId={userId}
+     * Internal API cho paymentservice lấy restaurantId của tài khoản Business.
+     */
+    @GetMapping("/internal/restaurant")
+    public Map<String, String> getRestaurantIdByUserId(@RequestParam UUID userId) {
+        Business business = businessService.getMyBusiness(userId);
+        if (business.getRestaurantId() == null || business.getRestaurantId().isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND, "Hồ sơ kinh doanh chưa được liên kết với nhà hàng");
+        }
+        return Map.of(
+                "restaurantId", business.getRestaurantId(),
+                "userId", userId.toString()
+        );
     }
 }

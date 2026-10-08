@@ -2,6 +2,7 @@ package com.driverapp.bookingservice.service.impl;
 
 import com.driverapp.bookingservice.client.DriverServiceClient;
 import com.driverapp.bookingservice.client.NotificationClient;
+import com.driverapp.bookingservice.dto.request.CancelTripRequest;
 import com.driverapp.bookingservice.dto.request.CreateNotificationRequest;
 import com.driverapp.bookingservice.dto.request.CreateTripRequest;
 import com.driverapp.bookingservice.dto.request.FoodOrderItemRequest;
@@ -264,5 +265,69 @@ public class TripServiceImpl implements TripService {
                                         HttpStatus.BAD_REQUEST,
                                         "Không thể chuyển trạng thái chuyến đi từ " + current + " sang " + target);
                 }
+        }
+
+        @Override
+        public void cancelTripByCustomer(String tripId, UUID customerId, CancelTripRequest request) {
+                if (request.status() != TripStatus.CANCELLED) {
+                        throw new ResponseStatusException(
+                                        HttpStatus.BAD_REQUEST,
+                                        "Trạng thái yêu cầu phải là CANCELLED");
+                }
+
+                Trip trip = tripRepository.findById(tripId)
+                                .orElseThrow(() -> new ResponseStatusException(
+                                                HttpStatus.NOT_FOUND,
+                                                "Không tìm thấy chuyến đi với mã: " + tripId));
+
+                if (trip.getCustomerId() == null || !trip.getCustomerId().equals(customerId)) {
+                        throw new ResponseStatusException(
+                                        HttpStatus.FORBIDDEN,
+                                        "Bạn không có quyền hủy chuyến đi này");
+                }
+
+                if (trip.getStatus() == TripStatus.CANCELLED) {
+                        throw new ResponseStatusException(
+                                        HttpStatus.CONFLICT,
+                                        "Chuyến đi này đã bị hủy trước đó");
+                }
+
+                if (trip.getDriverId() != null || trip.getStatus() != TripStatus.SEARCHING_DRIVER) {
+                        throw new ResponseStatusException(
+                                        HttpStatus.CONFLICT,
+                                        "Không thể hủy chuyến đi vì đã có tài xế nhận chuyến hoặc chuyến đi đã bắt đầu");
+                }
+
+                Query query = new Query(Criteria.where("id").is(tripId)
+                                .and("customerId").is(customerId)
+                                .and("status").is(TripStatus.SEARCHING_DRIVER.name())
+                                .and("driverId").is(null));
+
+                Update update = new Update()
+                                .set("status", TripStatus.CANCELLED.name())
+                                .set("cancelReason", request.cancelReason())
+                                .set("updatedAt", LocalDateTime.now());
+
+                Trip cancelledTrip = mongoTemplate.findAndModify(
+                                query,
+                                update,
+                                org.springframework.data.mongodb.core.FindAndModifyOptions.options().returnNew(true),
+                                Trip.class);
+
+                if (cancelledTrip == null) {
+                        throw new ResponseStatusException(
+                                        HttpStatus.CONFLICT,
+                                        "Không thể hủy chuyến đi do tài xế vừa nhận chuyến hoặc trạng thái chuyến đã thay đổi");
+                }
+
+                notificationClient.createNotification(new CreateNotificationRequest(
+                                "Chuyến đi đã được hủy",
+                                "Bạn đã hủy chuyến đi thành công. Lý do: " + request.cancelReason(),
+                                customerId));
+        }
+
+        @Override
+        public long countCompletedTrips(UUID customerId) {
+                return tripRepository.countByCustomerIdAndStatus(customerId, TripStatus.COMPLETED);
         }
 }

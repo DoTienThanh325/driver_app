@@ -9,6 +9,8 @@ import lombok.Setter;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import com.driverapp.paymentservice.models.submodels.UserVoucherItem;
+
 @Getter
 @Setter
 @NoArgsConstructor
@@ -16,7 +18,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 public class UserVoucher {
 
     @Id
-    private UUID id;
+    private String id;
 
     private UUID userId;
     private List<UserVoucherItem> vouchers;

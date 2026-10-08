@@ -1,9 +1,10 @@
 package com.driverapp.paymentservice.models;
 
 import com.driverapp.paymentservice.models.enums.PaymentMethod;
+import com.driverapp.paymentservice.models.submodels.TripPaymentVoucher;
+
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.UUID;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -16,9 +17,9 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @Document(collection = "trip_payments")
 public class TripPayment {
     @Id
-    private UUID id;
+    private String id;
 
-    private UUID tripId;
+    private String tripId;
     private PaymentMethod method;
     private List<TripPaymentVoucher> vouchers;
 

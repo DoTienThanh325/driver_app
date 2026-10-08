@@ -1,6 +1,5 @@
-package com.driverapp.paymentservice.models;
+package com.driverapp.paymentservice.models.submodels;
 
-import java.util.UUID;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -9,6 +8,6 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 public class UserVoucherItem {
-    private UUID voucherId;
+    private String voucherId;
     private int numberOfVouchers;
 }

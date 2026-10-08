@@ -1,9 +1,11 @@
 package com.driverapp.bookingservice.controller;
 
+import com.driverapp.bookingservice.dto.request.CancelTripRequest;
 import com.driverapp.bookingservice.dto.request.CreateTripRequest;
 import com.driverapp.bookingservice.dto.request.UpdateTripStatusRequest;
 import com.driverapp.bookingservice.dto.response.AcceptTripResponse;
 import com.driverapp.bookingservice.dto.response.CreateTripResponse;
+import com.driverapp.bookingservice.dto.response.CustomerTripCountDto;
 import com.driverapp.bookingservice.service.TripService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -59,5 +61,31 @@ public class TripController {
         UUID driverUserId = UUID.fromString(jwt.getSubject());
         tripService.updateTripStatus(driverUserId, request);
         return Map.of("message", "Cập nhật trạng thái chuyến đi thành công");
+    }
+
+    /**
+     * PATCH /api/trips/{tripId}/cancel
+     * Customer hủy chuyến đi khi chưa có tài xế nhận chuyến.
+     * Body gồm: status (bắt buộc CANCELLED) và cancelReason.
+     */
+    @PatchMapping("/{tripId}/cancel")
+    @ResponseStatus(HttpStatus.OK)
+    public Map<String, String> cancelTrip(
+            @PathVariable String tripId,
+            @Valid @RequestBody CancelTripRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        UUID customerId = UUID.fromString(jwt.getSubject());
+        tripService.cancelTripByCustomer(tripId, customerId, request);
+        return Map.of("message", "Hủy chuyến đi thành công");
+    }
+
+    /**
+     * GET /api/trips/internal/customer-trips-count?customerId={customerId}
+     * Internal API cho paymentservice đếm số chuyến hoàn thành của Customer
+     */
+    @GetMapping("/internal/customer-trips-count")
+    public CustomerTripCountDto getCustomerCompletedTripsCount(@RequestParam UUID customerId) {
+        long count = tripService.countCompletedTrips(customerId);
+        return new CustomerTripCountDto(customerId, count);
     }
 }

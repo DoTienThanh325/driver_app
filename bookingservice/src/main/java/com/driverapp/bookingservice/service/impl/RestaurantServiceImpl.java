@@ -54,24 +54,24 @@ public class RestaurantServiceImpl implements RestaurantService {
                         HttpStatus.NOT_FOUND, "Restaurant not found with id: " + restaurantId));
 
         // Only update the 4 required fields
-        if(request.name() != null && !request.name().isEmpty()) {
+        if (request.name() != null && !request.name().isEmpty()) {
             restaurant.setName(request.name());
         }
 
-        if(request.locationAddress() != null && !request.locationAddress().isEmpty()) {
+        if (request.locationAddress() != null && !request.locationAddress().isEmpty()) {
             restaurant.setLocationAddress(request.locationAddress());
         }
 
-        if(request.locationLatitude() != null) {
+        if (request.locationLatitude() != null) {
             restaurant.setLocationLatitude(request.locationLatitude());
         }
 
-        if(request.locationLongitude() != null) {
+        if (request.locationLongitude() != null) {
             restaurant.setLocationLongitude(request.locationLongitude());
         }
         restaurant.setUpdatedAt(LocalDateTime.now());
 
-        Restaurant updated = restaurantRepository.save(restaurant);
+        restaurantRepository.save(restaurant);
         log.info("Updated restaurant: id={}, userId={}", restaurantId, userId);
     }
 

@@ -11,10 +11,12 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 @Getter
+@Setter
 @Builder 
 @AllArgsConstructor 
 @NoArgsConstructor
@@ -43,6 +45,7 @@ public class Trip {
 
     private double shippFare;
     private TripStatus status;
+    private String cancelReason;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
