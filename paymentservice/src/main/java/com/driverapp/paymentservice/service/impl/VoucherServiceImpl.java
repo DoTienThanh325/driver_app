@@ -1,11 +1,15 @@
 package com.driverapp.paymentservice.service.impl;
 
 import com.driverapp.paymentservice.client.BookingServiceClient;
+import com.driverapp.paymentservice.dto.request.ClaimVoucherRequest;
 import com.driverapp.paymentservice.dto.request.CreateVoucherRequest;
 import com.driverapp.paymentservice.dto.response.VoucherItemResponse;
+import com.driverapp.paymentservice.models.UserVoucher;
 import com.driverapp.paymentservice.models.Voucher;
 import com.driverapp.paymentservice.models.enums.VoucherProviderType;
 import com.driverapp.paymentservice.models.enums.VoucherType;
+import com.driverapp.paymentservice.models.submodels.UserVoucherItem;
+import com.driverapp.paymentservice.repository.UserVoucherRepository;
 import com.driverapp.paymentservice.repository.VoucherRepository;
 import com.driverapp.paymentservice.service.VoucherService;
 import java.time.LocalDateTime;
@@ -14,12 +18,14 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @Slf4j
@@ -28,6 +34,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class VoucherServiceImpl implements VoucherService {
 
     private final VoucherRepository voucherRepository;
+    private final UserVoucherRepository userVoucherRepository;
     private final BookingServiceClient bookingServiceClient;
 
     @Override
@@ -57,7 +64,8 @@ public class VoucherServiceImpl implements VoucherService {
                         "Đối tác kinh doanh bắt buộc phải nhập numberOfVouchersPerCus > 0");
             }
 
-            // Gọi bookingservice để lấy restaurantId theo userId của Business (Internal call, không cần JWT)
+            // Gọi bookingservice để lấy restaurantId theo userId của Business (Internal
+            // call, không cần JWT)
             resolvedRestaurantId = bookingServiceClient.getRestaurantIdByUserId(userId);
             resolvedNumberOfVouchersPerCus = request.getNumberOfVouchersPerCus();
         } else {
@@ -87,7 +95,8 @@ public class VoucherServiceImpl implements VoucherService {
         return Map.of("message", "Tạo voucher thành công");
     }
 
-    // ───────────────────────────── 1. VOUCHER CỦA APP (CHỈ TRẢ VỀ CÁC VOUCHER HỢP LỆ)
+    // ───────────────────────────── 1. VOUCHER CỦA APP (CHỈ TRẢ VỀ CÁC VOUCHER HỢP
+    // LỆ)
     @Override
     public List<VoucherItemResponse> getAppVouchersForCustomer(VoucherType type, Jwt jwt) {
         UUID customerId = UUID.fromString(jwt.getSubject());
@@ -148,7 +157,67 @@ public class VoucherServiceImpl implements VoucherService {
                 .toList();
     }
 
+    // ───────────────────────────── 3. KHÁCH HÀNG CLAIM VOUCHER VÀ LƯU VÀO
+    // USER_VOUCHERS
+    @Override
+    @Transactional
+    public Map<String, String> claimVoucher(ClaimVoucherRequest request, Jwt jwt) {
+        UUID userId = UUID.fromString(jwt.getSubject());
+        String voucherId = request.getVoucherId();
+        int quantityToClaim = request.getNumberOfVouchers();
+
+        // 1. Kiểm tra Voucher tồn tại & còn hạn
+        Voucher voucher = voucherRepository.findById(voucherId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Voucher không tồn tại"));
+
+        if (voucher.getExpiredAt() != null && voucher.getExpiredAt().isBefore(LocalDateTime.now())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Voucher đã hết hạn sử dụng");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+
+        // 2. Tìm hoặc khởi tạo UserVoucher theo userId
+        UserVoucher userVoucher = userVoucherRepository.findByUserId(userId)
+                .orElseGet(() -> {
+                    UserVoucher newRecord = new UserVoucher();
+                    newRecord.setUserId(userId);
+                    newRecord.setVouchers(new ArrayList<>());
+                    newRecord.setCreatedAt(now);
+                    return newRecord;
+                });
+
+        // 3. Cập nhật danh sách vouchers (cộng dồn nếu đã có, hoặc thêm voucher mới)
+        List<UserVoucherItem> items = userVoucher.getVouchers();
+        if (items == null) {
+            items = new ArrayList<>();
+            userVoucher.setVouchers(items);
+        }
+
+        Optional<UserVoucherItem> existingItem = items.stream()
+                .filter(item -> voucherId.equals(item.getVoucherId()))
+                .findFirst();
+
+        if (existingItem.isPresent()) {
+            existingItem.get().setNumberOfVouchers(existingItem.get().getNumberOfVouchers() + quantityToClaim);
+        } else {
+            UserVoucherItem newItem = new UserVoucherItem();
+            newItem.setVoucherId(voucherId);
+            newItem.setNumberOfVouchers(quantityToClaim);
+            items.add(newItem);
+        }
+
+        userVoucher.setUpdatedAt(now);
+
+        // 4. Lưu vào database
+        userVoucherRepository.save(userVoucher);
+        log.info("Claimed voucher successfully: userId={}, voucherId={}, count={}", userId, voucherId, quantityToClaim);
+
+        // 5. Trả về thông báo thành công
+        return Map.of("message", "Lưu voucher cho người dùng thành công");
+    }
+
     private VoucherItemResponse toResponse(Voucher v, int claimableCount) {
+
         return VoucherItemResponse.builder()
                 .id(v.getId())
                 .discount(v.getDiscount())

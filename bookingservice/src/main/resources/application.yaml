@@ -43,3 +43,5 @@ services:
     base-url: ${DRIVER_SERVICE_URL:http://driverservice}
   user:
     base-url: ${USER_SERVICE_URL:http://userservice}
+  payment:
+    base-url: ${PAYMENT_SERVICE_URL:http://paymentservice}

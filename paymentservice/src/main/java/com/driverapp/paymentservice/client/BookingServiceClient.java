@@ -82,4 +82,35 @@ public class BookingServiceClient {
             return 0L;
         }
     }
+
+    /**
+     * Lấy giá và thông tin chuyến đi từ bookingservice qua tripId (Internal call)
+     */
+    public com.driverapp.paymentservice.dto.internal.TripPriceDto getTripPrice(String tripId) {
+        try {
+            com.driverapp.paymentservice.dto.internal.TripPriceDto dto = restClient.get()
+                    .uri("/api/trips/internal/{tripId}", tripId)
+                    .retrieve()
+                    .onStatus(HttpStatusCode::is4xxClientError, (req, resp) -> {
+                        log.warn("Không tìm thấy chuyến đi tripId={}: status={}", tripId, resp.getStatusCode());
+                        throw new ResponseStatusException(
+                                resp.getStatusCode(),
+                                "Chuyến đi không tồn tại");
+                    })
+                    .body(com.driverapp.paymentservice.dto.internal.TripPriceDto.class);
+
+            if (dto == null) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Chuyến đi không tồn tại");
+            }
+            return dto;
+        } catch (ResponseStatusException rse) {
+            throw rse;
+        } catch (Exception e) {
+            log.error("Lỗi khi kết nối bookingservice để lấy thông tin chuyến đi: {}", e.getMessage());
+            throw new ResponseStatusException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "Không thể kết nối đến bookingservice");
+        }
+    }
 }
+

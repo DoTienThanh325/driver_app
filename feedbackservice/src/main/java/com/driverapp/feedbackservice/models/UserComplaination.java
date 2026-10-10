@@ -27,6 +27,9 @@ public class UserComplaination {
     @Column(name = "driver_id", nullable = false)
     private UUID driverId;
 
+    @Column(name = "trip_id", nullable = false)
+    private String tripId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "report_type", nullable = false, length = 255)
     private ReportType reportType;

@@ -1,5 +1,6 @@
 package com.driverapp.paymentservice.service;
 
+import com.driverapp.paymentservice.dto.request.ClaimVoucherRequest;
 import com.driverapp.paymentservice.dto.request.CreateVoucherRequest;
 import com.driverapp.paymentservice.dto.response.VoucherItemResponse;
 import com.driverapp.paymentservice.models.enums.VoucherType;
@@ -15,4 +16,8 @@ public interface VoucherService {
 
     /** 2. Khách hàng xem danh sách voucher của Nhà hàng (số lượng do nhà hàng cung cấp) */
     List<VoucherItemResponse> getRestaurantVouchers(String restaurantId);
+
+    /** 3. Khách hàng nhận và lưu voucher vào user_vouchers */
+    Map<String, String> claimVoucher(ClaimVoucherRequest request, Jwt jwt);
 }
+

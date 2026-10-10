@@ -42,7 +42,9 @@ public class TripServiceImpl implements TripService {
         private final FoodRepository foodRepository;
         private final NotificationClient notificationClient;
         private final DriverServiceClient driverServiceClient;
+        private final com.driverapp.bookingservice.client.PaymentServiceClient paymentServiceClient;
         private final MongoTemplate mongoTemplate;
+
 
         @Override
         public CreateTripResponse createTrip(UUID customerId, CreateTripRequest request) {
@@ -231,7 +233,10 @@ public class TripServiceImpl implements TripService {
 
                 if (newStatus == TripStatus.COMPLETED) {
                         driverServiceClient.updateDriverAvailability(currentDriverId, "AVAILABLE");
+                        // Tự động thông báo paymentservice cập nhật trạng thái thanh toán tiền mặt (PAY_AFTER) sang COMPLETED
+                        paymentServiceClient.completeTripPayment(request.tripId());
                 }
+
 
                 String notifMessage = switch (newStatus) {
                         case DRIVER_ARRIVING -> "Tài xế đang đến điểm đón của bạn.";
@@ -330,4 +335,19 @@ public class TripServiceImpl implements TripService {
         public long countCompletedTrips(UUID customerId) {
                 return tripRepository.countByCustomerIdAndStatus(customerId, TripStatus.COMPLETED);
         }
-}
+
+        @Override
+        public com.driverapp.bookingservice.dto.response.TripPriceDto getTripPrice(String tripId) {
+                Trip trip = tripRepository.findById(tripId)
+                                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Chuyến đi không tồn tại"));
+
+                return new com.driverapp.bookingservice.dto.response.TripPriceDto(
+                                trip.getId(),
+                                trip.getCustomerId(),
+                                trip.getDriverId(),
+                                trip.getShippFare(),
+                                trip.getTotalFoodPrice(),
+                                trip.getStatus() != null ? trip.getStatus().name() : null
+                );
+        }
+}

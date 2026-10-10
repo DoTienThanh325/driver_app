@@ -14,4 +14,5 @@ public interface TripService {
     void updateTripStatus(UUID driverUserId, UpdateTripStatusRequest request);
     void cancelTripByCustomer(String tripId, UUID customerId, CancelTripRequest request);
     long countCompletedTrips(UUID customerId);
-}
+    com.driverapp.bookingservice.dto.response.TripPriceDto getTripPrice(String tripId);
+}

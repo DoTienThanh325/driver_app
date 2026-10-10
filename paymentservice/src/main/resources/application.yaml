@@ -27,4 +27,6 @@ eureka:
 services:
   booking:
     base-url: ${BOOKING_SERVICE_URL:http://bookingservice}
+  driver:
+    base-url: ${DRIVER_SERVICE_URL:http://driverservice}
 

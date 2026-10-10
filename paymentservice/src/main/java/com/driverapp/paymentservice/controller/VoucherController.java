@@ -1,5 +1,6 @@
 package com.driverapp.paymentservice.controller;
 
+import com.driverapp.paymentservice.dto.request.ClaimVoucherRequest;
 import com.driverapp.paymentservice.dto.request.CreateVoucherRequest;
 import com.driverapp.paymentservice.dto.response.VoucherItemResponse;
 import com.driverapp.paymentservice.models.enums.VoucherType;
@@ -35,11 +36,24 @@ public class VoucherController {
      */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS')")
     public Map<String, String> createVoucher(
             @Valid @RequestBody CreateVoucherRequest request,
             @AuthenticationPrincipal Jwt jwt) {
         return voucherService.createVoucher(request, jwt);
+    }
+
+    /**
+     * POST /api/vouchers/claim
+     * Customer nhận voucher và lưu vào user_vouchers
+     * Role CUSTOMER được xác thực và chặn ở API Gateway, không dùng @PreAuthorize ở
+     * controller
+     */
+    @PostMapping("/claim")
+    @ResponseStatus(HttpStatus.OK)
+    public Map<String, String> claimVoucher(
+            @Valid @RequestBody ClaimVoucherRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        return voucherService.claimVoucher(request, jwt);
     }
 
     /**

@@ -55,12 +55,23 @@ public class SecurityConfig {
                                                 .pathMatchers("/api/drivers/candidates").hasRole("ADMIN")
                                                 .pathMatchers(HttpMethod.GET, "/api/drivers/{driverId}")
                                                 .hasAnyRole("ADMIN", "DRIVER", "CUSTOMER")
+                                                .pathMatchers(HttpMethod.POST, "/api/vouchers/claim")
+                                                .hasRole("CUSTOMER")
                                                 .pathMatchers(HttpMethod.POST, "/api/vouchers", "/api/vouchers/**")
                                                 .hasAnyRole("ADMIN", "BUSINESS")
                                                 .pathMatchers(HttpMethod.GET, "/api/vouchers/app").hasRole("CUSTOMER")
                                                 .pathMatchers(HttpMethod.GET, "/api/vouchers/restaurants/*")
                                                 .hasAnyRole("CUSTOMER", "BUSINESS")
+                                                .pathMatchers(HttpMethod.POST, "/api/payments/trip").hasRole("CUSTOMER")
+                                                .pathMatchers(HttpMethod.PATCH, "/api/payments/trip/*/confirm").hasRole("DRIVER")
+                                                .pathMatchers(HttpMethod.POST, "/api/payments/driver-payment-info").hasRole("DRIVER")
+                                                .pathMatchers(HttpMethod.PUT, "/api/payments/driver-payment-info").hasRole("DRIVER")
+                                                .pathMatchers(HttpMethod.POST, "/api/feedbacks", "/api/feedbacks/**").hasRole("CUSTOMER")
+                                                .pathMatchers(HttpMethod.POST, "/api/complaints", "/api/complaints/**").hasAnyRole("CUSTOMER", "DRIVER")
                                                 .anyExchange().authenticated())
+
+
+
                                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(
                                                 new ReactiveJwtAuthenticationConverterAdapter(jwtConverter))))
                                 .build();

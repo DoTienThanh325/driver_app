@@ -88,4 +88,13 @@ public class TripController {
         long count = tripService.countCompletedTrips(customerId);
         return new CustomerTripCountDto(customerId, count);
     }
-}
+
+    /**
+     * GET /api/trips/internal/{tripId}
+     * Internal API cho paymentservice lấy giá chuyến đi
+     */
+    @GetMapping("/internal/{tripId}")
+    public com.driverapp.bookingservice.dto.response.TripPriceDto getTripPrice(@PathVariable String tripId) {
+        return tripService.getTripPrice(tripId);
+    }
+}

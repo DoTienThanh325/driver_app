@@ -3,7 +3,6 @@ package com.driverapp.paymentservice.dto.response;
 import com.driverapp.paymentservice.models.enums.VoucherProviderType;
 import com.driverapp.paymentservice.models.enums.VoucherType;
 import java.time.LocalDateTime;
-import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

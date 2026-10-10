@@ -25,7 +25,11 @@ public class UserFeedback {
     @Column(name = "driver_id", nullable = false)
     private UUID driverId;
 
+    @Column(name = "trip_id", nullable = false)
+    private String tripId;
+
     @Column(name = "rating", nullable = false)
+
     private Double rating;
 
     @Column(name = "comment", columnDefinition = "TEXT")
