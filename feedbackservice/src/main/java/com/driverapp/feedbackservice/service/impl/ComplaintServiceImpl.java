@@ -1,6 +1,5 @@
 package com.driverapp.feedbackservice.service.impl;
 
-import com.driverapp.feedbackservice.client.DriverServiceClient;
 import com.driverapp.feedbackservice.dto.request.CreateComplaintRequest;
 import com.driverapp.feedbackservice.models.UserComplaination;
 import com.driverapp.feedbackservice.models.enums.ComplainationStatus;
@@ -24,7 +23,6 @@ import java.util.UUID;
 public class ComplaintServiceImpl implements ComplaintService {
 
     private final UserComplainationRepository userComplainationRepository;
-    private final DriverServiceClient driverServiceClient;
 
     @Override
     @Transactional
@@ -39,7 +37,7 @@ public class ComplaintServiceImpl implements ComplaintService {
         boolean isCustomer = roles.contains("CUSTOMER");
 
         UUID finalUserId;
-        UUID finalDriverId;
+        UUID finalDriverUserId;
 
         if (isDriver) {
             // Khi tài xế báo cáo:
@@ -49,17 +47,17 @@ public class ComplaintServiceImpl implements ComplaintService {
                         "Mã khách hàng (customerId) là bắt buộc khi tài xế báo cáo");
             }
             finalUserId = request.getCustomerId();
-            // Tra cứu driverId thực tế qua driverservice
-            finalDriverId = driverServiceClient.getDriverIdByUserId(callerUserId);
+            // callerUserId chính là userId của tài xế
+            finalDriverUserId = callerUserId;
         } else if (isCustomer) {
             // Khi khách hàng báo cáo:
-            if (request.getDriverId() == null) {
+            if (request.getDriverUserId() == null) {
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST,
-                        "Mã tài xế (driverId) là bắt buộc khi khách hàng báo cáo");
+                        "Mã tài xế (driverUserId) là bắt buộc khi khách hàng báo cáo");
             }
             finalUserId = callerUserId;
-            finalDriverId = request.getDriverId();
+            finalDriverUserId = request.getDriverUserId();
         } else {
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN,
@@ -68,7 +66,7 @@ public class ComplaintServiceImpl implements ComplaintService {
 
         UserComplaination complaint = UserComplaination.builder()
                 .userId(finalUserId)
-                .driverId(finalDriverId)
+                .driverUserId(finalDriverUserId)
                 .tripId(request.getTripId())
                 .reportType(request.getReportType())
                 .status(ComplainationStatus.PENDING)

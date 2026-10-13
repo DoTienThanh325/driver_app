@@ -49,7 +49,7 @@ public class DriverCandidateServiceImpl implements DriverCandidateService {
         return pendingDrivers.stream().map(driver -> {
             UserInfoResponse userInfo = userServiceClient.getUserInfo(driver.getUserId());
             return new DriverCandidateResponse(
-                    driver.getId(),
+                    driver.getUserId(),
                     userInfo.username(),
                     userInfo.phoneNumber(),
                     driver.getVerificationStatus(),
@@ -104,7 +104,7 @@ public class DriverCandidateServiceImpl implements DriverCandidateService {
                 .orElse(null);
 
         return new DriverDetailResponse(
-                driver.getId(),
+                driver.getUserId(),
                 userInfo.username(),
                 userInfo.phoneNumber(),
                 driver.getVerificationStatus(),

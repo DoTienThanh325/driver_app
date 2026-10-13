@@ -23,7 +23,7 @@ public class DriverPaymentInfo {
     private String id;
 
     @Indexed(unique = true)
-    private UUID driverId;
+    private UUID userId;
 
     private String bankName;
     private String bankBin;

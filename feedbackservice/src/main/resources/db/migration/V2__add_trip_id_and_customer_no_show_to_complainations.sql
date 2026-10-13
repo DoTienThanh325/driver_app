@@ -1,4 +1,4 @@
--- V2: Thêm cột trip_id và bổ sung CUSTOMER_NO_SHOW vào report_type check constraint trong bảng user_complainations
+-- V2: Thêm cột trip_id vào bảng user_complainations và thêm indexes
 
 ALTER TABLE user_complainations
     ADD COLUMN trip_id VARCHAR(255) NOT NULL DEFAULT '';
@@ -7,19 +7,5 @@ ALTER TABLE user_complainations
 ALTER TABLE user_complainations
     ALTER COLUMN trip_id DROP DEFAULT;
 
--- Cập nhật CHECK constraint cho cột report_type
-ALTER TABLE user_complainations
-    DROP CONSTRAINT IF EXISTS user_complainations_report_type_check;
-
-ALTER TABLE user_complainations
-    ADD CONSTRAINT user_complainations_report_type_check
-    CHECK (report_type IN (
-        'DRIVER_LATE',
-        'RECKLESS_DRIVING',
-        'WRONG_ROUTE',
-        'UNPROFESSIONAL_BEHAVIOR',
-        'VEHICLE_MISMATCH',
-        'OVERCHARGING',
-        'DRIVER_NO_SHOW',
-        'CUSTOMER_NO_SHOW'
-    ));
+CREATE INDEX idx_user_complainations_driver_user_id ON user_complainations (driver_user_id);
+CREATE INDEX idx_user_complainations_trip_id ON user_complainations (trip_id);

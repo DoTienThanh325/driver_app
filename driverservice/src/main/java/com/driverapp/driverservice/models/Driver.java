@@ -28,11 +28,8 @@ import com.driverapp.driverservice.models.enums.VerificationStatus;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class Driver {
     @Id
-    @Builder.Default
-    private UUID id = UUID.randomUUID();
-
-    @Column(name = "user_id", nullable = false, unique = true)
-    private UUID userId;
+    @Column(name = "user_id")
+    private UUID userId; // Khóa chính là userId từ JWT
 
     @Enumerated(EnumType.STRING)
     @Column(name = "verification_status", nullable = false, length = 20)

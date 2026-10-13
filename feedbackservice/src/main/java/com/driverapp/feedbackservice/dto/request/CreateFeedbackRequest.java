@@ -17,8 +17,8 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class CreateFeedbackRequest {
 
-    @NotNull(message = "driverId không được để trống")
-    private UUID driverId;
+    @NotNull(message = "driverUserId không được để trống")
+    private UUID driverUserId;
 
     @NotBlank(message = "tripId không được để trống")
     private String tripId;

@@ -143,17 +143,15 @@ public class TripServiceImpl implements TripService {
         @Override
         public AcceptTripResponse acceptTrip(String tripId, UUID driverUserId) {
 
-                // ── BƯỚC 1: Lấy đúng driverId từ driver-service qua driverUserId ──
-                // Hàm này đồng thời kiểm tra driver có tồn tại, APPROVED và đang AVAILABLE
-                // không
-                UUID actualDriverId = driverServiceClient.getAvailableDriverId(driverUserId);
+                // ── BƯỚC 1: Kiểm tra driver có tồn tại, APPROVED và đang AVAILABLE không ──
+                driverServiceClient.checkDriverAvailable(driverUserId);
 
                 // ── BƯỚC 2: Cập nhật có điều kiện (Atomic update bằng Mongo findAndModify) ──
                 Query query = new Query(Criteria.where("id").is(tripId)
                                 .and("status").is(TripStatus.SEARCHING_DRIVER.name()));
 
                 Update update = new Update()
-                                .set("driverId", actualDriverId) // ✅ ĐÃ GÁN ĐÚNG ID BẢNG DRIVERS
+                                .set("driverUserId", driverUserId)
                                 .set("status", TripStatus.DRIVER_ASSIGNED.name())
                                 .set("updatedAt", LocalDateTime.now());
 
@@ -173,8 +171,8 @@ public class TripServiceImpl implements TripService {
                                         "Chuyến đi đã được tài xế khác nhận. Status hiện tại: " + existing.getStatus());
                 }
 
-                // ── BƯỚC 3: Chuyển availability của driverId sang ON_TRIP ──
-                driverServiceClient.updateDriverAvailability(actualDriverId, "ON_TRIP");
+                // ── BƯỚC 3: Chuyển availability của driverUserId sang ON_TRIP ──
+                driverServiceClient.updateDriverAvailability(driverUserId, "ON_TRIP");
 
                 // ── BƯỚC 4: Bắn thông báo cho Customer ──
                 notificationClient.createNotification(new CreateNotificationRequest(
@@ -190,14 +188,12 @@ public class TripServiceImpl implements TripService {
 
         @Override
         public void updateTripStatus(UUID driverUserId, UpdateTripStatusRequest request) {
-                UUID currentDriverId = driverServiceClient.getDriverIdByUserId(driverUserId);
-
                 Trip trip = tripRepository.findById(request.tripId())
                                 .orElseThrow(() -> new ResponseStatusException(
                                                 HttpStatus.NOT_FOUND,
                                                 "Không tìm thấy chuyến đi với mã: " + request.tripId()));
 
-                if (trip.getDriverId() == null || !trip.getDriverId().equals(currentDriverId)) {
+                if (trip.getDriverUserId() == null || !trip.getDriverUserId().equals(driverUserId)) {
                         throw new ResponseStatusException(
                                         HttpStatus.FORBIDDEN,
                                         "Bạn không phải tài xế đang thực hiện chuyến đi này");
@@ -232,7 +228,7 @@ public class TripServiceImpl implements TripService {
                 }
 
                 if (newStatus == TripStatus.COMPLETED) {
-                        driverServiceClient.updateDriverAvailability(currentDriverId, "AVAILABLE");
+                        driverServiceClient.updateDriverAvailability(driverUserId, "AVAILABLE");
                         // Tự động thông báo paymentservice cập nhật trạng thái thanh toán tiền mặt (PAY_AFTER) sang COMPLETED
                         paymentServiceClient.completeTripPayment(request.tripId());
                 }
@@ -297,7 +293,7 @@ public class TripServiceImpl implements TripService {
                                         "Chuyến đi này đã bị hủy trước đó");
                 }
 
-                if (trip.getDriverId() != null || trip.getStatus() != TripStatus.SEARCHING_DRIVER) {
+                if (trip.getDriverUserId() != null || trip.getStatus() != TripStatus.SEARCHING_DRIVER) {
                         throw new ResponseStatusException(
                                         HttpStatus.CONFLICT,
                                         "Không thể hủy chuyến đi vì đã có tài xế nhận chuyến hoặc chuyến đi đã bắt đầu");
@@ -306,7 +302,7 @@ public class TripServiceImpl implements TripService {
                 Query query = new Query(Criteria.where("id").is(tripId)
                                 .and("customerId").is(customerId)
                                 .and("status").is(TripStatus.SEARCHING_DRIVER.name())
-                                .and("driverId").is(null));
+                                .and("driverUserId").is(null));
 
                 Update update = new Update()
                                 .set("status", TripStatus.CANCELLED.name())
@@ -344,10 +340,10 @@ public class TripServiceImpl implements TripService {
                 return new com.driverapp.bookingservice.dto.response.TripPriceDto(
                                 trip.getId(),
                                 trip.getCustomerId(),
-                                trip.getDriverId(),
+                                trip.getDriverUserId(),
                                 trip.getShippFare(),
                                 trip.getTotalFoodPrice(),
                                 trip.getStatus() != null ? trip.getStatus().name() : null
                 );
         }
-}
+}

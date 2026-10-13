@@ -17,7 +17,7 @@ public class MatchingOffer {
     @Id
     private String id;
 
-    private UUID driverId;
+    private UUID driverUserId;
     private String tripId;
     private MatchingOfferStatus status;
 

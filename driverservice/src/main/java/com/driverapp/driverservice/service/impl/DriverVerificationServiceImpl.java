@@ -31,10 +31,10 @@ public class DriverVerificationServiceImpl implements DriverVerificationService 
 
     @Override
     @Transactional
-    public void updateVerification(UUID driverId, UpdateVerificationRequest request) {
-        Driver driver = driverRepository.findById(driverId)
+    public void updateVerification(UUID userId, UpdateVerificationRequest request) {
+        Driver driver = driverRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Driver not found with id: " + driverId));
+                        HttpStatus.NOT_FOUND, "Driver not found with userId: " + userId));
 
         if (driver.getVerificationStatus() == VerificationStatus.APPROVED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -55,7 +55,7 @@ public class DriverVerificationServiceImpl implements DriverVerificationService 
         driverRepository.save(driver);
 
         // Step 2: driver-service creates driver_availability with status OFFLINE
-        if (availabilityRepository.findByDriverId(driver.getId()).isEmpty()) {
+        if (availabilityRepository.findByDriver_UserId(driver.getUserId()).isEmpty()) {
             availabilityRepository.save(DriverAvailability.builder()
                     .driver(driver)
                     .status(AvailabilityStatus.OFFLINE)
@@ -65,7 +65,7 @@ public class DriverVerificationServiceImpl implements DriverVerificationService 
         // Step 3: driver-service calls user-service to assign DRIVER role
         userServiceClient.grantRole(driver.getUserId(), DRIVER_ROLE);
 
-        log.info("Driver approved successfully: driverId={}, userId={}", driver.getId(), driver.getUserId());
+        log.info("Driver approved successfully: userId={}", driver.getUserId());
     }
 
     private void reject(Driver driver, String reason) {
@@ -75,6 +75,6 @@ public class DriverVerificationServiceImpl implements DriverVerificationService 
         }
         driver.reject(reason.trim());
         driverRepository.save(driver);
-        log.info("Driver rejected successfully: driverId={}", driver.getId());
+        log.info("Driver rejected successfully: userId={}", driver.getUserId());
     }
 }

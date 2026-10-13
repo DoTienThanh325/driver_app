@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 public record DriverDetailResponse(
-        UUID driverId,
+        UUID userId,
         String username,
         String phoneNumber,
         VerificationStatus verificationStatus,

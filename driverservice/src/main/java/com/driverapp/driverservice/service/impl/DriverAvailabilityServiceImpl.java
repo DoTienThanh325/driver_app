@@ -39,8 +39,8 @@ public class DriverAvailabilityServiceImpl implements DriverAvailabilityService 
                     "Driver profile is not approved yet (status: " + driver.getVerificationStatus() + ")");
         }
 
-        // 2. Find driver availability by driverId
-        DriverAvailability availability = availabilityRepository.findByDriverId(driver.getId())
+        // 2. Find driver availability by userId
+        DriverAvailability availability = availabilityRepository.findByDriver_UserId(driver.getUserId())
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "Driver availability is not initialized"));
@@ -51,9 +51,8 @@ public class DriverAvailabilityServiceImpl implements DriverAvailabilityService 
                     "Driver is not currently in AVAILABLE status (status: " + availability.getStatus() + ")");
         }
 
-        // 3. Return driverId
+        // 3. Return userId
         return new DriverProfileResponse(
-                driver.getId(),
                 driver.getUserId(),
                 availability.getStatus().name());
     }
@@ -68,11 +67,11 @@ public class DriverAvailabilityServiceImpl implements DriverAvailabilityService 
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid status: " + request.status());
         }
 
-        // Update directly by driverId
-        DriverAvailability availability = availabilityRepository.findByDriverId(request.driverId())
+        // Update directly by userId
+        DriverAvailability availability = availabilityRepository.findByDriver_UserId(request.userId())
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
-                        "Availability not found for driverId: " + request.driverId()));
+                        "Availability not found for userId: " + request.userId()));
 
         availabilityRepository.save(availability.withStatus(newStatus));
     }

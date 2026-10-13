@@ -6,5 +6,5 @@ import java.util.UUID;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
 public interface DriverPaymentInfoRepository extends MongoRepository<DriverPaymentInfo, String> {
-    Optional<DriverPaymentInfo> findByDriverId(UUID driverId);
+    Optional<DriverPaymentInfo> findByUserId(UUID userId);
 }

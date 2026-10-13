@@ -26,7 +26,7 @@ public class FeedbackServiceImpl implements FeedbackService {
 
         UserFeedback feedback = UserFeedback.builder()
                 .userId(customerUserId)
-                .driverId(request.getDriverId())
+                .driverUserId(request.getDriverUserId())
                 .tripId(request.getTripId())
                 .rating(request.getRating())
                 .comment(request.getComment())
@@ -35,7 +35,7 @@ public class FeedbackServiceImpl implements FeedbackService {
         userFeedbackRepository.save(feedback);
 
         log.info("Khách hàng {} đã đánh giá tài xế {} cho chuyến đi {}: rating={}",
-                customerUserId, request.getDriverId(), request.getTripId(), request.getRating());
+                customerUserId, request.getDriverUserId(), request.getTripId(), request.getRating());
 
         return Map.of("message", "Đánh giá tài xế thành công");
     }
