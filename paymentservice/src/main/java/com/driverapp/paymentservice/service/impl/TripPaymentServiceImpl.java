@@ -1,7 +1,6 @@
 package com.driverapp.paymentservice.service.impl;
 
 import com.driverapp.paymentservice.client.BookingServiceClient;
-import com.driverapp.paymentservice.client.DriverServiceClient;
 import com.driverapp.paymentservice.dto.internal.TripPriceDto;
 import com.driverapp.paymentservice.dto.request.CreateDriverPaymentInfoRequest;
 import com.driverapp.paymentservice.dto.request.CreateTripPaymentRequest;
@@ -44,12 +43,10 @@ public class TripPaymentServiceImpl implements TripPaymentService {
     private final PaymentTransactionRepository paymentTransactionRepository;
     private final VoucherRepository voucherRepository;
     private final BookingServiceClient bookingServiceClient;
-    private final DriverServiceClient driverServiceClient;
 
     private static final int QR_EXPIRY_MINUTES = 15;
 
-    // ────────────────────────── 1. TẠO THANH TOÁN CHUYẾN ĐI
-    // ──────────────────────────
+    // ────────────────────────── 1. TẠO THANH TOÁN CHUYẾN ĐI ──────────────────────────
     @Override
     @Transactional
     public TripPaymentResponse createTripPayment(CreateTripPaymentRequest request, Jwt jwt) {
@@ -98,7 +95,7 @@ public class TripPaymentServiceImpl implements TripPaymentService {
         double finalAmount = Math.max(0, totalAmount - discountAmount);
         LocalDateTime now = LocalDateTime.now();
 
-        // 5. Khởi tạo TripPayment
+        // 5. Khởi tạo TripPayment (driverId từ booking chính là userId của driver)
         TripPayment tripPayment = TripPayment.builder()
                 .tripId(tripId)
                 .customerId(customerId)
@@ -137,7 +134,7 @@ public class TripPaymentServiceImpl implements TripPaymentService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chuyến đi chưa có tài xế nhận");
             }
 
-            // Lấy thông tin STK của Tài xế
+            // Lấy thông tin STK của Tài xế theo driverId (userId)
             DriverPaymentInfo driverInfo = driverPaymentInfoRepository.findByDriverId(driverId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
                             "Tài xế chưa cập nhật thông tin ngân hàng. Vui lòng chọn trả tiền mặt (PAY_AFTER)"));
@@ -210,22 +207,18 @@ public class TripPaymentServiceImpl implements TripPaymentService {
                 baseUrl, amount, encodedAddInfo, encodedAccountName);
     }
 
-    // ────────────────────────── 2. TÀI XẾ XÁC NHẬN ĐÃ NHẬN TIỀN
-    // ──────────────────────────
+    // ────────────────────────── 2. TÀI XẾ XÁC NHẬN ĐÃ NHẬN TIỀN ──────────────────────────
     @Override
     @Transactional
     public Map<String, String> confirmPayment(String tripPaymentId, Jwt jwt) {
         UUID driverUserId = UUID.fromString(jwt.getSubject());
 
-        // Lấy driverId thực tế từ driverservice thông qua driverUserId
-        UUID actualDriverId = driverServiceClient.getDriverIdByUserId(driverUserId);
-
         TripPayment tripPayment = tripPaymentRepository.findById(tripPaymentId)
                 .orElseThrow(
                         () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy thông tin thanh toán"));
 
-        // Kiểm tra đúng tài xế của chuyến (đối chiếu actualDriverId)
-        if (!actualDriverId.equals(tripPayment.getDriverId())) {
+        // Kiểm tra đúng tài xế của chuyến (driverId chính là userId từ JWT)
+        if (!driverUserId.equals(tripPayment.getDriverId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                     "Bạn không có quyền xác nhận thanh toán cho chuyến đi này");
         }
@@ -250,25 +243,21 @@ public class TripPaymentServiceImpl implements TripPaymentService {
             paymentTransactionRepository.save(transaction);
         });
 
-        log.info("Driver {} (userId={}) đã xác nhận nhận tiền cho tripPaymentId={}", actualDriverId, driverUserId,
-                tripPaymentId);
+        log.info("Driver (userId={}) đã xác nhận nhận tiền cho tripPaymentId={}", driverUserId, tripPaymentId);
         return Map.of("message", "Xác nhận nhận tiền thành công");
     }
 
-    // ────────────────────────── 3. TÀI XẾ ĐĂNG KÝ STK NGÂN HÀNG
-    // ──────────────────────────
+    // ────────────────────────── 3. TÀI XẾ ĐĂNG KÝ STK NGÂN HÀNG ──────────────────────────
     @Override
     @Transactional
     public Map<String, String> registerDriverPaymentInfo(CreateDriverPaymentInfoRequest request, Jwt jwt) {
         UUID driverUserId = UUID.fromString(jwt.getSubject());
-
-        // GỌI DRIVERSERVICE ĐỂ LẤY driverId THỰC TẾ TRONG BẢNG DRIVERS
-        UUID actualDriverId = driverServiceClient.getDriverIdByUserId(driverUserId);
         LocalDateTime now = LocalDateTime.now();
 
-        DriverPaymentInfo info = driverPaymentInfoRepository.findByDriverId(actualDriverId)
+        // Lưu thông tin ngân hàng trực tiếp theo userId của tài xế
+        DriverPaymentInfo info = driverPaymentInfoRepository.findByDriverId(driverUserId)
                 .orElseGet(() -> DriverPaymentInfo.builder()
-                        .driverId(actualDriverId)
+                        .driverId(driverUserId)
                         .createdAt(now)
                         .build());
 
@@ -279,8 +268,8 @@ public class TripPaymentServiceImpl implements TripPaymentService {
         info.setUpdatedAt(now);
 
         driverPaymentInfoRepository.save(info);
-        log.info("Tài xế (userId={}, driverId={}) đã cập nhật STK: bank={}, stk={}",
-                driverUserId, actualDriverId, request.getBankName(), request.getBankAccountNumber());
+        log.info("Tài xế (userId={}) đã cập nhật STK: bank={}, stk={}",
+                driverUserId, request.getBankName(), request.getBankAccountNumber());
 
         return Map.of("message", "Đăng ký thông tin ngân hàng thành công");
     }
@@ -302,4 +291,3 @@ public class TripPaymentServiceImpl implements TripPaymentService {
         return Map.of("message", "Cập nhật trạng thái thanh toán thành công");
     }
 }
-

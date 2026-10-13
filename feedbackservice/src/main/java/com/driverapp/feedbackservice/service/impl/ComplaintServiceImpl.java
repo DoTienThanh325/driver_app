@@ -1,6 +1,5 @@
 package com.driverapp.feedbackservice.service.impl;
 
-import com.driverapp.feedbackservice.client.DriverServiceClient;
 import com.driverapp.feedbackservice.dto.request.CreateComplaintRequest;
 import com.driverapp.feedbackservice.models.UserComplaination;
 import com.driverapp.feedbackservice.models.enums.ComplainationStatus;
@@ -24,7 +23,6 @@ import java.util.UUID;
 public class ComplaintServiceImpl implements ComplaintService {
 
     private final UserComplainationRepository userComplainationRepository;
-    private final DriverServiceClient driverServiceClient;
 
     @Override
     @Transactional
@@ -49,8 +47,8 @@ public class ComplaintServiceImpl implements ComplaintService {
                         "Mã khách hàng (customerId) là bắt buộc khi tài xế báo cáo");
             }
             finalUserId = request.getCustomerId();
-            // Tra cứu driverId thực tế qua driverservice
-            finalDriverId = driverServiceClient.getDriverIdByUserId(callerUserId);
+            // driverId chính là userId của tài xế từ JWT
+            finalDriverId = callerUserId;
         } else if (isCustomer) {
             // Khi khách hàng báo cáo:
             if (request.getDriverId() == null) {

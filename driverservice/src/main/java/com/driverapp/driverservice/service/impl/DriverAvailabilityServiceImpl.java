@@ -2,12 +2,9 @@ package com.driverapp.driverservice.service.impl;
 
 import com.driverapp.driverservice.dto.request.UpdateAvailabilityRequest;
 import com.driverapp.driverservice.dto.response.DriverProfileResponse;
-import com.driverapp.driverservice.models.Driver;
 import com.driverapp.driverservice.models.DriverAvailability;
 import com.driverapp.driverservice.models.enums.AvailabilityStatus;
-import com.driverapp.driverservice.models.enums.VerificationStatus;
 import com.driverapp.driverservice.repository.DriverAvailabilityRepository;
-import com.driverapp.driverservice.repository.DriverRepository;
 import com.driverapp.driverservice.service.DriverAvailabilityService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -21,40 +18,26 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class DriverAvailabilityServiceImpl implements DriverAvailabilityService {
 
-    private final DriverRepository driverRepository;
     private final DriverAvailabilityRepository availabilityRepository;
 
     @Override
     @Transactional(readOnly = true)
-    public DriverProfileResponse checkAndGetAvailableDriver(UUID userId) {
-        // 1. Find driver profile by userId
-        Driver driver = driverRepository.findByUserId(userId)
+    public DriverProfileResponse checkAndGetAvailableDriver(UUID driverId) {
+        // BỎ VIỆC QUERY DRIVER: Tìm trực tiếp availability theo driverId (chính là userId)
+        DriverAvailability availability = availabilityRepository.findByDriverId(driverId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
-                        "Driver profile not found for user: " + userId));
-
-        if (driver.getVerificationStatus() != VerificationStatus.APPROVED) {
-            throw new ResponseStatusException(
-                    HttpStatus.FORBIDDEN,
-                    "Driver profile is not approved yet (status: " + driver.getVerificationStatus() + ")");
-        }
-
-        // 2. Find driver availability by driverId
-        DriverAvailability availability = availabilityRepository.findByDriverId(driver.getId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Driver availability is not initialized"));
+                        "Hồ sơ tài xế chưa được duyệt hoặc chưa kích hoạt availability cho driverId: " + driverId));
 
         if (availability.getStatus() != AvailabilityStatus.AVAILABLE) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
-                    "Driver is not currently in AVAILABLE status (status: " + availability.getStatus() + ")");
+                    "Tài xế hiện không ở trạng thái AVAILABLE (status: " + availability.getStatus() + ")");
         }
 
-        // 3. Return driverId
+        // Response chỉ trả về driverId (mang giá trị userId) và status
         return new DriverProfileResponse(
-                driver.getId(),
-                driver.getUserId(),
+                driverId,
                 availability.getStatus().name());
     }
 
@@ -68,7 +51,7 @@ public class DriverAvailabilityServiceImpl implements DriverAvailabilityService 
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid status: " + request.status());
         }
 
-        // Update directly by driverId
+        // Cập nhật availability trực tiếp theo driverId (userId), không cần query bảng drivers
         DriverAvailability availability = availabilityRepository.findByDriverId(request.driverId())
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,

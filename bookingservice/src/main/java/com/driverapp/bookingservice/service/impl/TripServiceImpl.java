@@ -143,17 +143,16 @@ public class TripServiceImpl implements TripService {
         @Override
         public AcceptTripResponse acceptTrip(String tripId, UUID driverUserId) {
 
-                // ── BƯỚC 1: Lấy đúng driverId từ driver-service qua driverUserId ──
-                // Hàm này đồng thời kiểm tra driver có tồn tại, APPROVED và đang AVAILABLE
-                // không
-                UUID actualDriverId = driverServiceClient.getAvailableDriverId(driverUserId);
+                // ── BƯỚC 1: Dùng trực tiếp driverUserId làm driverId ──
+                // Kiểm tra driver có tồn tại, APPROVED và đang AVAILABLE
+                driverServiceClient.checkDriverAvailable(driverUserId);
 
                 // ── BƯỚC 2: Cập nhật có điều kiện (Atomic update bằng Mongo findAndModify) ──
                 Query query = new Query(Criteria.where("id").is(tripId)
                                 .and("status").is(TripStatus.SEARCHING_DRIVER.name()));
 
                 Update update = new Update()
-                                .set("driverId", actualDriverId) // ✅ ĐÃ GÁN ĐÚNG ID BẢNG DRIVERS
+                                .set("driverId", driverUserId) // ✅ Gán trực tiếp userId làm driverId
                                 .set("status", TripStatus.DRIVER_ASSIGNED.name())
                                 .set("updatedAt", LocalDateTime.now());
 
@@ -174,7 +173,7 @@ public class TripServiceImpl implements TripService {
                 }
 
                 // ── BƯỚC 3: Chuyển availability của driverId sang ON_TRIP ──
-                driverServiceClient.updateDriverAvailability(actualDriverId, "ON_TRIP");
+                driverServiceClient.updateDriverAvailability(driverUserId, "ON_TRIP");
 
                 // ── BƯỚC 4: Bắn thông báo cho Customer ──
                 notificationClient.createNotification(new CreateNotificationRequest(
@@ -190,14 +189,12 @@ public class TripServiceImpl implements TripService {
 
         @Override
         public void updateTripStatus(UUID driverUserId, UpdateTripStatusRequest request) {
-                UUID currentDriverId = driverServiceClient.getDriverIdByUserId(driverUserId);
-
                 Trip trip = tripRepository.findById(request.tripId())
                                 .orElseThrow(() -> new ResponseStatusException(
                                                 HttpStatus.NOT_FOUND,
                                                 "Không tìm thấy chuyến đi với mã: " + request.tripId()));
 
-                if (trip.getDriverId() == null || !trip.getDriverId().equals(currentDriverId)) {
+                if (trip.getDriverId() == null || !trip.getDriverId().equals(driverUserId)) {
                         throw new ResponseStatusException(
                                         HttpStatus.FORBIDDEN,
                                         "Bạn không phải tài xế đang thực hiện chuyến đi này");
@@ -232,7 +229,7 @@ public class TripServiceImpl implements TripService {
                 }
 
                 if (newStatus == TripStatus.COMPLETED) {
-                        driverServiceClient.updateDriverAvailability(currentDriverId, "AVAILABLE");
+                        driverServiceClient.updateDriverAvailability(driverUserId, "AVAILABLE");
                         // Tự động thông báo paymentservice cập nhật trạng thái thanh toán tiền mặt (PAY_AFTER) sang COMPLETED
                         paymentServiceClient.completeTripPayment(request.tripId());
                 }

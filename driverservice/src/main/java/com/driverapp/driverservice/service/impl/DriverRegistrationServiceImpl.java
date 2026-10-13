@@ -105,7 +105,7 @@ public class DriverRegistrationServiceImpl implements DriverRegistrationService 
         );
 
         return new RegisterDriverResponse(
-                driver.getId(),
+                driver.getUserId(),
                 VerificationStatus.PENDING,
                 "Driver registration submitted"
         );

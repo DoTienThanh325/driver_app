@@ -27,50 +27,26 @@ public class DriverServiceClient {
                 .build();
     }
 
-    public record DriverCheckResult(UUID driverId, UUID userId, String status) {
+    public record DriverCheckResult(UUID driverId, String status) {
     }
 
     /**
-     * 1. Gọi driver-service kiểm tra tài xế theo userId và lấy driverId thực tế
+     * Gọi driver-service kiểm tra tài xế theo driverId (chính là userId)
      */
-    public UUID getAvailableDriverId(UUID driverUserId) {
+    public void checkDriverAvailable(UUID driverId) {
         try {
             DriverCheckResult result = restClient.get()
-                    .uri("/api/drivers/check-available/{userId}", driverUserId)
+                    .uri("/api/drivers/check-available/{driverId}", driverId)
                     .retrieve()
                     .body(DriverCheckResult.class);
 
             if (result == null || result.driverId() == null) {
                 throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không lấy được thông tin tài xế");
             }
-            return result.driverId();
         } catch (ResponseStatusException e) {
             throw e;
         } catch (Exception e) {
             log.error("Lỗi khi kiểm tra tài xế từ driver-service: {}", e.getMessage());
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
-                    "Lỗi kết nối tới driver-service: " + e.getMessage());
-        }
-    }
-
-    /**
-     * 2. Dành cho updateTripStatus: Lấy driverId thuần túy theo userId khi tài xế
-     * đang ON_TRIP
-     */
-    public UUID getDriverIdByUserId(UUID driverUserId) {
-        try {
-            Map<?, ?> result = restClient.get()
-                    .uri("/api/drivers/by-user/{userId}", driverUserId)
-                    .retrieve()
-                    .body(Map.class);
-            if (result == null || result.get("driverId") == null) {
-                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy hồ sơ tài xế");
-            }
-            return UUID.fromString(result.get("driverId").toString());
-        } catch (ResponseStatusException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("Lỗi khi lấy driverId từ driver-service: {}", e.getMessage());
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "Lỗi kết nối tới driver-service: " + e.getMessage());
         }

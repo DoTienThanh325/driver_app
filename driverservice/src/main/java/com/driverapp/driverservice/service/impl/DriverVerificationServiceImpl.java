@@ -32,7 +32,8 @@ public class DriverVerificationServiceImpl implements DriverVerificationService 
     @Override
     @Transactional
     public void updateVerification(UUID driverId, UpdateVerificationRequest request) {
-        Driver driver = driverRepository.findById(driverId)
+        Driver driver = driverRepository.findByUserId(driverId)
+                .or(() -> driverRepository.findById(driverId))
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Driver not found with id: " + driverId));
 
@@ -54,8 +55,8 @@ public class DriverVerificationServiceImpl implements DriverVerificationService 
         driver.approve();
         driverRepository.save(driver);
 
-        // Step 2: driver-service creates driver_availability with status OFFLINE
-        if (availabilityRepository.findByDriverId(driver.getId()).isEmpty()) {
+        // Step 2: driver-service creates driver_availability with status OFFLINE (driverId là userId)
+        if (availabilityRepository.findByDriverId(driver.getUserId()).isEmpty()) {
             availabilityRepository.save(DriverAvailability.builder()
                     .driver(driver)
                     .status(AvailabilityStatus.OFFLINE)

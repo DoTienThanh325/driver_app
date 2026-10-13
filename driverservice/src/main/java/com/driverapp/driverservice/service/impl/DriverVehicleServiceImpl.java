@@ -2,11 +2,10 @@ package com.driverapp.driverservice.service.impl;
 
 import com.driverapp.driverservice.dto.request.AddVehicleRequest;
 import com.driverapp.driverservice.dto.response.AddVehicleResponse;
-import com.driverapp.driverservice.models.enums.DocumentType;
 import com.driverapp.driverservice.models.Driver;
 import com.driverapp.driverservice.models.DriverDocument;
 import com.driverapp.driverservice.models.DriverVehicle;
-import com.driverapp.driverservice.models.enums.VerificationStatus;
+import com.driverapp.driverservice.models.enums.DocumentType;
 import com.driverapp.driverservice.repository.DriverDocumentRepository;
 import com.driverapp.driverservice.repository.DriverRepository;
 import com.driverapp.driverservice.repository.DriverVehicleRepository;
@@ -19,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -26,44 +26,29 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class DriverVehicleServiceImpl implements DriverVehicleService {
-    private final DriverRepository driverRepository;
+
     private final DriverDocumentRepository documentRepository;
     private final DriverVehicleRepository vehicleRepository;
+    private final DriverRepository driverRepository;
     private final DriverImageStorage imageStorage;
 
     @Override
     @Transactional
     public AddVehicleResponse addVehicle(UUID userId, String username, AddVehicleRequest request) {
-        // ── STEP 1: Find driver by userId ────────────────────────────────────
-        Driver driver = driverRepository.findByUserId(userId)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Driver profile not found. Please register as a driver first."));
-
-        // ── STEP 2: Only APPROVED drivers can add vehicles ──────────────────
-        if (driver.getVerificationStatus() != VerificationStatus.APPROVED) {
-            throw new ResponseStatusException(
-                    HttpStatus.FORBIDDEN,
-                    "Driver profile is not approved yet. Current status: "
-                            + driver.getVerificationStatus());
-        }
-
-        // ── STEP 3: Validate mandatory images ────────────────────────────────
+        // ── STEP 1: Validate mandatory input ────────────────────────────────
         if (request.vehicleType() == null) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST, "vehicleType is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "vehicleType is required");
         }
 
         imageStorage.validate(request.registrationFront());
         imageStorage.validate(request.plate());
 
-        // ── STEP 4: Check if DRIVER_LICENSE is needed ────────────────────────
-        boolean hasLicense = documentRepository.existsByDriverAndDocumentType(
-                driver, DocumentType.DRIVER_LICENSE);
-        boolean needLicense = !hasLicense; // Require driver license for all vehicle types
+        // ── STEP 2: Kiểm tra bằng lái trực tiếp bằng userId (bỏ query bảng drivers) ──
+        boolean hasLicense = documentRepository.existsByDriver_UserIdAndDocumentType(
+                userId, DocumentType.DRIVER_LICENSE);
+        boolean needLicense = !hasLicense;
 
         if (needLicense) {
-            // Nếu cần bằng lái mà client không gửi ảnh -> báo lỗi rõ ràng
             if (request.driverLicenseFront() == null || request.driverLicenseFront().isEmpty()) {
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST,
@@ -78,11 +63,10 @@ public class DriverVehicleServiceImpl implements DriverVehicleService {
             imageStorage.validate(request.driverLicenseBack());
         }
 
-        // ── BƯỚC 5: Tính index xe (để đặt tên file không trùng) ──────────────
-        long vehicleIndex = vehicleRepository.countByDriver(driver) + 1;
+        // ── STEP 3: Tính index xe trực tiếp bằng userId ──────────────────────
+        long vehicleIndex = vehicleRepository.countByDriver_UserId(userId) + 1;
 
-        // ── BƯỚC 6: Đăng ký dọn dẹp ảnh nếu transaction DB bị rollback ──────
-        // Pattern giống hệt DriverRegistrationServiceImpl
+        // ── STEP 4: Transaction rollback cleanup hook ────────────────────────
         List<String> uploadedUrls = new ArrayList<>();
         TransactionSynchronizationManager.registerSynchronization(
                 new TransactionSynchronization() {
@@ -94,7 +78,7 @@ public class DriverVehicleServiceImpl implements DriverVehicleService {
                     }
                 });
 
-        // ── BƯỚC 7: Upload ảnh xe lên MinIO ──────────────────────────────────
+        // ── STEP 5: Upload ảnh lên MinIO ─────────────────────────────────────
         String registrationUrl = track(
                 imageStorage.uploadRegistrationFrontIndexed(username, vehicleIndex, request.registrationFront()),
                 uploadedUrls);
@@ -102,7 +86,14 @@ public class DriverVehicleServiceImpl implements DriverVehicleService {
                 imageStorage.uploadPlateIndexed(username, vehicleIndex, request.plate()),
                 uploadedUrls);
 
-        // ── BƯỚC 8: Lưu DRIVER_LICENSE nếu cần ───────────────────────────────
+        // Lấy driver reference từ entity document đã có hoặc repository
+        Driver driver = documentRepository.findFirstByDriver_UserId(userId)
+                .map(DriverDocument::getDriver)
+                .orElseGet(() -> driverRepository.findByUserId(userId)
+                        .orElseThrow(() -> new ResponseStatusException(
+                                HttpStatus.NOT_FOUND, "Driver profile not found for user: " + userId)));
+
+        // ── STEP 6: Lưu bằng lái nếu cần ────────────────────────────────────
         if (needLicense) {
             String licenseFrontUrl = track(
                     imageStorage.uploadDriverLicenseFront(username, request.driverLicenseFront()),
@@ -119,7 +110,7 @@ public class DriverVehicleServiceImpl implements DriverVehicleService {
                             .build());
         }
 
-        // ── BƯỚC 9: Lưu thông tin xe mới ─────────────────────────────────────
+        // ── STEP 7: Lưu thông tin xe mới ─────────────────────────────────────
         DriverVehicle vehicle = vehicleRepository.save(
                 DriverVehicle.builder()
                         .driver(driver)
@@ -134,7 +125,6 @@ public class DriverVehicleServiceImpl implements DriverVehicleService {
                 "Vehicle added successfully.");
     }
 
-    // ── Helper: track URL để rollback nếu cần ──────────────────────────────
     private String track(String url, List<String> uploadedUrls) {
         uploadedUrls.add(url);
         return url;

@@ -49,7 +49,7 @@ public class DriverCandidateServiceImpl implements DriverCandidateService {
         return pendingDrivers.stream().map(driver -> {
             UserInfoResponse userInfo = userServiceClient.getUserInfo(driver.getUserId());
             return new DriverCandidateResponse(
-                    driver.getId(),
+                    driver.getUserId(),
                     userInfo.username(),
                     userInfo.phoneNumber(),
                     driver.getVerificationStatus(),
@@ -60,7 +60,8 @@ public class DriverCandidateServiceImpl implements DriverCandidateService {
     @Override
     @Transactional(readOnly = true)
     public DriverDetailResponse getDriverDetail(UUID driverId, UUID currentUserId, List<String> roles) {
-        Driver driver = driverRepository.findById(driverId)
+        Driver driver = driverRepository.findByUserId(driverId)
+                .or(() -> driverRepository.findById(driverId))
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "Driver not found with id: " + driverId));
@@ -104,7 +105,7 @@ public class DriverCandidateServiceImpl implements DriverCandidateService {
                 .orElse(null);
 
         return new DriverDetailResponse(
-                driver.getId(),
+                driver.getUserId(),
                 userInfo.username(),
                 userInfo.phoneNumber(),
                 driver.getVerificationStatus(),

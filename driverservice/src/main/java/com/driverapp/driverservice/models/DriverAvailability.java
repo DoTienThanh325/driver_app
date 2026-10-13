@@ -23,7 +23,7 @@ public class DriverAvailability {
     private UUID id = UUID.randomUUID();
 
     @OneToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "driver_id", nullable = false)
+    @JoinColumn(name = "driver_id", referencedColumnName = "user_id", nullable = false)
     private Driver driver;
 
     @Enumerated(EnumType.STRING)

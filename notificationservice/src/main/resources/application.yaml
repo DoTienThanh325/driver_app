@@ -7,7 +7,7 @@ spring:
 
   datasource:
     url: jdbc:postgresql://localhost:5432/driverapp_notification_db
-    username: postgres
+    username: thanhtiendo
     password: ${DB_PASSWORD:12345khongcho}
 
   jpa:
