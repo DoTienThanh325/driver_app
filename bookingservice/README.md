@@ -2,6 +2,8 @@
 
 `bookingservice` lưu dữ liệu đặt chuyến, nhà hàng, món ăn và offer ghép tài xế. Service này dùng MongoDB và yêu cầu JWT hợp lệ từ `userservice`.
 
+> **Lưu ý kiến trúc**: Định danh tài xế (`driverId`) đồng nhất với `userId` (lấy từ JWT subject `sub`). Booking Service không cần gọi API phụ để tra cứu `driverId` từ `userId`, mà chỉ gọi Driver Service để kiểm tra trạng thái khả dụng (`check-available`) hoặc cập nhật `availability`.
+
 ## Cấu hình chính
 
 - Port mặc định: `8083`, có thể đổi bằng `BOOKING_SERVICE_PORT`.
@@ -49,10 +51,8 @@ sequenceDiagram
     Gateway->>BookingService: Forward request: PATCH /api/trips/status (kèm JWT context)
 
     rect rgb(255, 240, 245)
-        note over BookingService, DriverService: 2. Tra cứu DriverId thuần túy & Kiểm tra quyền sở hữu chuyến đi
-        BookingService->>BookingService: Lấy driverUserId từ JWT.sub
-        BookingService->>DriverService: GET /api/drivers/by-user/{driverUserId}<br/>(Lấy driverId mà KHÔNG check status AVAILABLE)
-        DriverService-->>BookingService: Trả về { "driverId": "..." }
+        note over BookingService: 2. Lấy DriverId từ JWT & Kiểm tra quyền sở hữu chuyến đi
+        BookingService->>BookingService: driverId = UUID.fromString(JWT.sub)
 
         BookingService->>MongoDB: tripRepository.findById(tripId)
         alt Không tìm thấy chuyến đi
@@ -61,7 +61,7 @@ sequenceDiagram
         end
         MongoDB-->>BookingService: Trip entity
 
-        BookingService->>BookingService: Kiểm tra: trip.getDriverId().equals(currentDriverId)
+        BookingService->>BookingService: Kiểm tra: trip.getDriverId().equals(driverId)
         alt Không đúng tài xế đang nhận chuyến
             BookingService-->>Driver: 403 Forbidden (Bạn không phải tài xế của chuyến đi này)
         end
@@ -87,7 +87,7 @@ sequenceDiagram
     rect rgb(240, 255, 250)
         note over BookingService, DriverService: 5. Đồng bộ Availability & Gửi thông báo
         alt Nếu status là COMPLETED (Hoàn tất chuyến)
-            BookingService->>DriverService: updateDriverAvailability(currentDriverId, "AVAILABLE")<br/>(giải phóng tài xế sẵn sàng nhận chuyến mới)
+            BookingService->>DriverService: updateDriverAvailability(driverId, "AVAILABLE")<br/>(giải phóng tài xế sẵn sàng nhận chuyến mới)
         end
 
         BookingService->>NotificationService: POST /api/notifications (gửi thông báo cho Customer)
@@ -111,7 +111,7 @@ sequenceDiagram
 | `status` | `TripStatus` | Có | Trạng thái mới: `DRIVER_ARRIVING`, `IN_PROGRESS`, `COMPLETED` |
 
 #### Quy tắc nghiệp vụ (Business Rules)
-1. **Kiểm tra quyền sở hữu (Driver Ownership Check)**: Lấy `driverId` qua `driverServiceClient.getDriverIdByUserId(driverUserId)` (gọi endpoint `GET /api/drivers/by-user/{userId}` bên Driver Service mà không bắt buộc trạng thái `AVAILABLE`). Nếu chuyến đi không thuộc về tài xế đang thực hiện (`trip.driverId != currentDriverId`), hệ thống trả về lỗi **`403 Forbidden`**.
+1. **Kiểm tra quyền sở hữu (Driver Ownership Check)**: Lấy `driverId` trực tiếp từ JWT subject (`JWT.sub`). Kiểm tra `trip.getDriverId().equals(driverId)`. Nếu chuyến đi không thuộc về tài xế đang thực hiện, hệ thống trả về lỗi **`403 Forbidden`**.
 2. **Chặn quyền hủy chuyến của tài xế**: Tài xế **không được phép** gửi trạng thái `CANCELLED`. Nếu gửi `status = "CANCELLED"`, hệ thống trả về lỗi **`403 Forbidden`** (*"Tài xế không có quyền hủy chuyến đi"*).
 3. **Quy trình chuyển trạng thái một chiều hợp lệ**:
    - `DRIVER_ASSIGNED` ➔ `DRIVER_ARRIVING` (Tài xế đang đến điểm đón).
@@ -180,9 +180,10 @@ Tài xế (`ROLE_DRIVER`) chấp nhận thực hiện một chuyến đi đang t
 - **Endpoint**: `/api/trips/{tripId}/accept`
 - **Xác thực**: Bearer JWT Token (`ROLE_DRIVER`)
 - **Cơ chế**:
-  - Kiểm tra tài xế đang `AVAILABLE` qua `driverServiceClient.getAvailableDriverId(driverUserId)`.
+  - Lấy `driverId` trực tiếp từ `JWT.sub`.
+  - Kiểm tra tài xế đang `AVAILABLE` qua `driverServiceClient.checkDriverAvailable(driverId)`.
   - Atomic update chuyến đi từ trạng thái `SEARCHING_DRIVER` sang `DRIVER_ASSIGNED`.
-  - Đổi trạng thái tài xế sang `ON_TRIP`.
+  - Đổi trạng thái tài xế sang `ON_TRIP` qua `driverServiceClient.updateDriverAvailability(driverId, "ON_TRIP")`.
 - **Response (`200 OK`)**:
   ```json
   {
@@ -197,11 +198,8 @@ Tài xế (`ROLE_DRIVER`) chấp nhận thực hiện một chuyến đi đang t
 ## Giải thích file
 
 - `pom.xml`: khai báo Spring WebMVC, Spring Data MongoDB, Security, OAuth2 Resource Server, Validation, Lombok và test dependency.
-- `mvnw`, `mvnw.cmd`, `.mvn/wrapper/maven-wrapper.properties`: Maven Wrapper.
-- `.gitignore`, `.gitattributes`: cấu hình Git.
-- `HELP.md`: file hướng dẫn mặc định của Spring Initializr.
 - `src/main/java/com/driverapp/bookingservice/BookingserviceApplication.java`: class main khởi động service.
-- `client/DriverServiceClient.java`: RestClient giao tiếp với Driver Service để kiểm tra tài xế khả dụng (`getAvailableDriverId`), lấy driverId theo userId (`getDriverIdByUserId`) và cập nhật availability (`updateDriverAvailability`, `setDriverOnTrip`).
+- `client/DriverServiceClient.java`: RestClient giao tiếp với Driver Service để kiểm tra tài xế khả dụng (`checkDriverAvailable/{driverId}`) và cập nhật availability (`updateDriverAvailability`).
 - `client/NotificationClient.java`: RestClient gửi thông báo thời gian thực sang Notification Service.
 - `config/SecurityConfig.java`: tắt CSRF, dùng session stateless và yêu cầu JWT cho mọi request.
 - `controller/TripController.java`: các endpoint liên quan đến chuyến đi (`POST /api/trips`, `POST /api/trips/{tripId}/accept`, `PATCH /api/trips/status`).
@@ -225,11 +223,10 @@ Tài xế (`ROLE_DRIVER`) chấp nhận thực hiện một chuyến đi đang t
 - `repository/MatchingOfferRepository.java`: Mongo repository cho `MatchingOffer`.
 - `service/TripService.java` & `service/impl/TripServiceImpl.java`: Logic tạo chuyến, nhận chuyến, validate trạng thái, kiểm tra quyền tài xế và hoàn thành chuyến đi.
 - `src/main/resources/application.yaml`: cấu hình port, MongoDB URI, UUID representation và JWT resource server.
-- `src/test/java/com/driverapp/bookingservice/BookingserviceApplicationTests.java`: test khởi tạo context mặc định.
-- `target/`: thư mục build sinh ra bởi Maven.
 
 ## Cách chạy
 
-```powershell
-.\mvnw.cmd spring-boot:run
+```bash
+cd bookingservice
+./mvnw spring-boot:run
 ```

@@ -33,15 +33,6 @@ app:
     expires-minutes: 5
     challenge-secret: ${OTP_CHALLENGE_SECRET:local-only-change-this-secret-before-deployment}
 
-#  sms:
-#    provider: ${SMS_PROVIDER:twilio}
-#    override-enabled: ${SMS_OVERRIDE_ENABLED:true}
-#    default-phone-number: ${SMS_DEFAULT_PHONE:+84868377913}
-#    twilio:
-#      account-sid: ${TWILIO_ACCOUNT_SID:}
-#      auth-token: ${TWILIO_AUTH_TOKEN:}
-#      from-phone-number: ${TWILIO_FROM_PHONE:+17372508034}
-
 eureka:
   client:
     service-url:

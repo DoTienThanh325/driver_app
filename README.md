@@ -1,179 +1,182 @@
 # Technology Driver App Backend
 
-Backend của ứng dụng tài xế công nghệ được xây dựng theo kiến trúc microservices. Mỗi service là một dự án Spring Boot độc lập, có Maven Wrapper và cơ sở dữ liệu riêng. Các service đăng ký với Eureka; client truy cập hệ thống qua API Gateway, nơi xác thực JWT và chuyển tiếp request đến service phù hợp.
+Hệ thống backend của ứng dụng gọi xe, giao hàng và đặt món công nghệ (Technology Driver App) được xây dựng theo kiến trúc **Microservices**. Mỗi service là một ứng dụng độc lập sử dụng Java 21, Spring Boot, có Maven Wrapper và cơ sở dữ liệu riêng biệt. Toàn bộ hệ thống đăng ký và phát hiện dịch vụ qua Netflix Eureka, client truy cập qua một điểm vào duy nhất là Spring Cloud Gateway (API Gateway) để xác thực JWT và định tuyến yêu cầu.
 
 ## Kiến trúc hệ thống
 
 ```text
-Client
-  |
-  v
-API Gateway :8080
-  |
-  +--> User Service         :8081  --> PostgreSQL
-  +--> Driver Service       :8082  --> PostgreSQL + Redis + MinIO
-  +--> Booking Service      :8083  --> MongoDB
-  +--> Payment Service      :8084  --> MongoDB
-  +--> Feedback Service     :8085  --> PostgreSQL
-  +--> Notification Service :8086  --> PostgreSQL
+                  +---------------------------+
+                  |  Client (Mobile/Web/App)  |
+                  +-------------+-------------+
+                                |
+                                v
+                  +---------------------------+
+                  |  API Gateway (Port 8080)  |  <--- Giải mã & Phân quyền JWT (RBAC)
+                  +-------------+-------------+
+                                |
+         +----------------------+----------------------+----------------------+
+         |                      |                      |                      |
+         v                      v                      v                      v
++------------------+   +------------------+   +------------------+   +------------------+
+|   User Service   |   |  Driver Service  |   | Booking Service  |   | Payment Service  |
+|   (Port 8081)    |   |   (Port 8082)    |   |   (Port 8083)    |   |   (Port 8084)    |
+|   PostgreSQL     |   |PostgreSQL + MinIO|   |     MongoDB      |   |     MongoDB      |
++------------------+   +------------------+   +------------------+   +------------------+
+         |                      |                      |                      |
+         +----------------------+----------------------+----------------------+
+         |                                             |
+         v                                             v
++------------------+                         +------------------+
+| Feedback Service |                         |Notification Svc  |
+|   (Port 8085)    |                         |   (Port 8086)    |
+|   PostgreSQL     |                         |   PostgreSQL     |
++------------------+                         +------------------+
 
-Các service và API Gateway <--> Eureka Server :8761
+         Toàn bộ các dịch vụ và API Gateway kết nối Eureka Server (Port 8761)
 ```
 
-API Gateway sử dụng Eureka và Spring Cloud LoadBalancer để định tuyến bằng service name (`lb://userservice`, `lb://driverservice`, ...), không phụ thuộc trực tiếp vào địa chỉ của từng instance.
+## Các nguyên lý thiết kế then chốt
+
+1. **Đồng nhất mã định danh tài xế (`driverId` = `userId`)**:
+   - `driverId` trong toàn bộ hệ thống (`driverservice`, `bookingservice`, `paymentservice`, `feedbackservice`) chính là `userId` của tài xế (lấy trực tiếp từ claim `sub` của JWT token).
+   - Bảng `drivers` sử dụng `user_id UUID PRIMARY KEY`.
+   - Loại bỏ hoàn toàn các lời gọi API nội bộ giữa các service để chuyển đổi qua lại giữa `userId` và `driverId`, giúp tối ưu hóa hiệu năng và đơn giản hóa kiến trúc.
+2. **Cơ sở dữ liệu độc lập & Flyway Migration hợp nhất**:
+   - Mỗi service sử dụng cơ sở dữ liệu riêng biệt (Database per Service pattern).
+   - Mỗi service dùng SQL (`userservice`, `driverservice`, `feedbackservice`, `notificationservice`) được chuẩn hóa migration với **duy nhất 1 file Flyway** khởi tạo schema hoàn chỉnh và dữ liệu mẫu cần thiết.
+3. **Xác thực JWT & Cấp phép tập trung (JWKS & RBAC)**:
+   - `userservice` đóng vai trò JWT Issuer, phát hành cặp khóa RSA và expose public key tại `/.well-known/jwks.json`.
+   - API Gateway và các resource server xác thực chữ ký token thông qua JWKS endpoint này.
+   - Hỗ trợ 4 vai trò chính: `CUSTOMER`, `DRIVER`, `ADMIN`, `BUSINESS`.
+4. **Phát triển & Kiểm thử tiện lợi (Local OTP Debugging)**:
+   - `userservice` sử dụng `LocalSmsSender` in mã OTP 6 số trực tiếp ra console log, hỗ trợ phát triển và chạy thử ngay mà không cần cấu hình gateway SMS trả phí (Twilio).
 
 ## Công nghệ chính
 
-- Java 21
-- Spring Boot 4.1.1
-- Spring Cloud 2025.1.3
-- Spring Cloud Gateway WebFlux
-- Netflix Eureka và Spring Cloud LoadBalancer
-- Spring Security OAuth2 Resource Server, JWT và JWKS
-- PostgreSQL, Spring Data JPA và Flyway
-- MongoDB
-- Redis
-- MinIO (S3-compatible object storage)
-- Docker Compose (khởi động MinIO cho môi trường local)
-- Maven Wrapper
-- Lombok
+- **Ngôn ngữ & Framework**: Java 21, Spring Boot 4.1.1, Spring Cloud 2025.1.3
+- **Gateway & Registry**: Spring Cloud Gateway WebFlux, Netflix Eureka Server, Spring Cloud LoadBalancer
+- **Bảo mật**: Spring Security OAuth2 Resource Server, JWT (Nimbus JOSE + JWT), BCrypt, HMAC-SHA256
+- **Cơ sở dữ liệu Quan hệ**: PostgreSQL, Spring Data JPA, Hibernate, Flyway Migration
+- **Cơ sở dữ liệu Document**: MongoDB, Spring Data MongoDB
+- **Bộ nhớ đệm & Phiên làm việc**: Redis
+- **Lưu trữ đối tượng (Object Storage)**: MinIO (S3-compatible API)
+- **Công cụ build & triển khai**: Maven Wrapper (`./mvnw` / `mvnw.cmd`), Docker Compose
 
-## Các thành phần
+## Danh sách Dịch vụ & Cổng mặc định
 
-| Thành phần | Port mặc định | Vai trò |
-| --- | ---: | --- |
-| `eureka` | `8761` | Service registry và discovery server |
-| `apigateway` | `8080` | Điểm vào chung, xác thực JWT và định tuyến request |
-| `userservice` | `8081` | Đăng ký, đăng nhập, OTP, JWT/refresh token và JWKS |
-| `driverservice` | `8082` | Hồ sơ tài xế, giấy tờ, phương tiện và trạng thái hoạt động |
-| `bookingservice` | `8083` | Chuyến đi/đơn giao, nhà hàng, món ăn và ghép tài xế |
-| `paymentservice` | `8084` | Thanh toán và voucher |
-| `feedbackservice` | `8085` | Đánh giá và khiếu nại |
-| `notificationservice` | `8086` | Thông báo người dùng |
+| Dịch vụ | Port | Cơ sở dữ liệu | Vai trò chính |
+| :--- | :---: | :--- | :--- |
+| **eureka** | `8761` | Không | Service Discovery & Registry server |
+| **apigateway** | `8080` | Không | Reverse proxy, CORS, giải mã JWT và phân quyền API |
+| **userservice** | `8081` | PostgreSQL (`driverapp_user_db`) | Đăng ký, đăng nhập, OTP, cấp JWT/Refresh token, JWKS |
+| **driverservice** | `8082` | PostgreSQL (`driverapp_driver_db`) + MinIO | Quản lý hồ sơ tài xế, xác minh giấy tờ, phương tiện, availability |
+| **bookingservice** | `8083` | MongoDB (`driverapp_booking_db`) | Đặt chuyến, nhận chuyến, tiến độ chuyến đi, thực đơn nhà hàng |
+| **paymentservice** | `8084` | MongoDB (`driverapp_payment_db`) | Thanh toán chuyến đi (VietQR, tiền mặt), STK tài xế, voucher |
+| **feedbackservice** | `8085` | PostgreSQL (`driverapp_feedback_db`) | Đánh giá sao tài xế, khiếu nại vi phạm chuyến đi |
+| **notificationservice** | `8086` | PostgreSQL (`driverapp_notification_db`) | Lưu trữ và gửi thông báo người dùng |
 
-### Route qua API Gateway
+### Định tuyến qua API Gateway (`http://localhost:8080`)
 
-| Service | Route |
+| Đường dẫn route | Service xử lý |
 | --- | --- |
-| User | `/api/auth/**`, `/api/users/**`, `/.well-known/jwks.json` |
-| Driver | `/api/drivers/**`, `/api/vehicles/**` |
-| Booking | `/api/trips/**`, `/api/bookings/**` |
-| Payment | `/api/payments/**`, `/api/vouchers/**` |
-| Notification | `/api/notifications/**` |
-| Feedback | `/api/feedback/**`, `/api/feedbacks/**`, `/api/complaints/**` |
-
-Eureka Dashboard: `http://localhost:8761`
-
-API Gateway: `http://localhost:8080`
+| `/api/auth/**`, `/api/users/**`, `/.well-known/jwks.json` | `lb://userservice` |
+| `/api/drivers/**`, `/api/vehicles/**` | `lb://driverservice` |
+| `/api/trips/**`, `/api/bookings/**`, `/api/businesses/**` | `lb://bookingservice` |
+| `/api/payments/**`, `/api/vouchers/**` | `lb://paymentservice` |
+| `/api/feedback/**`, `/api/feedbacks/**`, `/api/complaints/**` | `lb://feedbackservice` |
+| `/api/notifications/**` | `lb://notificationservice` |
 
 ## Yêu cầu môi trường
 
-- JDK 21
-- PostgreSQL chạy tại `localhost:5432`
-- MongoDB chạy tại `localhost:27017`
-- Redis chạy tại `localhost:6379`
-- MinIO chạy tại `localhost:9000` (API) và `localhost:9001` (Web Console)
+- **JDK 21**
+- **PostgreSQL**: Đang chạy tại `localhost:5432`
+- **MongoDB**: Đang chạy tại `localhost:27017`
+- **Redis**: Đang chạy tại `localhost:6379`
+- **MinIO**: Đang chạy tại `localhost:9000` (API S3) và `localhost:9001` (Web Console)
 
-Tạo các database PostgreSQL sau trước khi khởi động service:
+### Khởi tạo Database
 
-```text
-driverapp_user_db
-driverapp_driver_db
-driverapp_feedback_db
-driverapp_notification_db
+Tạo 4 database PostgreSQL trước khi khởi động các service:
+
+```sql
+CREATE DATABASE driverapp_user_db;
+CREATE DATABASE driverapp_driver_db;
+CREATE DATABASE driverapp_feedback_db;
+CREATE DATABASE driverapp_notification_db;
 ```
 
-MongoDB sẽ sử dụng hai database:
+MongoDB sẽ tự động tạo 2 cơ sở dữ liệu khi phát sinh bản ghi đầu tiên:
+- `driverapp_booking_db`
+- `driverapp_payment_db`
 
-```text
-driverapp_booking_db
-driverapp_payment_db
-```
+### Khởi động MinIO
 
-Flyway tự động tạo/cập nhật schema cho các service sử dụng PostgreSQL.
+Chạy MinIO thông qua Docker Compose ở thư mục gốc backend:
 
-## Biến môi trường
-
-| Biến | Ý nghĩa | Giá trị mặc định |
-| --- | --- | --- |
-| `DB_PASSWORD` | Mật khẩu PostgreSQL | Giá trị local trong `application.yaml` |
-| `OTP_CHALLENGE_SECRET` | Secret dùng để ký OTP challenge | Secret local, phải thay khi triển khai |
-| `EUREKA_DEFAULT_ZONE` | URL đăng ký Eureka | `http://localhost:8761/eureka/` |
-| `EUREKA_PREFER_IP_ADDRESS` | Đăng ký instance bằng địa chỉ IP | `true` |
-| `MONGODB_URI` | URI kết nối MongoDB | Database mặc định của từng service |
-| `JWT_JWK_SET_URI` | Endpoint JWKS cho booking/payment | `http://localhost:8081/.well-known/jwks.json` |
-| `JWT_ISSUER_URI` | JWT issuer cho booking/payment | `http://localhost:8081` |
-| `BOOKING_SERVICE_PORT` | Port của Booking Service | `8083` |
-| `STORAGE_ENDPOINT` | Endpoint nội bộ để Driver Service kết nối MinIO | `http://localhost:9000` |
-| `STORAGE_PUBLIC_ENDPOINT` | Endpoint dùng để tạo URL đọc ảnh đã ký | `http://localhost:9000` |
-| `STORAGE_ACCESS_KEY` | Access key của MinIO | `minioadmin` |
-| `STORAGE_SECRET_KEY` | Secret key của MinIO | `minioadmin` |
-| `STORAGE_BUCKET` | Bucket lưu ảnh giấy tờ tài xế/phương tiện | `driver-documents` |
-
-> Lưu ý: `paymentservice` hiện cũng đọc biến `BOOKING_SERVICE_PORT` cho port của nó, với giá trị mặc định là `8084`. Không đặt biến này dùng chung khi chạy cả Booking Service và Payment Service trên cùng máy, nếu không hai service có thể bị trùng port.
-
-## Khởi động dự án
-
-Khởi động MinIO cho Driver Service:
-
-```powershell
+```bash
 docker compose up -d minio
 ```
 
-Truy cập MinIO Console tại `http://localhost:9001`, đăng nhập bằng thông tin trong `docker-compose.yml` và tạo bucket `driver-documents` trước khi gọi API đăng ký tài xế hoặc thêm phương tiện.
+Đăng nhập Web Console tại `http://localhost:9001` (User/Pass trong `docker-compose.yml`), tạo bucket tên `driver-documents`.
 
-Mỗi service có Maven Wrapper riêng. Trên Windows, mở một terminal cho từng service và chạy:
+## Hướng dẫn khởi động hệ thống
 
-```powershell
-cd <ten-service>
-.\mvnw.cmd spring-boot:run
-```
+Khởi động các microservices theo thứ tự sau (mở mỗi terminal riêng cho từng service):
 
-Trên Linux/macOS:
+1. **Eureka Server**:
+   ```bash
+   cd eureka && ./mvnw spring-boot:run
+   ```
+2. **User Service** (cần chạy trước để API Gateway tải được JWKS):
+   ```bash
+   cd userservice && ./mvnw spring-boot:run
+   ```
+3. **Các Service Nghiệp Vụ**:
+   ```bash
+   cd driverservice && ./mvnw spring-boot:run
+   cd bookingservice && ./mvnw spring-boot:run
+   cd paymentservice && ./mvnw spring-boot:run
+   cd feedbackservice && ./mvnw spring-boot:run
+   cd notificationservice && ./mvnw spring-boot:run
+   ```
+4. **API Gateway**:
+   ```bash
+   cd apigateway && ./mvnw spring-boot:run
+   ```
 
-```bash
-cd <ten-service>
-./mvnw spring-boot:run
-```
+*(Trên Windows, thay `./mvnw` bằng `.\mvnw.cmd`)*
 
-Thứ tự khởi động đề xuất:
+## Kiểm tra trạng thái & Kiểm thử
 
-1. `eureka`
-2. `userservice`
-3. `driverservice`, `bookingservice`, `paymentservice`, `feedbackservice`, `notificationservice`
-4. `apigateway`
+- **Eureka Dashboard**: Truy cập `http://localhost:8761` để bảo đảm toàn bộ các service đã xuất hiện trong danh sách `Instances currently registered with Eureka`.
+- **Chạy unit/integration test**:
+  ```bash
+  cd <service-name>
+  ./mvnw test
+  ```
 
-Sau khi khởi động, kiểm tra Eureka Dashboard để bảo đảm API Gateway và các service đã đăng ký thành công.
-
-## Chạy kiểm thử
-
-Chạy trong thư mục của service cần kiểm thử:
-
-```powershell
-.\mvnw.cmd test
-```
-
-## Cấu trúc repository
+## Cấu trúc thư mục
 
 ```text
 backend/
-├── docker-compose.yml
-├── apigateway/
-├── bookingservice/
-├── driverservice/
-├── eureka/
-├── feedbackservice/
-├── notificationservice/
-├── paymentservice/
-└── userservice/
+├── docker-compose.yml              # Docker Compose dịch vụ bổ trợ (MinIO)
+├── README.md                       # Tài liệu tổng quan toàn bộ hệ thống
+├── apigateway/                     # Spring Cloud Gateway WebFlux
+├── eureka/                         # Eureka Service Discovery
+├── userservice/                    # Auth, Users, Roles, JWT & JWKS
+├── driverservice/                  # Hồ sơ tài xế, giấy tờ, phương tiện, MinIO
+├── bookingservice/                 # Đặt chuyến, nhận chuyến, nhà hàng, món ăn
+├── paymentservice/                 # Thanh toán VietQR, tiền mặt, voucher, STK tài xế
+├── feedbackservice/                # Đánh giá & khiếu nại chuyến đi
+└── notificationservice/            # Thông báo hệ thống
 ```
 
-## Tài liệu chi tiết
+## Tài liệu chi tiết từng dịch vụ
 
 - [API Gateway](apigateway/README.md)
 - [User Service](userservice/README.md)
 - [Driver Service](driverservice/README.md)
 - [Booking Service](bookingservice/README.md)
 - [Payment Service](paymentservice/README.md)
-- [Notification Service](notificationservice/README.md)
 - [Feedback Service](feedbackservice/README.md)
+- [Notification Service](notificationservice/README.md)
