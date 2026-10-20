@@ -8,6 +8,7 @@ import com.driverapp.driverservice.repository.DriverAvailabilityRepository;
 import com.driverapp.driverservice.service.DriverAvailabilityService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -43,7 +44,8 @@ public class DriverAvailabilityServiceImpl implements DriverAvailabilityService 
 
     @Override
     @Transactional
-    public void updateAvailability(UpdateAvailabilityRequest request) {
+    public void updateAvailability(Jwt jwt, UpdateAvailabilityRequest request) {
+        UUID driverUserId = jwt != null ? UUID.fromString(jwt.getSubject()) : null;
         AvailabilityStatus newStatus;
         try {
             newStatus = AvailabilityStatus.valueOf(request.status());
@@ -52,10 +54,10 @@ public class DriverAvailabilityServiceImpl implements DriverAvailabilityService 
         }
 
         // Cập nhật availability trực tiếp theo driverId (userId), không cần query bảng drivers
-        DriverAvailability availability = availabilityRepository.findByDriverId(request.driverId())
+        DriverAvailability availability = availabilityRepository.findByDriverId(driverUserId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
-                        "Availability not found for driverId: " + request.driverId()));
+                        "Availability not found for driverId: " + driverUserId));
 
         availabilityRepository.save(availability.withStatus(newStatus));
     }

@@ -28,6 +28,7 @@ public class DriverVerificationServiceImpl implements DriverVerificationService 
     private final DriverRepository driverRepository;
     private final DriverAvailabilityRepository availabilityRepository;
     private final UserServiceClient userServiceClient;
+    private final com.driverapp.driverservice.publisher.DriverEventPublisher driverEventPublisher;
 
     @Override
     @Transactional
@@ -63,8 +64,8 @@ public class DriverVerificationServiceImpl implements DriverVerificationService 
                     .build());
         }
 
-        // Step 3: driver-service calls user-service to assign DRIVER role
-        userServiceClient.grantRole(driver.getUserId(), DRIVER_ROLE);
+        // Step 3: driver-service publishes driver.approved event asynchronously
+        driverEventPublisher.publishDriverApproved(driver.getId().toString(), driver.getUserId().toString());
 
         log.info("Driver approved successfully: driverId={}, userId={}", driver.getId(), driver.getUserId());
     }

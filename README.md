@@ -50,10 +50,17 @@ Hệ thống backend của ứng dụng gọi xe, giao hàng và đặt món cô
    - Hỗ trợ 4 vai trò chính: `CUSTOMER`, `DRIVER`, `ADMIN`, `BUSINESS`.
 4. **Phát triển & Kiểm thử tiện lợi (Local OTP Debugging)**:
    - `userservice` sử dụng `LocalSmsSender` in mã OTP 6 số trực tiếp ra console log, hỗ trợ phát triển và chạy thử ngay mà không cần cấu hình gateway SMS trả phí (Twilio).
+5. **Quy trình Thanh toán Tự Động & Chuyển đổi Linh Hoạt (`PAY_DIRECTLY` $\rightarrow$ `PAY_BEFORE`)**:
+   - Khi khách tạo chuyến: Hệ thống tự động khởi tạo bản ghi thanh toán mặc định `PAY_DIRECTLY` (tiền mặt/trực tiếp).
+   - Khi tài xế nhận chuyến: Bản ghi thanh toán được cập nhật `driverId` (vẫn giữ `PAY_DIRECTLY`). Khách hàng có thể gọi `PATCH /api/payments/trip/{tripId}/pay-before` để chuyển sang trả trước bằng mã VietQR chuyển khoản trực tiếp vào STK tài xế.
+6. **Kiến trúc SAGA Choreography & Giao Dịch Bù Trừ (Compensating Transactions)**:
+   - Sử dụng RabbitMQ Topic Exchange (`trip.topic.exchange`) và Compensating Exchange (`saga.compensating.exchange`).
+   - Nếu `paymentservice` không tạo được thanh toán mặc định (sau retry qua Dead Letter Queue), sự kiện bù trừ `trip.payment-init.failed` được kích hoạt để `bookingservice` báo lỗi tới khách và **xóa hoàn toàn cuốc xe khỏi database (Hard Delete)**, giải phóng trạng thái giúp khách đặt lại chuyến ngay lập tức.
 
 ## Công nghệ chính
 
 - **Ngôn ngữ & Framework**: Java 21, Spring Boot 4.1.1, Spring Cloud 2025.1.3
+- **Message Broker & Event-Driven**: RabbitMQ (Topic Exchange, Dead Letter Exchange, SAGA Choreography)
 - **Gateway & Registry**: Spring Cloud Gateway WebFlux, Netflix Eureka Server, Spring Cloud LoadBalancer
 - **Bảo mật**: Spring Security OAuth2 Resource Server, JWT (Nimbus JOSE + JWT), BCrypt, HMAC-SHA256
 - **Cơ sở dữ liệu Quan hệ**: PostgreSQL, Spring Data JPA, Hibernate, Flyway Migration
@@ -70,8 +77,8 @@ Hệ thống backend của ứng dụng gọi xe, giao hàng và đặt món cô
 | **apigateway** | `8080` | Không | Reverse proxy, CORS, giải mã JWT và phân quyền API |
 | **userservice** | `8081` | PostgreSQL (`driverapp_user_db`) | Đăng ký, đăng nhập, OTP, cấp JWT/Refresh token, JWKS |
 | **driverservice** | `8082` | PostgreSQL (`driverapp_driver_db`) + MinIO | Quản lý hồ sơ tài xế, xác minh giấy tờ, phương tiện, availability |
-| **bookingservice** | `8083` | MongoDB (`driverapp_booking_db`) | Đặt chuyến, nhận chuyến, tiến độ chuyến đi, thực đơn nhà hàng |
-| **paymentservice** | `8084` | MongoDB (`driverapp_payment_db`) | Thanh toán chuyến đi (VietQR, tiền mặt), STK tài xế, voucher |
+| **bookingservice** | `8083` | MongoDB (`driverapp_booking_db`) | Đặt chuyến, nhận chuyến, tiến độ cuốc xe, nhà hàng, SAGA rollback xóa chuyến |
+| **paymentservice** | `8084` | MongoDB (`driverapp_payment_db`) | Tự động tạo thanh toán `PAY_DIRECTLY`, đổi `PAY_BEFORE` (VietQR), STK tài xế, voucher, SAGA DLQ |
 | **feedbackservice** | `8085` | PostgreSQL (`driverapp_feedback_db`) | Đánh giá sao tài xế, khiếu nại vi phạm chuyến đi |
 | **notificationservice** | `8086` | PostgreSQL (`driverapp_notification_db`) | Lưu trữ và gửi thông báo người dùng |
 

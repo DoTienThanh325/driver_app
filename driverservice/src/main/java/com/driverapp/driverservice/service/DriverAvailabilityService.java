@@ -2,6 +2,8 @@ package com.driverapp.driverservice.service;
 
 import com.driverapp.driverservice.dto.request.UpdateAvailabilityRequest;
 import com.driverapp.driverservice.dto.response.DriverProfileResponse;
+import org.springframework.security.oauth2.jwt.Jwt;
+
 import java.util.UUID;
 
 public interface DriverAvailabilityService {
@@ -9,5 +11,5 @@ public interface DriverAvailabilityService {
     DriverProfileResponse checkAndGetAvailableDriver(UUID driverId);
 
     // Cập nhật trạng thái theo driverId
-    void updateAvailability(UpdateAvailabilityRequest request);
+    void updateAvailability(Jwt jwt, UpdateAvailabilityRequest request);
 }

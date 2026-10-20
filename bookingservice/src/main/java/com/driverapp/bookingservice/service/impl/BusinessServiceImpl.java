@@ -32,6 +32,7 @@ public class BusinessServiceImpl implements BusinessService {
         private final BusinessRepository businessRepository;
         private final BusinessImageStorage imageStorage;
         private final UserServiceClient userServiceClient;
+        private final com.driverapp.bookingservice.publisher.BusinessEventPublisher businessEventPublisher;
 
         // ───────────────────────────── CUSTOMER: ĐĂNG KÝ KINH DOANH (chỉ 1 lần)
         @Override
@@ -119,16 +120,6 @@ public class BusinessServiceImpl implements BusinessService {
                                         HttpStatus.BAD_REQUEST, "status phải là ACCEPTED hoặc REJECTED hoặc BANNED");
                 }
 
-                if (request.status() == BusinessRegistrationStatus.ACCEPTED) {
-                        // Gọi userservice cấp role BUSINESS
-                        userServiceClient.grantRole(reg.getUserId(), "BUSINESS");
-                }
-
-                if (request.status() == BusinessRegistrationStatus.BANNED) {
-                        // Gọi userservice thu hồi role BUSINESS
-                        userServiceClient.revokeRole(reg.getUserId(), "BUSINESS");
-                }
-
                 reg.setStatus(request.status());
                 reg.setRejectReason(request.rejectReason() != null && !request.rejectReason().isBlank()
                                 ? request.rejectReason()
@@ -138,6 +129,14 @@ public class BusinessServiceImpl implements BusinessService {
                 reg.setUpdatedAt(LocalDateTime.now());
 
                 businessRepository.save(reg);
+
+                // Phát sự kiện business.reviewed bất đồng bộ cho UserService xử lý cấp/thu hồi role
+                businessEventPublisher.publishBusinessReviewed(com.driverapp.bookingservice.event.BusinessReviewedPayload.builder()
+                                .bookingId(reg.getId())
+                                .businessUserId(reg.getUserId() != null ? reg.getUserId().toString() : null)
+                                .reviewStatus(request.status().name())
+                                .reviewerNotes(request.status() == BusinessRegistrationStatus.REJECTED ? request.rejectReason() : request.banReason())
+                                .build());
 
                 return Map.of("Message", "Đơn đăng ký đã được xử lý thành công");
         }

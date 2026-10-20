@@ -14,25 +14,34 @@
 
 ### 1. Thanh toán Chuyến đi (`/api/payments`)
 
-#### `POST /api/payments/trip`
-Khách hàng (`ROLE_CUSTOMER`) tạo yêu cầu thanh toán cho chuyến đi:
-- Phương thức: `PAY_BEFORE` (chuyển khoản VietQR trước/trong chuyến) hoặc `PAY_AFTER` (tiền mặt khi kết thúc chuyến).
-- Hỗ trợ áp dụng voucher: Kiểm tra điều kiện đơn tối thiểu, hạn dùng, tính toán số tiền giảm giá và số tiền thực trả.
-- Với `PAY_BEFORE`: Hệ thống tự động tra cứu STK của tài xế (`DriverPaymentInfo`) và sinh URL ảnh VietQR kèm nội dung chuyển khoản định danh (`PaymentTransaction`).
-- **Response**: Trả về `TripPaymentResponse` gồm `tripPaymentId`, `fare`, `discountAmount`, `finalAmount`, `paymentMethod`, `status` và `qrCodeUrl` (nếu là `PAY_BEFORE`).
+#### Quy trình Thanh toán Chuyến đi Tự Động
+- **Khi tạo chuyến:** Bản ghi thanh toán `TripPayment` được tự động khởi tạo ngầm qua sự kiện `trip.created` với phương thức **`PAY_DIRECTLY`** (trạng thái `PENDING`). Không còn API tạo thanh toán thủ công.
+- **Khi tài xế nhận cuốc:** Sự kiện `trip.driver-assigned` cập nhật `driverId` vào `TripPayment` nhưng **vẫn giữ nguyên phương thức `PAY_DIRECTLY`**.
+- **Cơ chế SAGA Rollback:** Nếu quá trình tạo thanh toán mặc định gặp lỗi (sau khi retry qua Dead Letter Queue), event bù trừ `trip.payment-init.failed` sẽ được gửi về `bookingservice` để tự động xóa chuyến đi và báo lỗi cho khách.
+
+#### `PATCH /api/payments/trip/{tripId}/pay-before`
+Khách hàng (`ROLE_CUSTOMER`) chuyển đổi phương thức thanh toán sang trả trước (**`PAY_BEFORE`**) sau khi tài xế đã nhận chuyến:
+- **Điều kiện:** Chuyến đi đã có tài xế nhận (`driverId != null`).
+- Tự động tra cứu tài khoản ngân hàng của tài xế (`DriverPaymentInfo`).
+- Sinh mã ảnh VietQR Napas 24/7 trực tiếp vào STK tài xế và lưu giao dịch `PaymentTransaction` (thời hạn 15 phút).
+- Chuyển trạng thái `TripPayment` sang `AWAITING_PAYMENT`.
+- **Response**: Trả về `TripPaymentResponse` gồm `tripPaymentId`, `totalAmount`, `discountAmount`, `finalAmount`, `status` và `qrPayment` (chi tiết tài khoản, URL ảnh QR, nội dung chuyển tiền).
+
+#### `GET /api/payments/trip/{tripId}`
+Khách hàng (`ROLE_CUSTOMER`) hoặc Tài xế (`ROLE_DRIVER`) xem chi tiết thanh toán của chuyến đi (bao gồm cả thông tin mã QR nếu là `PAY_BEFORE`).
 
 #### `PATCH /api/payments/trip/{tripPaymentId}/confirm`
-Tài xế (`ROLE_DRIVER`) xác nhận đã nhận được tiền từ khách hàng:
+Tài xế (`ROLE_DRIVER`) xác nhận đã nhận được tiền chuyển khoản từ khách hàng:
 - Kiểm tra quyền: Chỉ đúng tài xế của chuyến đi mới được xác nhận (`driverId == JWT.sub`).
-- Chuyển trạng thái `PaymentTransaction` sang `SUCCESS` và `TripPayment` sang `COMPLETED`.
+- Chuyển trạng thái `PaymentTransaction` sang `COMPLETED` và `TripPayment` sang `COMPLETED`.
 
 #### `POST /api/payments/driver-payment-info`
 Tài xế (`ROLE_DRIVER`) đăng ký hoặc cập nhật thông tin tài khoản ngân hàng để nhận tiền chuyển khoản:
 - `driverId` được tự động lấy từ `JWT.sub`.
-- Thông tin gồm: Mã ngân hàng (`bin` / `bankCode`), số tài khoản (`accountNumber`), tên chủ tài khoản (`accountName`).
+- Thông tin gồm: Mã ngân hàng (`bankBin`), tên ngân hàng (`bankName`), số tài khoản (`bankAccountNumber`), tên chủ tài khoản (`bankAccountName`).
 
 #### `PATCH /api/payments/trip/internal/{tripId}/complete`
-Endpoint nội bộ dành cho `bookingservice` gọi khi chuyến đi tiền mặt (`PAY_AFTER`) được hoàn thành (`COMPLETED`). Tự động cập nhật `TripPayment` tương ứng sang `COMPLETED`.
+Endpoint nội bộ (hoặc tự động xử lý qua event RabbitMQ `trip.completed`) khi chuyến đi trực tiếp (`PAY_DIRECTLY`) hoàn thành (`COMPLETED`). Tự động cập nhật `TripPayment` tương ứng sang `COMPLETED`.
 
 ---
 
@@ -55,27 +64,31 @@ Khách hàng xem danh sách voucher áp dụng cho một nhà hàng cụ thể.
 
 ## Cấu trúc Model dữ liệu (MongoDB)
 
-- `TripPayment`: Lưu thông tin thanh toán chuyến đi gồm `tripId`, `customerId`, `driverId`, `fare`, `discountAmount`, `finalAmount`, phương thức `paymentMethod` (`PAY_BEFORE`, `PAY_AFTER`), trạng thái `status` (`PENDING`, `COMPLETED`, `FAILED`), danh sách `TripPaymentVoucher`.
-- `PaymentTransaction`: Giao dịch thanh toán điện tử (VietQR) gồm `tripPaymentId`, `amount`, mã giao dịch/nội dung chuyển khoản, `qrUrl`, `status` (`PENDING`, `SUCCESS`, `EXPIRED`, `FAILED`).
-- `DriverPaymentInfo`: Lưu thông tin ngân hàng của tài xế (`driverId` = `userId`), ngân hàng, số tài khoản, tên chủ tài khoản.
+- `TripPayment`: Lưu thông tin thanh toán chuyến đi gồm `tripId`, `customerId`, `driverId`, `shippFare`, `totalFoodPrice`, `totalAmount`, `discountAmount`, `finalAmount`, phương thức `paymentMethod` (`PAY_DIRECTLY`, `PAY_BEFORE`), trạng thái `status` (`PENDING`, `AWAITING_PAYMENT`, `COMPLETED`, `FAILED`), danh sách `TripPaymentVoucher`.
+- `PaymentTransaction`: Giao dịch thanh toán điện tử (VietQR) gồm `tripPaymentId`, `amount`, mã giao dịch/nội dung chuyển khoản, `qrDataURL`, ngân hàng, STK, tên chủ tài khoản, `status` (`PENDING`, `COMPLETED`, `EXPIRED`, `FAILED`), `expiresAt`.
+- `DriverPaymentInfo`: Lưu thông tin ngân hàng của tài xế (`driverId` = `userId`), tên ngân hàng, mã BIN, số tài khoản, tên chủ tài khoản.
 - `Voucher`: Thông tin voucher hệ thống hoặc đối tác nhà hàng gồm mã code, discount percent/amount, max discount, min order amount, max usage, expiry date.
 - `UserVoucher`: Ví voucher của người dùng (`userId`), chứa danh sách các `UserVoucherItem`.
 
 ## Giải thích file
 
-- `pom.xml`: khai báo Spring WebMVC, Spring Data MongoDB, Security, OAuth2 Resource Server, Validation, Lombok và test dependency.
+- `pom.xml`: khai báo Spring WebMVC, Spring Data MongoDB, RabbitMQ, Security, OAuth2 Resource Server, Validation, Lombok và test dependency.
 - `src/main/java/com/driverapp/paymentservice/PaymentserviceApplication.java`: class main khởi động service.
-- `config/SecurityConfig.java`: cấu hình bảo mật stateless, xác thực JWT resource server.
-- `controller/TripPaymentController.java`: các API tạo thanh toán chuyến đi, tài xế xác nhận nhận tiền, đăng ký STK tài xế và API nội bộ hoàn tất thanh toán.
+- `config/SecurityConfig.java`: cấu hình bảo mật stateless, xác thực JWT resource server và cho phép truy cập internal endpoint không cần JWT.
+- `config/rabbitmq/PaymentRabbitMQConfig.java`: cấu hình Topic Exchange, Dead Letter Queue (`trip.payment-init.dlq`, `trip.payment-complete.dlq`) và các queue xử lý thanh toán tự động, gán tài xế.
+- `listener/TripLifecycleEventListener.java`: lắng nghe sự kiện `trip.created` để khởi tạo `PAY_DIRECTLY`, bắt lỗi DLQ gửi SAGA bù trừ `trip.payment-init.failed`, và lắng nghe `trip.driver-assigned` để cập nhật `driverId`.
+- `listener/TripCompletedEventListener.java`: lắng nghe `trip.completed` để tự động hoàn tất thanh toán `PAY_DIRECTLY`.
+- `controller/TripPaymentController.java`: các API khách hàng đổi sang `PAY_BEFORE`, xem chi tiết thanh toán, tài xế xác nhận nhận tiền, đăng ký STK tài xế và API nội bộ hoàn tất thanh toán.
 - `controller/VoucherController.java`: các API phát hành, claim và tra cứu voucher.
 - `client/BookingServiceClient.java`: RestClient gọi sang Booking Service để lấy thông tin chuyến đi / giá vé phục vụ thanh toán.
-- `dto/request/`: các record/class request cho thanh toán chuyến đi, đăng ký STK tài xế, tạo voucher, claim voucher.
-- `dto/response/`: các record/class response cho thanh toán chuyến đi và chi tiết voucher.
+- `dto/request/`: các DTO request đổi sang `PAY_BEFORE` (`SwitchToPayBeforeRequest`), đăng ký STK tài xế, tạo voucher, claim voucher.
+- `dto/response/`: các DTO response cho thanh toán chuyến đi và chi tiết voucher.
+- `event/`: các class payload DomainEvent và SAGA (`TripPaymentInitFailedPayload`, `PaymentCompleteFailedPayload`, `TripEventPayload`).
 - `models/`: Document MongoDB cho thanh toán, giao dịch, tài khoản ngân hàng tài xế và voucher.
-- `models/enums/`: enum `PaymentMethod`, `TripPaymentStatus`, `TransactionStatus`, `VoucherType`, `VoucherProviderType`.
+- `models/enums/`: enum `PaymentMethod` (`PAY_DIRECTLY`, `PAY_BEFORE`), `TripPaymentStatus`, `TransactionStatus`, `VoucherType`, `VoucherProviderType`.
 - `repository/`: Spring Data MongoDB repositories.
-- `service/` & `service/impl/`: nghiệp vụ thanh toán chuyến đi, sinh mã VietQR, xác nhận thanh toán và nghiệp vụ voucher.
-- `src/main/resources/application.yaml`: cấu hình port, MongoDB URI, UUID representation và JWT resource server.
+- `service/TripPaymentService.java` & `service/impl/TripPaymentServiceImpl.java`: nghiệp vụ khởi tạo thanh toán tự động, chuyển sang `PAY_BEFORE`, sinh mã VietQR Napas 24/7, xác nhận thanh toán và hoàn tất cuốc xe.
+- `src/main/resources/application.yaml`: cấu hình port, MongoDB URI, RabbitMQ và JWT resource server.
 
 ## Cách chạy
 

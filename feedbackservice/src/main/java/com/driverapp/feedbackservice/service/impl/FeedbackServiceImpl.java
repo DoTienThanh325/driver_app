@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class FeedbackServiceImpl implements FeedbackService {
 
     private final UserFeedbackRepository userFeedbackRepository;
+    private final com.driverapp.feedbackservice.publisher.FeedbackEventPublisher feedbackEventPublisher;
 
     @Override
     @Transactional
@@ -32,7 +33,15 @@ public class FeedbackServiceImpl implements FeedbackService {
                 .comment(request.getComment())
                 .build();
 
-        userFeedbackRepository.save(feedback);
+        UserFeedback saved = userFeedbackRepository.save(feedback);
+
+        feedbackEventPublisher.publishFeedbackSubmitted(
+                saved.getId() != null ? saved.getId().toString() : UUID.randomUUID().toString(),
+                request.getDriverId() != null ? request.getDriverId().toString() : null,
+                customerUserId.toString(),
+                request.getRating(),
+                request.getComment()
+        );
 
         log.info("Khách hàng {} đã đánh giá tài xế {} cho chuyến đi {}: rating={}",
                 customerUserId, request.getDriverId(), request.getTripId(), request.getRating());

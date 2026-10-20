@@ -15,4 +15,8 @@ public interface DriverRepository extends JpaRepository<Driver, UUID> {
     Optional<Driver> findByUserId(UUID userId);
 
     List<Driver> findByVerificationStatusOrderByCreatedAtDesc(VerificationStatus status);
+
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.data.jpa.repository.Query(value = "UPDATE drivers SET average_rating = :rating WHERE user_id = :userId", nativeQuery = true)
+    void updateAverageRating(@org.springframework.data.repository.query.Param("userId") UUID userId, @org.springframework.data.repository.query.Param("rating") Double rating);
 }

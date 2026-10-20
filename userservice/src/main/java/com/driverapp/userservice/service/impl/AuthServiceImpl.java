@@ -43,6 +43,7 @@ public class AuthServiceImpl implements AuthService {
     private final OtpChallengeService otpChallengeService;
     private final SmsSender smsSender;
     private final JwtService jwtService;
+    private final com.driverapp.userservice.publisher.SmsEventPublisher smsEventPublisher;
 
     @Override
     @Transactional
@@ -102,7 +103,7 @@ public class AuthServiceImpl implements AuthService {
                         user.getId()
                 );
 
-        smsSender.sendOtp(
+        smsEventPublisher.publishSendOtp(
                 user.getPhoneNumber(),
                 challenge.otp()
         );

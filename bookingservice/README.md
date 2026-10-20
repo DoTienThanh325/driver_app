@@ -148,6 +148,10 @@ Khách hàng (`ROLE_CUSTOMER`) tạo yêu cầu đặt chuyến (chở người,
 - **HTTP Method**: `POST`
 - **Endpoint**: `/api/trips`
 - **Xác thực**: Bearer JWT Token (`ROLE_CUSTOMER`)
+- **Cơ chế Tự Động Khởi Tạo Thanh Toán**:
+  - Lưu bản ghi chuyến đi với trạng thái `SEARCHING_DRIVER`.
+  - Phát sự kiện bất đồng bộ `trip.created` lên RabbitMQ `trip.topic.exchange`.
+  - `paymentservice` tự động lắng nghe và khởi tạo thông tin thanh toán mặc định với phương thức **`PAY_DIRECTLY`** (trạng thái `PENDING`).
 - **Request Body**:
   ```json
   {
@@ -183,7 +187,7 @@ Tài xế (`ROLE_DRIVER`) chấp nhận thực hiện một chuyến đi đang t
   - Lấy `driverId` trực tiếp từ `JWT.sub`.
   - Kiểm tra tài xế đang `AVAILABLE` qua `driverServiceClient.checkDriverAvailable(driverId)`.
   - Atomic update chuyến đi từ trạng thái `SEARCHING_DRIVER` sang `DRIVER_ASSIGNED`.
-  - Đổi trạng thái tài xế sang `ON_TRIP` qua `driverServiceClient.updateDriverAvailability(driverId, "ON_TRIP")`.
+  - Phát sự kiện `trip.driver-assigned` lên `trip.topic.exchange` để `paymentservice` cập nhật `driverId` vào bản ghi thanh toán (vẫn giữ nguyên phương thức `PAY_DIRECTLY`).
 - **Response (`200 OK`)**:
   ```json
   {
@@ -195,34 +199,47 @@ Tài xế (`ROLE_DRIVER`) chấp nhận thực hiện một chuyến đi đang t
 
 ---
 
+### 4. Cơ chế SAGA Pattern & Bù Trừ (Compensating Transaction)
+
+Hệ thống triển khai mô hình SAGA Choreography qua RabbitMQ Direct Exchange (`saga.compensating.exchange`):
+
+1. **Rollback Khởi Tạo Thanh Toán (`TripPaymentInitRollbackListener`)**:
+   - Khi `paymentservice` không thể tạo bản ghi thanh toán mặc định (sau khi thử lại qua Dead Letter Queue), event bù trừ `trip.payment-init.failed` sẽ được gửi về `trip.payment-init.failed.queue`.
+   - `bookingservice` lập tức:
+     - Gửi thông báo lỗi tới khách hàng qua `NotificationClient` ("Hệ thống gặp sự cố khi khởi tạo thanh toán...").
+     - **Xóa hoàn toàn chuyến đi vừa tạo khỏi MongoDB** (`tripRepository.delete(trip)`), giúp khách hàng không bị chặn khi đặt chuyến mới.
+     - Ghi nhận lịch sử bù trừ vào bảng `saga_compensation_log` với `afterState = "DELETED"`.
+
+2. **Rollback Trạng Thái Khả Dụng Tài Xế (`DriverAvailabilityRollbackListener`)**:
+   - Khi cập nhật trạng thái tài xế thất bại, tự động hoàn nguyên cuốc xe về `SEARCHING_DRIVER`.
+
+---
+
 ## Giải thích file
 
-- `pom.xml`: khai báo Spring WebMVC, Spring Data MongoDB, Security, OAuth2 Resource Server, Validation, Lombok và test dependency.
+- `pom.xml`: khai báo Spring WebMVC, Spring Data MongoDB, RabbitMQ, Security, OAuth2 Resource Server, Validation, Lombok và test dependency.
 - `src/main/java/com/driverapp/bookingservice/BookingserviceApplication.java`: class main khởi động service.
-- `client/DriverServiceClient.java`: RestClient giao tiếp với Driver Service để kiểm tra tài xế khả dụng (`checkDriverAvailable/{driverId}`) và cập nhật availability (`updateDriverAvailability`).
+- `client/DriverServiceClient.java`: RestClient giao tiếp với Driver Service để kiểm tra tài xế khả dụng (`checkDriverAvailable/{driverId}`).
 - `client/NotificationClient.java`: RestClient gửi thông báo thời gian thực sang Notification Service.
-- `config/SecurityConfig.java`: tắt CSRF, dùng session stateless và yêu cầu JWT cho mọi request.
-- `controller/TripController.java`: các endpoint liên quan đến chuyến đi (`POST /api/trips`, `POST /api/trips/{tripId}/accept`, `PATCH /api/trips/status`).
+- `client/PaymentServiceClient.java`: RestClient giao tiếp nội bộ với Payment Service.
+- `config/SecurityConfig.java`: tắt CSRF, dùng session stateless, mở quyền cho các endpoint nội bộ `/api/trips/internal/**` và yêu cầu JWT cho các request còn lại.
+- `config/rabbitmq/BookingRabbitMQConfig.java`: cấu hình RabbitMQ Topic Exchange `trip.topic.exchange`, exchange bù trừ `saga.compensating.exchange`, các queue và binding cho SAGA rollback.
+- `controller/TripController.java`: các endpoint liên quan đến chuyến đi (`POST /api/trips`, `POST /api/trips/{tripId}/accept`, `PATCH /api/trips/status`, `PATCH /api/trips/{tripId}/cancel`).
 - `controller/FoodController.java`: các endpoint CRUD món ăn.
 - `controller/RestaurantController.java`: các endpoint quản lý nhà hàng.
 - `controller/BusinessRegistrationController.java`: endpoint đăng ký đối tác kinh doanh.
-- `dto/request/UpdateTripStatusRequest.java`: DTO nhận `tripId` và `status` cho API cập nhật trạng thái chuyến.
-- `dto/request/CreateTripRequest.java`: DTO tạo chuyến đi mới.
-- `models/Trip.java`: Mongo document `trips`, lưu tọa độ/điểm đón, điểm đến, loại giao hàng, loại xe, customer, driver, food, phí giao hàng và trạng thái chuyến.
-- `models/Restaurant.java`: Mongo document `restaurants`, lưu tên nhà hàng, địa chỉ và tọa độ.
-- `models/Food.java`: Mongo document `foods`, lưu tên món, danh sách option và restaurant id.
-- `models/FoodOption.java`: object lồng trong `Food`, lưu kích cỡ và giá.
-- `models/MatchingOffer.java`: Mongo document `matching_offers`, lưu offer gửi cho tài xế theo trip và trạng thái offer.
-- `models/enums/ShippingType.java`: enum `PASSENGER`, `PARCEL_DELIVERY`, `FOOD_DELIVERY`.
-- `models/enums/VehicleType.java`: enum `MOTORBIKE`, `CAR`.
-- `models/enums/TripStatus.java`: enum vòng đời chuyến: `SEARCHING_DRIVER`, `DRIVER_ASSIGNED`, `DRIVER_ARRIVING`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`, `NO_DRIVER_FOUND`.
-- `models/enums/MatchingOfferStatus.java`: enum `ACCEPTED`, `REJECTED`, `EXPIRED`, `CANCELLED`.
-- `repository/TripRepository.java`: Mongo repository cho `Trip`.
-- `repository/RestaurantRepository.java`: Mongo repository cho `Restaurant`.
-- `repository/FoodRepository.java`: Mongo repository cho `Food`.
-- `repository/MatchingOfferRepository.java`: Mongo repository cho `MatchingOffer`.
-- `service/TripService.java` & `service/impl/TripServiceImpl.java`: Logic tạo chuyến, nhận chuyến, validate trạng thái, kiểm tra quyền tài xế và hoàn thành chuyến đi.
-- `src/main/resources/application.yaml`: cấu hình port, MongoDB URI, UUID representation và JWT resource server.
+- `dto/request/`: các DTO request đặt chuyến, cập nhật trạng thái, hủy chuyến, đặt đồ ăn.
+- `dto/response/`: các DTO response tạo chuyến, nhận chuyến, giá vé.
+- `event/`: các class payload sự kiện Domain Event và SAGA (`TripEventPayload`, `TripPaymentInitFailedPayload`, `PaymentCompleteFailedPayload`, ...).
+- `listener/saga/`: các listener lắng nghe sự kiện bù trừ SAGA (`TripPaymentInitRollbackListener`, `DriverAvailabilityRollbackListener`, `PaymentInconsistencyListener`).
+- `publisher/TripEventPublisher.java`: phát sự kiện chuyến đi lên RabbitMQ (`trip.created`, `trip.driver-assigned`, `trip.completed`, `trip.cancelled`).
+- `models/Trip.java`: Mongo document `trips`.
+- `models/SagaCompensationLog.java`: Mongo document `saga_compensation_log` lưu lịch sử bù trừ SAGA.
+- `models/Restaurant.java`, `models/Food.java`, `models/FoodOption.java`, `models/MatchingOffer.java`.
+- `models/enums/`: enum `TripStatus`, `ShippingType`, `VehicleType`, `MatchingOfferStatus`.
+- `repository/`: Spring Data MongoDB repositories (`TripRepository`, `SagaCompensationLogRepository`, ...).
+- `service/TripService.java` & `service/impl/TripServiceImpl.java`: Logic tạo chuyến, phát event thanh toán, nhận chuyến, chuyển trạng thái và hoàn tất cuốc xe.
+- `src/main/resources/application.yaml`: cấu hình port, MongoDB URI, RabbitMQ và JWT resource server.
 
 ## Cách chạy
 

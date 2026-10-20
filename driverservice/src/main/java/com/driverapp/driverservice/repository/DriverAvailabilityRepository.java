@@ -14,4 +14,6 @@ public interface DriverAvailabilityRepository extends JpaRepository<DriverAvaila
     Optional<DriverAvailability> findByDriverId(@Param("driverId") UUID driverId);
 
     Optional<DriverAvailability> findByDriver_UserId(UUID userId);
+
+    void deleteByDriver_UserId(UUID userId);
 }

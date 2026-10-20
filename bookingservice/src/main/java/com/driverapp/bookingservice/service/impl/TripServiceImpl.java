@@ -44,6 +44,7 @@ public class TripServiceImpl implements TripService {
         private final DriverServiceClient driverServiceClient;
         private final com.driverapp.bookingservice.client.PaymentServiceClient paymentServiceClient;
         private final MongoTemplate mongoTemplate;
+        private final com.driverapp.bookingservice.publisher.TripEventPublisher tripEventPublisher;
 
 
         @Override
@@ -136,6 +137,21 @@ public class TripServiceImpl implements TripService {
                                 "Hệ thống đang tìm tài xế cho chuyến đi của bạn. Vui lòng chờ trong giây lát.",
                                 customerId));
 
+                // ── Phát sự kiện trip.created để paymentservice tự động tạo PAY_DIRECTLY ──
+                double foodPriceVal = saved.getTotalFoodPrice() != null ? saved.getTotalFoodPrice() : 0.0;
+                java.math.BigDecimal totalAmt = java.math.BigDecimal.valueOf(saved.getShippFare() + foodPriceVal);
+
+                tripEventPublisher.publishTripCreated(com.driverapp.bookingservice.event.TripEventPayload.builder()
+                                .tripId(saved.getId())
+                                .customerId(customerId.toString())
+                                .driverId(null)
+                                .tripStatus(TripStatus.SEARCHING_DRIVER.name())
+                                .paymentMethod("PAY_DIRECTLY")
+                                .totalAmount(totalAmt)
+                                .pickupAddress(saved.getPickUpAddress())
+                                .dropoffAddress(saved.getDestinationAddress())
+                                .build());
+
                 return new CreateTripResponse("Tạo chuyến thành công", saved.getId());
         }
 
@@ -172,14 +188,19 @@ public class TripServiceImpl implements TripService {
                                         "Chuyến đi đã được tài xế khác nhận. Status hiện tại: " + existing.getStatus());
                 }
 
-                // ── BƯỚC 3: Chuyển availability của driverId sang ON_TRIP ──
-                driverServiceClient.updateDriverAvailability(driverUserId, "ON_TRIP");
+                double foodPrice = updated.getTotalFoodPrice() != null ? updated.getTotalFoodPrice() : 0.0;
+                java.math.BigDecimal totalAmt = java.math.BigDecimal.valueOf(updated.getShippFare() + foodPrice);
 
-                // ── BƯỚC 4: Bắn thông báo cho Customer ──
-                notificationClient.createNotification(new CreateNotificationRequest(
-                                "Tài xế đã nhận chuyến",
-                                "Tài xế đang trên đường đến đón bạn. Mã chuyến: " + tripId,
-                                updated.getCustomerId()));
+                // ── BƯỚC 3 & 4: Phát sự kiện DRIVER_ASSIGNED bất đồng bộ ──
+                tripEventPublisher.publishDriverAssigned(com.driverapp.bookingservice.event.TripEventPayload.builder()
+                                .tripId(updated.getId())
+                                .customerId(updated.getCustomerId() != null ? updated.getCustomerId().toString() : null)
+                                .driverId(driverUserId.toString())
+                                .tripStatus("DRIVER_ASSIGNED")
+                                .totalAmount(totalAmt)
+                                .pickupAddress(updated.getPickUpAddress())
+                                .dropoffAddress(updated.getDestinationAddress())
+                                .build());
 
                 return new AcceptTripResponse(
                                 updated.getId(),
@@ -228,24 +249,32 @@ public class TripServiceImpl implements TripService {
                                         "Không thể cập nhật trạng thái chuyến đi");
                 }
 
+                double foodPriceUpdated = updatedTrip.getTotalFoodPrice() != null ? updatedTrip.getTotalFoodPrice() : 0.0;
+                java.math.BigDecimal totalAmtUpdated = java.math.BigDecimal.valueOf(updatedTrip.getShippFare() + foodPriceUpdated);
+
                 if (newStatus == TripStatus.COMPLETED) {
-                        driverServiceClient.updateDriverAvailability(driverUserId, "AVAILABLE");
-                        // Tự động thông báo paymentservice cập nhật trạng thái thanh toán tiền mặt (PAY_AFTER) sang COMPLETED
-                        paymentServiceClient.completeTripPayment(request.tripId());
+                        tripEventPublisher.publishTripCompleted(com.driverapp.bookingservice.event.TripEventPayload.builder()
+                                        .tripId(updatedTrip.getId())
+                                        .customerId(updatedTrip.getCustomerId() != null ? updatedTrip.getCustomerId().toString() : null)
+                                        .driverId(driverUserId.toString())
+                                        .tripStatus("COMPLETED")
+                                        .paymentMethod("PAY_DIRECTLY")
+                                        .totalAmount(totalAmtUpdated)
+                                        .pickupAddress(updatedTrip.getPickUpAddress())
+                                        .dropoffAddress(updatedTrip.getDestinationAddress())
+                                        .build());
+                } else {
+                        tripEventPublisher.publishTripEvent("trip." + newStatus.name().toLowerCase().replace('_', '-'), 
+                                        com.driverapp.bookingservice.event.TripEventPayload.builder()
+                                        .tripId(updatedTrip.getId())
+                                        .customerId(updatedTrip.getCustomerId() != null ? updatedTrip.getCustomerId().toString() : null)
+                                        .driverId(driverUserId.toString())
+                                        .tripStatus(newStatus.name())
+                                        .totalAmount(totalAmtUpdated)
+                                        .pickupAddress(updatedTrip.getPickUpAddress())
+                                        .dropoffAddress(updatedTrip.getDestinationAddress())
+                                        .build());
                 }
-
-
-                String notifMessage = switch (newStatus) {
-                        case DRIVER_ARRIVING -> "Tài xế đang đến điểm đón của bạn.";
-                        case IN_PROGRESS -> "Chuyến đi đã bắt đầu. Chúc bạn có một hành trình an toàn!";
-                        case COMPLETED -> "Chuyến đi đã hoàn thành. Cảm ơn bạn đã sử dụng dịch vụ!";
-                        default -> "Trạng thái chuyến đi của bạn đã được cập nhật thành: " + newStatus;
-                };
-
-                notificationClient.createNotification(new CreateNotificationRequest(
-                                "Cập nhật chuyến đi",
-                                notifMessage,
-                                updatedTrip.getCustomerId()));
         }
 
         private void validateStatusTransition(TripStatus current, TripStatus target) {
@@ -322,10 +351,14 @@ public class TripServiceImpl implements TripService {
                                         "Không thể hủy chuyến đi do tài xế vừa nhận chuyến hoặc trạng thái chuyến đã thay đổi");
                 }
 
-                notificationClient.createNotification(new CreateNotificationRequest(
-                                "Chuyến đi đã được hủy",
-                                "Bạn đã hủy chuyến đi thành công. Lý do: " + request.cancelReason(),
-                                customerId));
+                tripEventPublisher.publishTripCancelled(com.driverapp.bookingservice.event.TripEventPayload.builder()
+                                .tripId(cancelledTrip.getId())
+                                .customerId(cancelledTrip.getCustomerId() != null ? cancelledTrip.getCustomerId().toString() : null)
+                                .driverId(cancelledTrip.getDriverId() != null ? cancelledTrip.getDriverId().toString() : null)
+                                .tripStatus("CANCELLED")
+                                .pickupAddress(cancelledTrip.getPickUpAddress())
+                                .dropoffAddress(cancelledTrip.getDestinationAddress())
+                                .build());
         }
 
         @Override

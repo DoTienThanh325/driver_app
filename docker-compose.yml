@@ -15,5 +15,19 @@ services:
     command: server /data --console-address ":9001"
     restart: unless-stopped
 
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: driverapp-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"     # AMQP port
+      - "15672:15672"   # Management Web UI
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
 volumes:
   minio_data:
+  rabbitmq_data:

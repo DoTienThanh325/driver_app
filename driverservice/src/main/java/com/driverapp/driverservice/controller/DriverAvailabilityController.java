@@ -5,6 +5,8 @@ import com.driverapp.driverservice.dto.response.DriverProfileResponse;
 import com.driverapp.driverservice.service.DriverAvailabilityService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -32,8 +34,10 @@ public class DriverAvailabilityController {
      * Booking-service cập nhật trạng thái hoạt động (ON_TRIP, AVAILABLE, ...)
      */
     @PatchMapping("/availability")
-    public Map<String, String> updateAvailability(@Valid @RequestBody UpdateAvailabilityRequest request) {
-        availabilityService.updateAvailability(request);
+    public Map<String, String> updateAvailability(
+            @Valid @RequestBody UpdateAvailabilityRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        availabilityService.updateAvailability(jwt, request);
         return Map.of("message", "Driver availability updated successfully");
     }
 }
