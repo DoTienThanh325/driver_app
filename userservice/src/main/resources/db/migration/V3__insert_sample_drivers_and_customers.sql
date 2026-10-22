@@ -1,6 +1,6 @@
 -- V3__insert_sample_drivers_and_customers.sql
 -- Mật khẩu mặc định cho tất cả tài khoản bên dưới: admin123
--- Hash BCrypt: $2a$10$8.UnVuG9HHgffUDAlk8qfOuVGkqRzgVym5p.O30qjK526J/wD9eKO
+-- Hash BCrypt: $2a$10$7V9OJfv3XMySW5JndD3Iy.RRBvwliOylAMLiV88Yn76BTwOTbP9PS
 
 -- 1. Tạo các tài khoản Driver & Customer
 INSERT INTO users (id, username, password, phone_number, status, created_at, updated_at) VALUES
@@ -8,7 +8,7 @@ INSERT INTO users (id, username, password, phone_number, status, created_at, upd
 (
     '20000000-0000-0000-0000-000000000001',
     'driver1',
-    '$2a$10$8.UnVuG9HHgffUDAlk8qfOuVGkqRzgVym5p.O30qjK526J/wD9eKO',
+    '$2a$10$7V9OJfv3XMySW5JndD3Iy.RRBvwliOylAMLiV88Yn76BTwOTbP9PS',
     '0911000001',
     'ACTIVE',
     CURRENT_TIMESTAMP,
@@ -18,7 +18,7 @@ INSERT INTO users (id, username, password, phone_number, status, created_at, upd
 (
     '20000000-0000-0000-0000-000000000002',
     'driver2',
-    '$2a$10$8.UnVuG9HHgffUDAlk8qfOuVGkqRzgVym5p.O30qjK526J/wD9eKO',
+    '$2a$10$7V9OJfv3XMySW5JndD3Iy.RRBvwliOylAMLiV88Yn76BTwOTbP9PS',
     '0911000002',
     'ACTIVE',
     CURRENT_TIMESTAMP,
@@ -28,7 +28,7 @@ INSERT INTO users (id, username, password, phone_number, status, created_at, upd
 (
     '20000000-0000-0000-0000-000000000003',
     'driver3',
-    '$2a$10$8.UnVuG9HHgffUDAlk8qfOuVGkqRzgVym5p.O30qjK526J/wD9eKO',
+    '$2a$10$7V9OJfv3XMySW5JndD3Iy.RRBvwliOylAMLiV88Yn76BTwOTbP9PS',
     '0911000003',
     'ACTIVE',
     CURRENT_TIMESTAMP,
@@ -38,20 +38,23 @@ INSERT INTO users (id, username, password, phone_number, status, created_at, upd
 (
     '30000000-0000-0000-0000-000000000001',
     'customer1',
-    '$2a$10$8.UnVuG9HHgffUDAlk8qfOuVGkqRzgVym5p.O30qjK526J/wD9eKO',
+    '$2a$10$7V9OJfv3XMySW5JndD3Iy.RRBvwliOylAMLiV88Yn76BTwOTbP9PS',
     '0922000001',
     'ACTIVE',
     CURRENT_TIMESTAMP,
     CURRENT_TIMESTAMP
 )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- 2. Gán Role
 -- DRIVER role: 00000000-0000-0000-0000-000000000002
 -- CUSTOMER role: 00000000-0000-0000-0000-000000000001
-INSERT INTO user_roles (user_id, role_id) VALUES
-('20000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002'),
-('20000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000002'),
-('20000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000002'),
-('30000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001')
+INSERT INTO user_roles (user_id, role_id)
+SELECT u.id, '00000000-0000-0000-0000-000000000002'::uuid
+FROM users u WHERE u.username IN ('driver1', 'driver2', 'driver3')
+ON CONFLICT (user_id, role_id) DO NOTHING;
+
+INSERT INTO user_roles (user_id, role_id)
+SELECT u.id, '00000000-0000-0000-0000-000000000001'::uuid
+FROM users u WHERE u.username = 'customer1'
 ON CONFLICT (user_id, role_id) DO NOTHING;

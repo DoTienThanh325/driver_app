@@ -1,0 +1,23 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7.2-alpine
+    container_name: driver-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+
+  osrm:
+    image: osrm/osrm-backend:latest
+    container_name: osrm-backend
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./osrm/data:/data
+    command: osrm-routed --algorithm mld /data/hanoi.osrm
+
+volumes:
+  redis_data:

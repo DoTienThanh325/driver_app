@@ -44,4 +44,6 @@ services:
   user:
     base-url: ${USER_SERVICE_URL:http://userservice}
   payment:
-    base-url: ${PAYMENT_SERVICE_URL:http://paymentservice}
+    base-url: ${PAYMENT_SERVICE_URL:http://paymentservice}
+  osrm:
+    url: ${OSRM_URL:http://localhost:5000}
