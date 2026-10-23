@@ -1,19 +1,21 @@
 package com.driverapp.bookingservice.models;
 
 import com.driverapp.bookingservice.models.enums.MatchingOfferStatus;
-import java.time.LocalDateTime;
-import java.util.UUID;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.time.LocalDateTime;
+import java.util.UUID;
+
 @Getter
 @Setter
+@Builder
 @NoArgsConstructor
+@AllArgsConstructor
 @Document(collection = "matching_offers")
 public class MatchingOffer {
+
     @Id
     private String id;
 
@@ -23,4 +25,4 @@ public class MatchingOffer {
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
-}
+}
