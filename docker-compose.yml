@@ -42,7 +42,18 @@ services:
     volumes:
       - es_data:/usr/share/elasticsearch/data
 
+  redis:
+    image: redis:7.2-alpine
+    container_name: driverapp-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+
 volumes:
   minio_data:
   rabbitmq_data:
   es_data:
+  redis_data:

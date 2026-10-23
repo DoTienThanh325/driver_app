@@ -1,5 +1,5 @@
 server:
-  port: ${BOOKING_SERVICE_PORT:8084}
+  port: ${PAYMENT_SERVICE_PORT:8084}
 
 spring:
   application:
