@@ -5,6 +5,11 @@ spring:
   application:
     name: bookingservice
 
+  elasticsearch:
+    uris: ${ELASTICSEARCH_URIS:http://localhost:9200}
+    connection-timeout: 3s
+    socket-timeout: 10s
+
   mongodb:
     uri: ${MONGODB_URI:mongodb://localhost:27017/driverapp_booking_db}
     representation:
@@ -57,4 +62,4 @@ services:
   user:
     base-url: ${USER_SERVICE_URL:http://userservice}
   payment:
-    base-url: ${PAYMENT_SERVICE_URL:http://paymentservice}
+    base-url: ${PAYMENT_SERVICE_URL:http://paymentservice}

@@ -40,8 +40,7 @@ public class SecurityConfig {
                                                 .pathMatchers("/api/drivers/register").hasRole("CUSTOMER")
                                                 .pathMatchers(HttpMethod.PATCH, "/api/drivers/registration")
                                                 .hasRole("CUSTOMER")
-                                                .pathMatchers("/api/bookings/foods", "/api/bookings/foods/**")
-                                                .hasRole("BUSINESS")
+                                                .pathMatchers("/api/bookings/foods").hasRole("BUSINESS")
                                                 .pathMatchers("/api/bookings/restaurants",
                                                                 "/api/bookings/restaurants/**")
                                                 .hasRole("BUSINESS")
@@ -68,6 +67,7 @@ public class SecurityConfig {
                                                 .pathMatchers(HttpMethod.PUT, "/api/payments/driver-payment-info").hasRole("DRIVER")
                                                 .pathMatchers(HttpMethod.POST, "/api/feedbacks", "/api/feedbacks/**").hasRole("CUSTOMER")
                                                 .pathMatchers(HttpMethod.POST, "/api/complaints", "/api/complaints/**").hasAnyRole("CUSTOMER", "DRIVER")
+                                                .pathMatchers("/api/bookings/foods/search/**").hasAnyRole("CUSTOMER", "BUSINESS")
                                                 .anyExchange().authenticated())
 
 

@@ -9,6 +9,7 @@ import com.driverapp.bookingservice.models.FoodOption;
 import com.driverapp.bookingservice.models.enums.BusinessRegistrationStatus;
 import com.driverapp.bookingservice.repository.BusinessRepository;
 import com.driverapp.bookingservice.repository.FoodRepository;
+import com.driverapp.bookingservice.service.FoodSearchService;
 import com.driverapp.bookingservice.service.FoodService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -26,6 +27,7 @@ public class FoodServiceImpl implements FoodService {
 
     private final FoodRepository foodRepository;
     private final BusinessRepository businessRepository;
+    private final FoodSearchService foodSearchService;
 
     // ------------------------------------------------------------------ CREATE
     @Override
@@ -40,7 +42,8 @@ public class FoodServiceImpl implements FoodService {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        foodRepository.save(food);
+        Food savedFood = foodRepository.save(food);
+        foodSearchService.syncFoodToElasticsearch(savedFood.getId());
     }
 
     // ------------------------------------------------------------------ UPDATE
@@ -82,6 +85,7 @@ public class FoodServiceImpl implements FoodService {
 
         food.setUpdatedAt(LocalDateTime.now());
         foodRepository.save(food);
+        foodSearchService.syncFoodToElasticsearch(food.getId());
     }
 
     // ------------------------------------------------------------------ DELETE
@@ -90,6 +94,7 @@ public class FoodServiceImpl implements FoodService {
         String restaurantId = getOwnRestaurantId(userId);
         Food food = findOwnFoodOrThrow(id, restaurantId);
         foodRepository.delete(food);
+        foodSearchService.deleteFoodFromElasticsearch(id);
     }
 
     // ------------------------------------------------------------------ HELPER
