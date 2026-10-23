@@ -5,7 +5,7 @@ import java.util.UUID;
 import com.driverapp.driverservice.models.enums.VerificationStatus;
 
 public record RegisterDriverResponse(
-    UUID userId,
+    UUID driverId,
     VerificationStatus status,
     String message
 ) {}

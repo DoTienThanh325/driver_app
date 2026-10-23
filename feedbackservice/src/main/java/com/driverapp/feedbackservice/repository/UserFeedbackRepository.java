@@ -9,7 +9,7 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface UserFeedbackRepository extends JpaRepository<UserFeedback, UUID> {
-    List<UserFeedback> findByDriverUserId(UUID driverUserId);
+    List<UserFeedback> findByDriverId(UUID driverId);
     List<UserFeedback> findByTripId(String tripId);
 }
 

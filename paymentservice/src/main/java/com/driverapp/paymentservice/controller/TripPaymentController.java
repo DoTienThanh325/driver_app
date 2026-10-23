@@ -1,7 +1,7 @@
 package com.driverapp.paymentservice.controller;
 
 import com.driverapp.paymentservice.dto.request.CreateDriverPaymentInfoRequest;
-import com.driverapp.paymentservice.dto.request.CreateTripPaymentRequest;
+import com.driverapp.paymentservice.dto.request.SwitchToPayBeforeRequest;
 import com.driverapp.paymentservice.dto.response.TripPaymentResponse;
 import com.driverapp.paymentservice.service.TripPaymentService;
 import jakarta.validation.Valid;
@@ -10,13 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.ResponseStatus;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/payments")
@@ -26,20 +20,32 @@ public class TripPaymentController {
     private final TripPaymentService tripPaymentService;
 
     /**
-     * POST /api/payments/trip
-     * Customer tạo thanh toán chuyến đi (PAY_AFTER hoặc PAY_BEFORE)
+     * PATCH /api/payments/trip/{tripId}/pay-before
+     * Customer chuyển phương thức thanh toán sang PAY_BEFORE khi tài xế đã nhận cuốc
+     * (Không còn API tạo thanh toán thủ công)
      */
-    @PostMapping("/trip")
-    @ResponseStatus(HttpStatus.CREATED)
-    public TripPaymentResponse createTripPayment(
-            @Valid @RequestBody CreateTripPaymentRequest request,
+    @PatchMapping("/trip/{tripId}/pay-before")
+    public TripPaymentResponse switchToPayBefore(
+            @PathVariable String tripId,
+            @RequestBody(required = false) SwitchToPayBeforeRequest request,
             @AuthenticationPrincipal Jwt jwt) {
-        return tripPaymentService.createTripPayment(request, jwt);
+        return tripPaymentService.switchToPayBefore(tripId, request, jwt);
+    }
+
+    /**
+     * GET /api/payments/trip/{tripId}
+     * Lấy thông tin thanh toán của chuyến đi (cho Customer và Driver theo dõi)
+     */
+    @GetMapping("/trip/{tripId}")
+    public TripPaymentResponse getTripPayment(
+            @PathVariable String tripId,
+            @AuthenticationPrincipal Jwt jwt) {
+        return tripPaymentService.getTripPaymentByTripId(tripId, jwt);
     }
 
     /**
      * PATCH /api/payments/trip/{tripPaymentId}/confirm
-     * Driver xác nhận đã nhận được tiền chuyển khoản từ khách hàng
+     * Driver xác nhận đã nhận được tiền chuyển khoản từ khách hàng (API có sẵn)
      */
     @PatchMapping("/trip/{tripPaymentId}/confirm")
     public Map<String, String> confirmPayment(
@@ -50,7 +56,7 @@ public class TripPaymentController {
 
     /**
      * POST /api/payments/driver-payment-info
-     * Driver đăng ký / cập nhật STK ngân hàng của mình
+     * Driver đăng ký / cập nhật STK ngân hàng của mình (API có sẵn)
      */
     @PostMapping("/driver-payment-info")
     @ResponseStatus(HttpStatus.CREATED)
@@ -62,11 +68,10 @@ public class TripPaymentController {
 
     /**
      * PATCH /api/payments/trip/internal/{tripId}/complete
-     * Internal API: Booking Service gọi khi status trip == COMPLETED để hoàn tất thanh toán tiền mặt (PAY_AFTER)
+     * Internal API: Booking Service gọi khi status trip == COMPLETED để hoàn tất thanh toán tiền mặt (PAY_DIRECTLY)
      */
     @PatchMapping("/trip/internal/{tripId}/complete")
-    public Map<String, String> completePayAfterPayment(@PathVariable String tripId) {
-        return tripPaymentService.completePayAfterTripPayment(tripId);
+    public Map<String, String> completePayDirectlyPayment(@PathVariable String tripId) {
+        return tripPaymentService.completePayDirectlyTripPayment(tripId);
     }
 }
-

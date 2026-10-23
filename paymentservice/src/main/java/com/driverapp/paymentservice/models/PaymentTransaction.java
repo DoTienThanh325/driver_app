@@ -23,7 +23,7 @@ public class PaymentTransaction {
 
     private String tripPaymentId;
     private String tripId;
-    private UUID driverUserId;
+    private UUID driverId;
 
     private double amount;
     private String bankBin;

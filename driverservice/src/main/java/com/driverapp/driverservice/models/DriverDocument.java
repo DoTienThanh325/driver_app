@@ -26,7 +26,7 @@ public class DriverDocument {
     private UUID id = UUID.randomUUID();
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "user_id", nullable = false)
+    @JoinColumn(name = "driver_id", referencedColumnName = "user_id", nullable = false)
     private Driver driver;
 
     @Enumerated(EnumType.STRING)

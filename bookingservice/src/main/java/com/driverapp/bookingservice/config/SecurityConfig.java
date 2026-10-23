@@ -22,6 +22,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/businesses/internal/**").permitAll()
                         .requestMatchers("/api/trips/internal/**").permitAll()
+                        .requestMatchers("/api/bookings/foods/search/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 ->

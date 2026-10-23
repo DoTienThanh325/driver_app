@@ -2,6 +2,8 @@
 
 `driverservice` quản lý hồ sơ tài xế, trạng thái xác minh, giấy tờ, phương tiện và trạng thái sẵn sàng nhận chuyến. Service yêu cầu JWT hợp lệ từ `userservice`; ảnh giấy tờ và phương tiện được lưu trên MinIO, còn URI `s3://...` được lưu trong PostgreSQL.
 
+> **Lưu ý kiến trúc**: Định danh tài xế (`driverId`) được đồng nhất hoàn toàn với mã người dùng (`userId` từ JWT subject). Bảng `drivers` sử dụng `user_id` làm Primary Key. Do đó, các service khác không cần gọi API phụ để tra cứu `driverId` từ `userId`.
+
 ## Cấu hình chính
 
 - Port: `8082`.
@@ -9,7 +11,7 @@
 - Redis: `localhost:6379`.
 - Object storage: MinIO tại `http://localhost:9000`, bucket mặc định `driver-documents`.
 - JWT issuer/JWKS: `http://localhost:8081`.
-- Migration: Flyway trong `src/main/resources/db/migration`.
+- Migration: Flyway trong `src/main/resources/db/migration` (`V0__create_driver_tables.sql`).
 - Mỗi ảnh phải là JPEG, PNG hoặc WebP, dung lượng từ 1 byte đến 5 MiB.
 - Giới hạn multipart: 5 MB mỗi file và 21 MB mỗi request.
 
@@ -61,29 +63,16 @@ Response `201 Created` gồm `vehicleId`, `vehicleType` và `message`.
 
 Nếu transaction database thất bại, service sẽ cố gắng xóa các ảnh vừa upload để tránh object rác trên MinIO.
 
-### `GET /api/drivers/by-user/{userId}`
+### `GET /api/drivers/check-available/{driverId}`
 
-Tra cứu nhanh `driverId` từ `userId` mà **không kiểm tra trạng thái AVAILABLE** (dành cho `bookingservice` gọi nội bộ khi tài xế đang chạy chuyến `ON_TRIP` để cập nhật trạng thái chuyến đi).
+Kiểm tra tài xế có tồn tại, đã được duyệt (`APPROVED`) và đang sẵn sàng nhận chuyến (`AVAILABLE`) hay không (dành cho `bookingservice` gọi nội bộ khi tài xế nhấn nhận chuyến `acceptTrip`).
 
 - **HTTP Method**: `GET`
+- **Path Variable**: `driverId` (UUID, chính là `userId` của tài xế)
 - **Response `200 OK`**:
   ```json
   {
     "driverId": "b4c80242-63b7-4a0b-8d02-1a3b5a77c8e9",
-    "userId": "fa2fbb48-5231-4775-8025-a7bdf064f7bc"
-  }
-  ```
-
-### `GET /api/drivers/check-available/{userId}`
-
-Kiểm tra tài xế có tồn tại, đã `APPROVED` và đang `AVAILABLE` hay không (dùng khi tài xế nhận chuyến `acceptTrip`).
-
-- **HTTP Method**: `GET`
-- **Response `200 OK`**:
-  ```json
-  {
-    "driverId": "b4c80242-63b7-4a0b-8d02-1a3b5a77c8e9",
-    "userId": "fa2fbb48-5231-4775-8025-a7bdf064f7bc",
     "status": "AVAILABLE"
   }
   ```
@@ -101,24 +90,37 @@ Cập nhật trạng thái sẵn sàng nhận chuyến của tài xế (`AVAILAB
   }
   ```
 - **Response**: `200 OK`
+  ```json
+  {
+    "message": "Driver availability updated successfully"
+  }
+  ```
+
+## Cơ sở dữ liệu & Migration
+
+Cơ sở dữ liệu PostgreSQL `driverapp_driver_db` được khởi tạo qua 1 file migration duy nhất:
+- `src/main/resources/db/migration/V0__create_driver_tables.sql`:
+  - Bảng `drivers`: Khóa chính `user_id UUID PRIMARY KEY`, lưu `verification_status` (`PENDING`, `APPROVED`, `REJECTED`), `reject_reason`, `created_at`, `approved_at`.
+  - Bảng `driver_documents`: Khóa ngoại `driver_id REFERENCES drivers(user_id)`, lưu `document_type`, `front_image_uri`, `back_image_uri`.
+  - Bảng `driver_vehicles`: Khóa ngoại `driver_id REFERENCES drivers(user_id)`, lưu `registration_front_uri`, `plate_uri`, `vehicle_type`.
+  - Bảng `driver_availability`: Khóa ngoại `driver_id REFERENCES drivers(user_id)` UNIQUE, lưu `status` (`OFFLINE`, `AVAILABLE`, `ON_TRIP`, `SUSPENDED`), `updated_at`.
 
 ## Giải thích file
 
 - `pom.xml`: khai báo Spring WebMVC, JPA, Security, OAuth2 Resource Server, Validation, PostgreSQL, Flyway, Redis, MinIO SDK, Lombok và test dependency.
-- `mvnw`, `mvnw.cmd`, `.mvn/wrapper/maven-wrapper.properties`: Maven Wrapper.
 - `src/main/java/com/driverapp/driverservice/DriverserviceApplication.java`: class main khởi động service.
 - `config/SecurityConfig.java`: tắt CSRF, dùng session stateless và yêu cầu JWT cho mọi request.
 - `config/ObjectStorageConfig.java`: tạo MinIO client nội bộ và client dùng endpoint public.
 - `controller/DriverRegistrationController.java`: nhận request multipart đăng ký tài xế.
 - `controller/DriverVehicleController.java`: nhận request multipart thêm phương tiện.
-- `controller/DriverAvailabilityController.java`: kiểm tra tài xế khả dụng (`check-available`), tra cứu driverId theo userId (`by-user`) và cập nhật availability.
+- `controller/DriverAvailabilityController.java`: kiểm tra tài xế khả dụng (`check-available`) và cập nhật availability (`PATCH /api/drivers/availability`).
 - `controller/DriverTestController.java`: controller test route `GET /api/drivers/test`.
-- `dto/request/`: các record request cho đăng ký tài xế và thêm phương tiện.
+- `dto/request/`: các record request cho đăng ký tài xế, thêm phương tiện và cập nhật trạng thái khả dụng.
 - `dto/response/`: các record response tương ứng.
-- `service/` và `service/impl/`: nghiệp vụ đăng ký tài xế, thêm phương tiện, upload ảnh và dọn ảnh khi transaction rollback.
+- `service/` và `service/impl/`: nghiệp vụ đăng ký tài xế, thêm phương tiện, cập nhật availability, upload ảnh và dọn ảnh khi transaction rollback.
 - `storage/DriverImageStorage.java`: validate định dạng/kích thước, upload, xóa và tạo signed URL cho ảnh MinIO.
 - `exception/`: chuyển lỗi xung đột dữ liệu hoặc object storage thành Problem Details phù hợp.
-- `models/Driver.java`: entity bảng `drivers`, liên kết `userId`, trạng thái xác minh, lý do từ chối, thời điểm tạo và approve.
+- `models/Driver.java`: entity bảng `drivers`, `userId` làm Primary Key, lưu trạng thái xác minh, lý do từ chối, thời điểm tạo và approve.
 - `models/DriverDocument.java`: entity bảng `driver_documents`, lưu URI mặt trước/mặt sau giấy tờ tài xế.
 - `models/DriverVehicle.java`: entity bảng `driver_vehicles`, lưu URI ảnh đăng ký xe, ảnh biển số và loại xe.
 - `models/DriverAvailability.java`: entity bảng `driver_availability`, lưu trạng thái sẵn sàng của tài xế.
@@ -128,19 +130,19 @@ Cập nhật trạng thái sẵn sàng nhận chuyến của tài xế (`AVAILAB
 - `models/enums/VerificationStatus.java`: enum `PENDING`, `APPROVED`, `REJECTED`.
 - `repository/`: các JPA repository cho driver, giấy tờ, phương tiện và trạng thái hoạt động.
 - `src/main/resources/application.yaml`: cấu hình port, datasource, JPA, Flyway, Redis, JWT, multipart và MinIO.
-- `src/main/resources/db/migration/V0__create_driver_tables.sql`: tạo các bảng driver, document, vehicle và availability.
+- `src/main/resources/db/migration/V0__create_driver_tables.sql`: migration tạo các bảng driver, document, vehicle và availability.
 
 ## Chạy local
 
 Từ thư mục gốc backend, khởi động MinIO:
 
-```powershell
+```bash
 docker compose up -d minio
 ```
 
 Mở `http://localhost:9001`, đăng nhập bằng credential trong `docker-compose.yml` và tạo bucket `driver-documents`. Sau đó chạy service:
 
-```powershell
+```bash
 cd driverservice
-.\mvnw.cmd spring-boot:run
+./mvnw spring-boot:run
 ```

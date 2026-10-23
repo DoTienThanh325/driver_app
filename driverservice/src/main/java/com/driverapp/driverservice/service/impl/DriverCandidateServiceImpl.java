@@ -60,7 +60,8 @@ public class DriverCandidateServiceImpl implements DriverCandidateService {
     @Override
     @Transactional(readOnly = true)
     public DriverDetailResponse getDriverDetail(UUID driverId, UUID currentUserId, List<String> roles) {
-        Driver driver = driverRepository.findById(driverId)
+        Driver driver = driverRepository.findByUserId(driverId)
+                .or(() -> driverRepository.findById(driverId))
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "Driver not found with id: " + driverId));

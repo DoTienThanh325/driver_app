@@ -247,7 +247,7 @@ public class DriverRegistrationServiceImpl implements DriverRegistrationService 
         if (driver.getVerificationStatus() == VerificationStatus.REJECTED) {
             driver.setVerificationStatus(VerificationStatus.PENDING);
             driver.setRejectionReason(null);
-            log.info("Driver {} resubmitted registration after rejection", driver.getUserId());
+            log.info("Driver {} resubmitted registration after rejection", driver.getId());
         }
 
         // Lưu cập nhật vào DB

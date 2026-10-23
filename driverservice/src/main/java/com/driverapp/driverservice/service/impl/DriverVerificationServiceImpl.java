@@ -28,13 +28,15 @@ public class DriverVerificationServiceImpl implements DriverVerificationService 
     private final DriverRepository driverRepository;
     private final DriverAvailabilityRepository availabilityRepository;
     private final UserServiceClient userServiceClient;
+    private final com.driverapp.driverservice.publisher.DriverEventPublisher driverEventPublisher;
 
     @Override
     @Transactional
-    public void updateVerification(UUID userId, UpdateVerificationRequest request) {
-        Driver driver = driverRepository.findById(userId)
+    public void updateVerification(UUID driverId, UpdateVerificationRequest request) {
+        Driver driver = driverRepository.findByUserId(driverId)
+                .or(() -> driverRepository.findById(driverId))
                 .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Driver not found with userId: " + userId));
+                        HttpStatus.NOT_FOUND, "Driver not found with id: " + driverId));
 
         if (driver.getVerificationStatus() == VerificationStatus.APPROVED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -54,18 +56,18 @@ public class DriverVerificationServiceImpl implements DriverVerificationService 
         driver.approve();
         driverRepository.save(driver);
 
-        // Step 2: driver-service creates driver_availability with status OFFLINE
-        if (availabilityRepository.findByDriver_UserId(driver.getUserId()).isEmpty()) {
+        // Step 2: driver-service creates driver_availability with status OFFLINE (driverId là userId)
+        if (availabilityRepository.findByDriverId(driver.getUserId()).isEmpty()) {
             availabilityRepository.save(DriverAvailability.builder()
                     .driver(driver)
                     .status(AvailabilityStatus.OFFLINE)
                     .build());
         }
 
-        // Step 3: driver-service calls user-service to assign DRIVER role
-        userServiceClient.grantRole(driver.getUserId(), DRIVER_ROLE);
+        // Step 3: driver-service publishes driver.approved event asynchronously
+        driverEventPublisher.publishDriverApproved(driver.getId().toString(), driver.getUserId().toString());
 
-        log.info("Driver approved successfully: userId={}", driver.getUserId());
+        log.info("Driver approved successfully: driverId={}, userId={}", driver.getId(), driver.getUserId());
     }
 
     private void reject(Driver driver, String reason) {
@@ -75,6 +77,6 @@ public class DriverVerificationServiceImpl implements DriverVerificationService 
         }
         driver.reject(reason.trim());
         driverRepository.save(driver);
-        log.info("Driver rejected successfully: userId={}", driver.getUserId());
+        log.info("Driver rejected successfully: driverId={}", driver.getId());
     }
 }

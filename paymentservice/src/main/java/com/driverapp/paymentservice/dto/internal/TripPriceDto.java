@@ -5,7 +5,7 @@ import java.util.UUID;
 public record TripPriceDto(
         String tripId,
         UUID customerId,
-        UUID driverUserId,
+        UUID driverId,
         double shippFare,
         Double totalFoodPrice,
         String status

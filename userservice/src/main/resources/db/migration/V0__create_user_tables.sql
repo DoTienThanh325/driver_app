@@ -1,32 +1,117 @@
 CREATE TABLE users (
-       id UUID PRIMARY KEY,
-       username VARCHAR(100) NOT NULL UNIQUE,
-       password VARCHAR(255) NOT NULL,
-       phone_number VARCHAR(20) NOT NULL UNIQUE,
-       status VARCHAR(20) NOT NULL
-           CHECK (status IN ('ACTIVE', 'BANNED')),
-       created_at TIMESTAMP NOT NULL,
-       updated_at TIMESTAMP NOT NULL
+    id UUID PRIMARY KEY,
+    username VARCHAR(100) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL,
+    phone_number VARCHAR(20) NOT NULL UNIQUE,
+    status VARCHAR(20) NOT NULL
+        CHECK (status IN ('ACTIVE', 'BANNED')),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
 );
 
 CREATE TABLE roles (
-       id UUID PRIMARY KEY,
-       role_code VARCHAR(20) NOT NULL UNIQUE
-           CHECK (role_code IN ('CUSTOMER', 'DRIVER', 'ADMIN'))
+    id UUID PRIMARY KEY,
+    role_code VARCHAR(20) NOT NULL UNIQUE
+        CHECK (role_code IN ('CUSTOMER', 'DRIVER', 'ADMIN', 'BUSINESS'))
 );
 
 CREATE TABLE user_roles (
-        user_id UUID NOT NULL REFERENCES users(id),
-        role_id UUID NOT NULL REFERENCES roles(id),
-        PRIMARY KEY (user_id, role_id)
+    user_id UUID NOT NULL REFERENCES users(id),
+    role_id UUID NOT NULL REFERENCES roles(id),
+    PRIMARY KEY (user_id, role_id)
 );
 
 CREATE TABLE refresh_tokens (
-        id UUID PRIMARY KEY,
-        user_id UUID NOT NULL REFERENCES users(id),
-        refresh_token VARCHAR(255) NOT NULL UNIQUE,
-        expired_at TIMESTAMP NOT NULL,
-        revoked_at TIMESTAMP,
-        created_at TIMESTAMP NOT NULL
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id),
+    refresh_token VARCHAR(255) NOT NULL UNIQUE,
+    expired_at TIMESTAMP NOT NULL,
+    revoked_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL
 );
 
+-- 1. Khởi tạo danh sách Roles đầy đủ
+INSERT INTO roles (id, role_code) VALUES
+('00000000-0000-0000-0000-000000000001', 'CUSTOMER'),
+('00000000-0000-0000-0000-000000000002', 'DRIVER'),
+('00000000-0000-0000-0000-000000000003', 'ADMIN'),
+('00000000-0000-0000-0000-000000000004', 'BUSINESS')
+ON CONFLICT (id) DO NOTHING;
+
+-- 2. Khởi tạo các tài khoản Admin mặc định (password: admin123)
+INSERT INTO users (id, username, password, phone_number, status, created_at, updated_at) VALUES
+(
+    '10000000-0000-0000-0000-000000000001',
+    'admin1',
+    '$2a$10$8.UnVuG9HHgffUDAlk8qfOuVGkqRzgVym5p.O30qjK526J/wD9eKO',
+    '0900000001',
+    'ACTIVE',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP
+),
+(
+    '10000000-0000-0000-0000-000000000002',
+    'admin2',
+    '$2a$10$8.UnVuG9HHgffUDAlk8qfOuVGkqRzgVym5p.O30qjK526J/wD9eKO',
+    '0900000002',
+    'ACTIVE',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO user_roles (user_id, role_id) VALUES
+('10000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000003'),
+('10000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000003')
+ON CONFLICT (user_id, role_id) DO NOTHING;
+
+-- 3. Khởi tạo các tài khoản mẫu Driver & Customer (password: admin123)
+INSERT INTO users (id, username, password, phone_number, status, created_at, updated_at) VALUES
+-- Tài xế 1 (AVAILABLE)
+(
+    '20000000-0000-0000-0000-000000000001',
+    'driver1',
+    '$2a$10$8.UnVuG9HHgffUDAlk8qfOuVGkqRzgVym5p.O30qjK526J/wD9eKO',
+    '0911000001',
+    'ACTIVE',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP
+),
+-- Tài xế 2 (AVAILABLE)
+(
+    '20000000-0000-0000-0000-000000000002',
+    'driver2',
+    '$2a$10$8.UnVuG9HHgffUDAlk8qfOuVGkqRzgVym5p.O30qjK526J/wD9eKO',
+    '0911000002',
+    'ACTIVE',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP
+),
+-- Tài xế 3 (OFFLINE)
+(
+    '20000000-0000-0000-0000-000000000003',
+    'driver3',
+    '$2a$10$8.UnVuG9HHgffUDAlk8qfOuVGkqRzgVym5p.O30qjK526J/wD9eKO',
+    '0911000003',
+    'ACTIVE',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP
+),
+-- Khách hàng mẫu
+(
+    '30000000-0000-0000-0000-000000000001',
+    'customer1',
+    '$2a$10$8.UnVuG9HHgffUDAlk8qfOuVGkqRzgVym5p.O30qjK526J/wD9eKO',
+    '0922000001',
+    'ACTIVE',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO user_roles (user_id, role_id) VALUES
+('20000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002'),
+('20000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000002'),
+('20000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000002'),
+('30000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001')
+ON CONFLICT (user_id, role_id) DO NOTHING;

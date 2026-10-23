@@ -3,6 +3,6 @@ package com.driverapp.driverservice.dto.response;
 import java.util.UUID;
 
 public record DriverProfileResponse(
-    UUID userId,
+    UUID driverId,
     String status // AVAILABLE
 ) {}

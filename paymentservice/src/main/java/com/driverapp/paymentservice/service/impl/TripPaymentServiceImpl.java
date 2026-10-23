@@ -1,9 +1,7 @@
 package com.driverapp.paymentservice.service.impl;
 
-import com.driverapp.paymentservice.client.BookingServiceClient;
-import com.driverapp.paymentservice.dto.internal.TripPriceDto;
 import com.driverapp.paymentservice.dto.request.CreateDriverPaymentInfoRequest;
-import com.driverapp.paymentservice.dto.request.CreateTripPaymentRequest;
+import com.driverapp.paymentservice.dto.request.SwitchToPayBeforeRequest;
 import com.driverapp.paymentservice.dto.response.TripPaymentResponse;
 import com.driverapp.paymentservice.models.DriverPaymentInfo;
 import com.driverapp.paymentservice.models.PaymentTransaction;
@@ -42,40 +40,89 @@ public class TripPaymentServiceImpl implements TripPaymentService {
     private final DriverPaymentInfoRepository driverPaymentInfoRepository;
     private final PaymentTransactionRepository paymentTransactionRepository;
     private final VoucherRepository voucherRepository;
-    private final BookingServiceClient bookingServiceClient;
 
     private static final int QR_EXPIRY_MINUTES = 15;
 
-    // ────────────────────────── 1. TẠO THANH TOÁN CHUYẾN ĐI
-    // ──────────────────────────
+    // ────────────────────────── 1. TỰ ĐỘNG TẠO THANH TOÁN MẶC ĐỊNH PAY_DIRECTLY ──────────────────────────
     @Override
     @Transactional
-    public TripPaymentResponse createTripPayment(CreateTripPaymentRequest request, Jwt jwt) {
-        UUID customerId = UUID.fromString(jwt.getSubject());
-        String tripId = request.getTripId();
-
-        // 1. Kiểm tra đã có thanh toán cho chuyến này chưa
-        tripPaymentRepository.findByTripId(tripId).ifPresent(p -> {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chuyến đi này đã được tạo thanh toán");
-        });
-
-        // 2. Lấy thông tin giá chuyến từ Booking Service
-        TripPriceDto tripPrice = bookingServiceClient.getTripPrice(tripId);
-
-        if (!customerId.equals(tripPrice.customerId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn không có quyền thanh toán cho chuyến đi này");
+    public void initDefaultPayDirectlyPayment(String tripId, UUID customerId, double totalAmount) {
+        if (tripPaymentRepository.findByTripId(tripId).isPresent()) {
+            log.warn("Thanh toán cho tripId={} đã tồn tại, bỏ qua tạo mặc định", tripId);
+            return;
         }
 
-        // 3. Tính tiền gốc
-        double shippFare = tripPrice.shippFare();
-        Double totalFoodPrice = tripPrice.totalFoodPrice();
-        double totalAmount = shippFare + (totalFoodPrice != null ? totalFoodPrice : 0.0);
+        LocalDateTime now = LocalDateTime.now();
+        TripPayment payment = TripPayment.builder()
+                .tripId(tripId)
+                .customerId(customerId)
+                .driverId(null) // Chưa có tài xế nhận cuốc
+                .method(PaymentMethod.PAY_DIRECTLY)
+                .status(TripPaymentStatus.PENDING)
+                .shippFare(totalAmount)
+                .totalAmount(totalAmount)
+                .discountAmount(0.0)
+                .finalAmount(totalAmount)
+                .vouchers(new ArrayList<>())
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
 
-        // 4. Áp dụng Voucher
-        double discountAmount = 0.0;
-        List<TripPaymentVoucher> appliedVouchers = new ArrayList<>();
+        tripPaymentRepository.save(payment);
+        log.info("[PAY_DIRECTLY DEFAULT] Đã tạo thanh toán mặc định cho tripId={}, amount={}", tripId, totalAmount);
+    }
 
-        if (request.getVoucherIds() != null && !request.getVoucherIds().isEmpty()) {
+    // ────────────────────────── 2. CẬP NHẬT TÀI XẾ (VẪN GIỮ NGUYÊN PAY_DIRECTLY) ──────────────────────────
+    @Override
+    @Transactional
+    public void assignDriverToPayment(String tripId, UUID driverId) {
+        tripPaymentRepository.findByTripId(tripId).ifPresent(payment -> {
+            payment.setDriverId(driverId);
+            payment.setMethod(PaymentMethod.PAY_DIRECTLY); // Vẫn giữ PAY_DIRECTLY
+            payment.setStatus(TripPaymentStatus.PENDING);  // Vẫn giữ PENDING
+            payment.setUpdatedAt(LocalDateTime.now());
+            tripPaymentRepository.save(payment);
+            log.info("[ASSIGN DRIVER] Đã cập nhật driverId={} vào payment tripId={} (VẪN GIỮ PAY_DIRECTLY)", driverId, tripId);
+        });
+    }
+
+    // ────────────────────────── 3. KHÁCH HÀNG PATCH SANG PAY_BEFORE ──────────────────────────
+    @Override
+    @Transactional
+    public TripPaymentResponse switchToPayBefore(String tripId, SwitchToPayBeforeRequest request, Jwt jwt) {
+        UUID customerId = UUID.fromString(jwt.getSubject());
+
+        TripPayment payment = tripPaymentRepository.findByTripId(tripId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy thông tin thanh toán cho chuyến đi"));
+
+        // Kiểm tra quyền sở hữu của Customer
+        if (!customerId.equals(payment.getCustomerId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn không có quyền chỉnh sửa thanh toán chuyến đi này");
+        }
+
+        // ĐIỀU KIỆN QUAN TRỌNG: Phải có tài xế nhận chuyến mới được đổi sang PAY_BEFORE
+        if (payment.getDriverId() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Chuyến đi chưa có tài xế nhận cuốc. Bạn chỉ có thể chuyển sang PAY_BEFORE sau khi tài xế nhận chuyến.");
+        }
+
+        if (payment.getStatus() == TripPaymentStatus.COMPLETED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Chuyến đi này đã hoàn tất thanh toán");
+        }
+
+        // Lấy thông tin STK của Tài xế
+        DriverPaymentInfo driverInfo = driverPaymentInfoRepository.findByDriverId(payment.getDriverId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Tài xế chưa cập nhật thông tin ngân hàng. Vui lòng thanh toán trực tiếp (PAY_DIRECTLY)."));
+
+        // Xử lý voucher nếu có
+        double totalAmount = payment.getTotalAmount();
+        double discountAmount = payment.getDiscountAmount();
+        List<TripPaymentVoucher> appliedVouchers = payment.getVouchers() != null ? payment.getVouchers() : new ArrayList<>();
+
+        if (request != null && request.getVoucherIds() != null && !request.getVoucherIds().isEmpty()) {
+            discountAmount = 0.0;
+            appliedVouchers = new ArrayList<>();
             LocalDateTime now = LocalDateTime.now();
             for (String vId : request.getVoucherIds()) {
                 Voucher voucher = voucherRepository.findById(vId).orElse(null);
@@ -96,106 +143,67 @@ public class TripPaymentServiceImpl implements TripPaymentService {
         double finalAmount = Math.max(0, totalAmount - discountAmount);
         LocalDateTime now = LocalDateTime.now();
 
-        // 5. Khởi tạo TripPayment
-        TripPayment tripPayment = TripPayment.builder()
-                .tripId(tripId)
-                .customerId(customerId)
-                .driverUserId(tripPrice.driverUserId())
-                .method(request.getMethod())
-                .shippFare(shippFare)
-                .totalFoodPrice(totalFoodPrice)
+        // Cập nhật TripPayment sang PAY_BEFORE
+        payment.setMethod(PaymentMethod.PAY_BEFORE);
+        payment.setStatus(TripPaymentStatus.AWAITING_PAYMENT);
+        payment.setDiscountAmount(discountAmount);
+        payment.setFinalAmount(finalAmount);
+        payment.setVouchers(appliedVouchers);
+        payment.setUpdatedAt(now);
+        tripPaymentRepository.save(payment);
+
+        // Sinh mã VietQR chuyển khoản
+        String transferContent = "THANH TOAN CHUYEN DI " + tripId;
+        String qrUrl = buildVietQrUrl(driverInfo.getBankBin(), driverInfo.getBankAccountNumber(),
+                driverInfo.getBankAccountName(), finalAmount, transferContent);
+        LocalDateTime expiresAt = now.plusMinutes(QR_EXPIRY_MINUTES);
+
+        PaymentTransaction transaction = paymentTransactionRepository.findByTripPaymentId(payment.getId())
+                .orElseGet(() -> PaymentTransaction.builder()
+                        .tripPaymentId(payment.getId())
+                        .tripId(tripId)
+                        .driverId(payment.getDriverId())
+                        .createdAt(now)
+                        .build());
+
+        transaction.setAmount(finalAmount);
+        transaction.setBankBin(driverInfo.getBankBin());
+        transaction.setBankAccountNumber(driverInfo.getBankAccountNumber());
+        transaction.setBankAccountName(driverInfo.getBankAccountName());
+        transaction.setTransferContent(transferContent);
+        transaction.setQrDataURL(qrUrl);
+        transaction.setStatus(TransactionStatus.PENDING);
+        transaction.setExpiresAt(expiresAt);
+        transaction.setUpdatedAt(now);
+        paymentTransactionRepository.save(transaction);
+
+        log.info("[SWITCH TO PAY_BEFORE] Thành công cho tripId={}, tài xế={}, STK={}",
+                tripId, payment.getDriverId(), driverInfo.getBankAccountNumber());
+
+        TripPaymentResponse.QrPaymentInfo qrInfo = TripPaymentResponse.QrPaymentInfo.builder()
+                .transactionId(transaction.getId())
+                .qrDataURL(qrUrl)
+                .bankName(driverInfo.getBankName())
+                .bankBin(driverInfo.getBankBin())
+                .bankAccountNumber(driverInfo.getBankAccountNumber())
+                .bankAccountName(driverInfo.getBankAccountName())
+                .amount(finalAmount)
+                .transferContent(transferContent)
+                .expiresAt(expiresAt)
+                .build();
+
+        return TripPaymentResponse.builder()
+                .message("Chuyển sang trả trước thành công. Vui lòng quét mã VietQR để thanh toán cho tài xế.")
+                .tripPaymentId(payment.getId())
                 .totalAmount(totalAmount)
                 .discountAmount(discountAmount)
                 .finalAmount(finalAmount)
-                .vouchers(appliedVouchers)
-                .createdAt(now)
-                .updatedAt(now)
+                .method(PaymentMethod.PAY_BEFORE)
+                .status(TripPaymentStatus.AWAITING_PAYMENT)
+                .qrPayment(qrInfo)
                 .build();
-
-        // 6. Xử lý theo phương thức thanh toán
-        if (request.getMethod() == PaymentMethod.PAY_AFTER) {
-            tripPayment.setStatus(TripPaymentStatus.PENDING);
-            tripPaymentRepository.save(tripPayment);
-            log.info("PAY_AFTER: tripId={}, finalAmount={}", tripId, finalAmount);
-
-            return TripPaymentResponse.builder()
-                    .message("Tạo thanh toán tiền mặt thành công")
-                    .tripPaymentId(tripPayment.getId())
-                    .totalAmount(totalAmount)
-                    .discountAmount(discountAmount)
-                    .finalAmount(finalAmount)
-                    .method(PaymentMethod.PAY_AFTER)
-                    .status(TripPaymentStatus.PENDING)
-                    .qrPayment(null)
-                    .build();
-        } else {
-            // PAY_BEFORE: Chuyển khoản trực tiếp vào STK của Tài xế
-            UUID driverUserId = tripPrice.driverUserId();
-            if (driverUserId == null) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chuyến đi chưa có tài xế nhận");
-            }
-
-            // Lấy thông tin STK của Tài xế
-            DriverPaymentInfo driverInfo = driverPaymentInfoRepository.findByUserId(driverUserId)
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                            "Tài xế chưa cập nhật thông tin ngân hàng. Vui lòng chọn trả tiền mặt (PAY_AFTER)"));
-
-            tripPayment.setStatus(TripPaymentStatus.AWAITING_PAYMENT);
-            tripPaymentRepository.save(tripPayment);
-
-            String transferContent = "THANH TOAN CHUYEN DI " + tripId;
-            String qrUrl = buildVietQrUrl(driverInfo.getBankBin(), driverInfo.getBankAccountNumber(),
-                    driverInfo.getBankAccountName(), finalAmount, transferContent);
-            LocalDateTime expiresAt = now.plusMinutes(QR_EXPIRY_MINUTES);
-
-            PaymentTransaction transaction = PaymentTransaction.builder()
-                    .tripPaymentId(tripPayment.getId())
-                    .tripId(tripId)
-                    .driverUserId(driverUserId)
-                    .amount(finalAmount)
-                    .bankBin(driverInfo.getBankBin())
-                    .bankAccountNumber(driverInfo.getBankAccountNumber())
-                    .bankAccountName(driverInfo.getBankAccountName())
-                    .transferContent(transferContent)
-                    .qrDataURL(qrUrl)
-                    .status(TransactionStatus.PENDING)
-                    .expiresAt(expiresAt)
-                    .createdAt(now)
-                    .updatedAt(now)
-                    .build();
-
-            paymentTransactionRepository.save(transaction);
-            log.info("PAY_BEFORE: Chuyển khoản tới tài xế {}, STK={}, qrUrl={}",
-                    driverUserId, driverInfo.getBankAccountNumber(), qrUrl);
-
-            TripPaymentResponse.QrPaymentInfo qrInfo = TripPaymentResponse.QrPaymentInfo.builder()
-                    .transactionId(transaction.getId())
-                    .qrDataURL(qrUrl)
-                    .bankName(driverInfo.getBankName())
-                    .bankBin(driverInfo.getBankBin())
-                    .bankAccountNumber(driverInfo.getBankAccountNumber())
-                    .bankAccountName(driverInfo.getBankAccountName())
-                    .amount(finalAmount)
-                    .transferContent(transferContent)
-                    .expiresAt(expiresAt)
-                    .build();
-
-            return TripPaymentResponse.builder()
-                    .message("Tạo thanh toán thành công. Vui lòng quét mã VietQR để chuyển tiền cho tài xế.")
-                    .tripPaymentId(tripPayment.getId())
-                    .totalAmount(totalAmount)
-                    .discountAmount(discountAmount)
-                    .finalAmount(finalAmount)
-                    .method(PaymentMethod.PAY_BEFORE)
-                    .status(TripPaymentStatus.AWAITING_PAYMENT)
-                    .qrPayment(qrInfo)
-                    .build();
-        }
     }
 
-    /**
-     * Tạo URL ảnh VietQR chuẩn Napas 24/7 trực tiếp tới STK Tài xế
-     */
     private String buildVietQrUrl(String bankBin, String accountNumber, String accountName,
             double amount, String transferContent) {
         String baseUrl = String.format("https://img.vietqr.io/image/%s-%s-compact2.png",
@@ -208,19 +216,58 @@ public class TripPaymentServiceImpl implements TripPaymentService {
                 baseUrl, amount, encodedAddInfo, encodedAccountName);
     }
 
-    // ────────────────────────── 2. TÀI XẾ XÁC NHẬN ĐÃ NHẬN TIỀN
-    // ──────────────────────────
+    // ────────────────────────── 4. LẤY CHI TIẾT THANH TOÁN CHUYẾN ĐI ──────────────────────────
+    @Override
+    public TripPaymentResponse getTripPaymentByTripId(String tripId, Jwt jwt) {
+        UUID userId = UUID.fromString(jwt.getSubject());
+
+        TripPayment payment = tripPaymentRepository.findByTripId(tripId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy thông tin thanh toán cho chuyến đi"));
+
+        if (!userId.equals(payment.getCustomerId()) && !userId.equals(payment.getDriverId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn không có quyền xem thông tin thanh toán của chuyến đi này");
+        }
+
+        TripPaymentResponse.QrPaymentInfo qrInfo = null;
+        if (payment.getMethod() == PaymentMethod.PAY_BEFORE) {
+            PaymentTransaction tx = paymentTransactionRepository.findByTripPaymentId(payment.getId()).orElse(null);
+            if (tx != null) {
+                qrInfo = TripPaymentResponse.QrPaymentInfo.builder()
+                        .transactionId(tx.getId())
+                        .qrDataURL(tx.getQrDataURL())
+                        .bankName(tx.getBankAccountName())
+                        .bankBin(tx.getBankBin())
+                        .bankAccountNumber(tx.getBankAccountNumber())
+                        .bankAccountName(tx.getBankAccountName())
+                        .amount(tx.getAmount())
+                        .transferContent(tx.getTransferContent())
+                        .expiresAt(tx.getExpiresAt())
+                        .build();
+            }
+        }
+
+        return TripPaymentResponse.builder()
+                .message("Lấy thông tin thanh toán thành công")
+                .tripPaymentId(payment.getId())
+                .totalAmount(payment.getTotalAmount())
+                .discountAmount(payment.getDiscountAmount())
+                .finalAmount(payment.getFinalAmount())
+                .method(payment.getMethod())
+                .status(payment.getStatus())
+                .qrPayment(qrInfo)
+                .build();
+    }
+
+    // ────────────────────────── 5. TÀI XẾ XÁC NHẬN NHẬN TIỀN (API CÓ SẴN) ──────────────────────────
     @Override
     @Transactional
     public Map<String, String> confirmPayment(String tripPaymentId, Jwt jwt) {
         UUID driverUserId = UUID.fromString(jwt.getSubject());
 
         TripPayment tripPayment = tripPaymentRepository.findById(tripPaymentId)
-                .orElseThrow(
-                        () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy thông tin thanh toán"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy thông tin thanh toán"));
 
-        // Kiểm tra đúng tài xế của chuyến
-        if (!driverUserId.equals(tripPayment.getDriverUserId())) {
+        if (!driverUserId.equals(tripPayment.getDriverId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                     "Bạn không có quyền xác nhận thanh toán cho chuyến đi này");
         }
@@ -232,12 +279,10 @@ public class TripPaymentServiceImpl implements TripPaymentService {
 
         LocalDateTime now = LocalDateTime.now();
 
-        // Cập nhật TripPayment
         tripPayment.setStatus(TripPaymentStatus.COMPLETED);
         tripPayment.setUpdatedAt(now);
         tripPaymentRepository.save(tripPayment);
 
-        // Cập nhật PaymentTransaction
         paymentTransactionRepository.findByTripPaymentId(tripPaymentId).ifPresent(transaction -> {
             transaction.setStatus(TransactionStatus.COMPLETED);
             transaction.setConfirmedAt(now);
@@ -245,22 +290,20 @@ public class TripPaymentServiceImpl implements TripPaymentService {
             paymentTransactionRepository.save(transaction);
         });
 
-        log.info("Driver (userId={}) đã xác nhận nhận tiền cho tripPaymentId={}", driverUserId,
-                tripPaymentId);
+        log.info("Driver (userId={}) đã xác nhận nhận tiền cho tripPaymentId={}", driverUserId, tripPaymentId);
         return Map.of("message", "Xác nhận nhận tiền thành công");
     }
 
-    // ────────────────────────── 3. TÀI XẾ ĐĂNG KÝ STK NGÂN HÀNG
-    // ──────────────────────────
+    // ────────────────────────── 6. TÀI XẾ ĐĂNG KÝ THÔNG TIN NGÂN HÀNG (API CÓ SẴN) ──────────────────────────
     @Override
     @Transactional
     public Map<String, String> registerDriverPaymentInfo(CreateDriverPaymentInfoRequest request, Jwt jwt) {
         UUID driverUserId = UUID.fromString(jwt.getSubject());
         LocalDateTime now = LocalDateTime.now();
 
-        DriverPaymentInfo info = driverPaymentInfoRepository.findByUserId(driverUserId)
+        DriverPaymentInfo info = driverPaymentInfoRepository.findByDriverId(driverUserId)
                 .orElseGet(() -> DriverPaymentInfo.builder()
-                        .userId(driverUserId)
+                        .driverId(driverUserId)
                         .createdAt(now)
                         .build());
 
@@ -277,21 +320,26 @@ public class TripPaymentServiceImpl implements TripPaymentService {
         return Map.of("message", "Đăng ký thông tin ngân hàng thành công");
     }
 
-    // ────────────────────────── 4. TỰ ĐỘNG CẬP NHẬT PAY_AFTER KHI STATUS TRIP == COMPLETED ──────────────────────────
+    // ────────────────────────── 7. TỰ ĐỘNG CHỐT PAY_DIRECTLY KHI COMPLETED ──────────────────────────
     @Override
     @Transactional
-    public Map<String, String> completePayAfterTripPayment(String tripId) {
+    public Map<String, String> completePayDirectlyTripPayment(String tripId) {
         tripPaymentRepository.findByTripId(tripId).ifPresent(tripPayment -> {
-            if (tripPayment.getMethod() == PaymentMethod.PAY_AFTER
+            if ((tripPayment.getMethod() == PaymentMethod.PAY_DIRECTLY || tripPayment.getMethod().name().equals("PAY_AFTER"))
                     && tripPayment.getStatus() == TripPaymentStatus.PENDING) {
                 tripPayment.setStatus(TripPaymentStatus.COMPLETED);
                 tripPayment.setUpdatedAt(LocalDateTime.now());
                 tripPaymentRepository.save(tripPayment);
-                log.info("Đã tự động cập nhật thanh toán tiền mặt (PAY_AFTER) sang COMPLETED cho tripId={}", tripId);
+                log.info("Đã tự động cập nhật thanh toán trực tiếp (PAY_DIRECTLY) sang COMPLETED cho tripId={}", tripId);
             }
         });
 
         return Map.of("message", "Cập nhật trạng thái thanh toán thành công");
     }
-}
 
+    @Override
+    @Transactional
+    public Map<String, String> completePayAfterTripPayment(String tripId) {
+        return completePayDirectlyTripPayment(tripId);
+    }
+}

@@ -14,6 +14,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -26,10 +27,13 @@ import com.driverapp.driverservice.models.enums.VerificationStatus;
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-public class Driver {
+public class Driver implements Serializable {
     @Id
-    @Column(name = "user_id")
-    private UUID userId; // Khóa chính là userId từ JWT
+    @Builder.Default
+    private UUID id = UUID.randomUUID();
+
+    @Column(name = "user_id", nullable = false, unique = true)
+    private UUID userId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "verification_status", nullable = false, length = 20)

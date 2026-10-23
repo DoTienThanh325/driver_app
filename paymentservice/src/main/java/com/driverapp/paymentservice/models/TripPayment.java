@@ -27,7 +27,7 @@ public class TripPayment {
 
     private String tripId;
     private UUID customerId;
-    private UUID driverUserId;
+    private UUID driverId;
 
     private PaymentMethod method;
     private TripPaymentStatus status;

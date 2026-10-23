@@ -10,6 +10,19 @@ spring:
     representation:
       uuid: standard
 
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        retry:
+          enabled: true
+          initial-interval: 2000ms
+          max-attempts: 3
+          multiplier: 2.0
+
   security:
     oauth2:
       resourceserver:
@@ -27,6 +40,4 @@ eureka:
 services:
   booking:
     base-url: ${BOOKING_SERVICE_URL:http://bookingservice}
-  driver:
-    base-url: ${DRIVER_SERVICE_URL:http://driverservice}
 

@@ -18,9 +18,9 @@ public class CreateComplaintRequest {
 
     /**
      * ID tài xế (Bắt buộc khi người gửi là CUSTOMER).
-     * Bỏ qua khi người gửi là DRIVER.
+     * Bỏ qua khi người gửi là DRIVER (sẽ tự động lấy qua driverservice).
      */
-    private UUID driverUserId;
+    private UUID driverId;
 
     /**
      * ID khách hàng (Bắt buộc khi người gửi là DRIVER).

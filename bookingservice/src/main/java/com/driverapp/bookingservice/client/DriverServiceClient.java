@@ -27,20 +27,20 @@ public class DriverServiceClient {
                 .build();
     }
 
-    public record DriverCheckResult(UUID userId, String status) {
+    public record DriverCheckResult(UUID driverId, String status) {
     }
 
     /**
-     * Kiểm tra tài xế theo userId (phải tồn tại, APPROVED và AVAILABLE)
+     * Gọi driver-service kiểm tra tài xế theo driverId (chính là userId)
      */
-    public void checkDriverAvailable(UUID driverUserId) {
+    public void checkDriverAvailable(UUID driverId) {
         try {
             DriverCheckResult result = restClient.get()
-                    .uri("/api/drivers/check-available/{userId}", driverUserId)
+                    .uri("/api/drivers/check-available/{driverId}", driverId)
                     .retrieve()
                     .body(DriverCheckResult.class);
 
-            if (result == null || result.userId() == null) {
+            if (result == null || result.driverId() == null) {
                 throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không lấy được thông tin tài xế");
             }
         } catch (ResponseStatusException e) {
@@ -52,16 +52,16 @@ public class DriverServiceClient {
         }
     }
 
-    public void updateDriverAvailability(UUID driverUserId, String status) {
+    public void updateDriverAvailability(UUID driverId, String status) {
         try {
             restClient.patch()
                     .uri("/api/drivers/availability")
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(Map.of("userId", driverUserId, "status", status))
+                    .body(Map.of("driverId", driverId, "status", status))
                     .retrieve()
                     .toBodilessEntity();
         } catch (Exception e) {
-            log.warn("Không thể cập nhật availability cho userId={}: {}", driverUserId, e.getMessage());
+            log.warn("Không thể cập nhật availability cho driverId={}: {}", driverId, e.getMessage());
         }
     }
 }

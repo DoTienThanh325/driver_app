@@ -37,7 +37,7 @@ public class ComplaintServiceImpl implements ComplaintService {
         boolean isCustomer = roles.contains("CUSTOMER");
 
         UUID finalUserId;
-        UUID finalDriverUserId;
+        UUID finalDriverId;
 
         if (isDriver) {
             // Khi tài xế báo cáo:
@@ -47,17 +47,17 @@ public class ComplaintServiceImpl implements ComplaintService {
                         "Mã khách hàng (customerId) là bắt buộc khi tài xế báo cáo");
             }
             finalUserId = request.getCustomerId();
-            // callerUserId chính là userId của tài xế
-            finalDriverUserId = callerUserId;
+            // driverId chính là userId của tài xế từ JWT
+            finalDriverId = callerUserId;
         } else if (isCustomer) {
             // Khi khách hàng báo cáo:
-            if (request.getDriverUserId() == null) {
+            if (request.getDriverId() == null) {
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST,
-                        "Mã tài xế (driverUserId) là bắt buộc khi khách hàng báo cáo");
+                        "Mã tài xế (driverId) là bắt buộc khi khách hàng báo cáo");
             }
             finalUserId = callerUserId;
-            finalDriverUserId = request.getDriverUserId();
+            finalDriverId = request.getDriverId();
         } else {
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN,
@@ -66,7 +66,7 @@ public class ComplaintServiceImpl implements ComplaintService {
 
         UserComplaination complaint = UserComplaination.builder()
                 .userId(finalUserId)
-                .driverUserId(finalDriverUserId)
+                .driverId(finalDriverId)
                 .tripId(request.getTripId())
                 .reportType(request.getReportType())
                 .status(ComplainationStatus.PENDING)

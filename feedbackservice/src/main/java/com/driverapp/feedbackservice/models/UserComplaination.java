@@ -24,8 +24,8 @@ public class UserComplaination {
     @Column(name = "user_id", nullable = false)
     private UUID userId;
 
-    @Column(name = "driver_user_id", nullable = false)
-    private UUID driverUserId;
+    @Column(name = "driver_id", nullable = false)
+    private UUID driverId;
 
     @Column(name = "trip_id", nullable = false)
     private String tripId;

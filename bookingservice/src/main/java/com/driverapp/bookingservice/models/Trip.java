@@ -38,7 +38,7 @@ public class Trip {
     private VehicleType vehicleType;
 
     private UUID customerId;
-    private UUID driverUserId;
+    private UUID driverId;
 
     private List<FoodSelected> foodSelectedsList;
     private Double totalFoodPrice;
