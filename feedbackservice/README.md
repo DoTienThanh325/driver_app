@@ -1,17 +1,24 @@
 # Feedback Service
 
-`feedbackservice` quản lý đánh giá sao, nhận xét và báo cáo khiếu nại vi phạm giữa khách hàng và tài xế cho từng chuyến đi. Service yêu cầu JWT hợp lệ từ `userservice`.
+`feedbackservice` quản lý toàn bộ quy trình đánh giá sao (Rating), nhận xét (Review) và báo cáo vi phạm/khiếu nại (Complaints) giữa Khách hàng và Tài xế cho từng chuyến đi.
+
+Dịch vụ này sử dụng **PostgreSQL** làm cơ sở dữ liệu chính và phát sự kiện lên **RabbitMQ** để các dịch vụ khác (`driverservice`) tự động cập nhật điểm tín nhiệm và điểm sao trung bình của tài xế.
 
 > **Lưu ý kiến trúc**: Định danh tài xế (`driverId`) đồng nhất với `userId` (lấy từ JWT subject `sub`). `feedbackservice` không cần gọi sang `driverservice` để tra cứu mã tài xế. Cả khách hàng và tài xế đều có thể tạo khiếu nại cho chuyến đi.
 
-## Cấu hình chính
+---
 
-- Port: `8085`.
-- Database: PostgreSQL `driverapp_feedback_db`.
-- JWT issuer/JWKS: `http://localhost:8081`.
-- Migration: Flyway trong `src/main/resources/db/migration` (`V1__create_feedback_tables.sql`).
+## Cấu hình Chính
 
-## Các Endpoint chính
+- **Port**: `8085`.
+- **Database**: PostgreSQL `driverapp_feedback_db`.
+- **Message Broker**: RabbitMQ `localhost:5672` (Direct Exchange `feedback.direct.exchange`).
+- **JWT Issuer/JWKS**: `http://localhost:8081`.
+- **Migration**: Flyway trong `src/main/resources/db/migration` (`V1__create_feedback_tables.sql`).
+
+---
+
+## Các Endpoint Chính
 
 ### 1. Gửi Đánh Giá Tài Xế (`POST /api/feedbacks`)
 
@@ -19,16 +26,20 @@ Khách hàng gửi đánh giá sao và lời nhận xét cho chuyến đi đã h
 
 - **HTTP Method**: `POST`
 - **Endpoint**: `/api/feedbacks`
-- **Xác thực**: Bearer JWT Token (`ROLE_CUSTOMER`)
+- **Xác thực**: Bearer JWT Token (`ROLE_CUSTOMER`). `customerId` lấy tự động từ `JWT.sub`.
 - **Request Body**:
   ```json
   {
     "driverId": "b4c80242-63b7-4a0b-8d02-1a3b5a77c8e9",
     "tripId": "651f8a7e2b3c4d5e6f7a8b9c",
-    "rating": 4.5,
+    "rating": 5.0,
     "comment": "Tài xế lái xe cẩn thận, đúng giờ."
   }
   ```
+- **Xử lý Bất đồng bộ qua RabbitMQ**:
+  - Lưu bản ghi đánh giá vào bảng `user_feedbacks`.
+  - Phát sự kiện `feedback.submitted` tới RabbitMQ Exchange `feedback.direct.exchange`.
+  - `driverservice` lắng nghe sự kiện này và tự động tính toán lại điểm đánh giá trung bình (`average_rating`) của tài xế.
 - **Response `201 Created`**:
   ```json
   {
@@ -40,15 +51,15 @@ Khách hàng gửi đánh giá sao và lời nhận xét cho chuyến đi đã h
 
 ### 2. Gửi Khiếu Nại / Báo Cáo Vi Phạm (`POST /api/complaints`)
 
-Cho phép cả khách hàng (`ROLE_CUSTOMER`) và tài xế (`ROLE_DRIVER`) tạo báo cáo sự cố/vi phạm phát sinh trong chuyến đi:
+Cho phép cả khách hàng (`ROLE_CUSTOMER`) và tài xế (`ROLE_DRIVER`) tạo báo cáo sự cố hoặc hành vi vi phạm phát sinh trong chuyến đi:
 
 - **HTTP Method**: `POST`
 - **Endpoint**: `/api/complaints`
-- **Xác thực**: Bearer JWT Token
-- **Quy tắc phân quyền**:
+- **Xác thực**: Bearer JWT Token.
+- **Quy tắc Phân quyền & Tự Động Gán ID**:
   - Khi người gửi là **CUSTOMER**: Bắt buộc có `driverId`. ID khách hàng (`userId`) tự động lấy từ `JWT.sub`.
   - Khi người gửi là **DRIVER**: Bắt buộc có `customerId`. ID tài xế (`driverId`) tự động lấy từ `JWT.sub`.
-- **Request Body (Ví dụ Khách hàng gửi)**:
+- **Request Body (Khách hàng gửi)**:
   ```json
   {
     "driverId": "b4c80242-63b7-4a0b-8d02-1a3b5a77c8e9",
@@ -56,7 +67,7 @@ Cho phép cả khách hàng (`ROLE_CUSTOMER`) và tài xế (`ROLE_DRIVER`) tạ
     "reportType": "RECKLESS_DRIVING"
   }
   ```
-- **Request Body (Ví dụ Tài xế gửi)**:
+- **Request Body (Tài xế gửi)**:
   ```json
   {
     "customerId": "fa2fbb48-5231-4775-8025-a7bdf064f7bc",
@@ -69,12 +80,12 @@ Cho phép cả khách hàng (`ROLE_CUSTOMER`) và tài xế (`ROLE_DRIVER`) tạ
   - `RECKLESS_DRIVING`: Lái xe ẩu, nguy hiểm.
   - `WRONG_ROUTE`: Đi sai đường.
   - `UNPROFESSIONAL_BEHAVIOR`: Thái độ không đúng mực.
-  - `VEHICLE_MISMATCH`: Xe không đúng thông tin đăng ký.
-  - `OVERCHARGING`: Thu quá cước phí quy định.
+  - `VEHICLE_MISMATCH`: Xe không khớp với đăng ký.
+  - `OVERCHARGING`: Thu vượt cước phí quy định.
   - `DRIVER_NO_SHOW`: Tài xế không đến điểm đón.
-  - `CUSTOMER_NO_SHOW`: Khách hàng không xuất hiện tại điểm đón.
-- **Trạng thái khiếu nại (`ComplainationStatus`)**:
-  - `PENDING`: Chờ bộ phận hỗ trợ xử lý.
+  - `CUSTOMER_NO_SHOW`: Khách không xuất hiện tại điểm đón.
+- **Trạng thái xử lý khiếu nại (`ComplainationStatus`)**:
+  - `PENDING`: Đang chờ bộ phận hỗ trợ thẩm định.
   - `ACCEPTED`: Khiếu nại được chấp thuận.
   - `REJECTED`: Khiếu nại bị từ chối.
 - **Response `201 Created`**:
@@ -86,36 +97,22 @@ Cho phép cả khách hàng (`ROLE_CUSTOMER`) và tài xế (`ROLE_DRIVER`) tạ
 
 ---
 
-## Cơ sở dữ liệu & Migration
+## Cơ Sở Dữ Liệu & Flyway Migration
 
-Cơ sở dữ liệu PostgreSQL `driverapp_feedback_db` được khởi tạo qua 1 file migration duy nhất:
+Database PostgreSQL: `driverapp_feedback_db`
+
+Khởi tạo schema qua file migration:
 - `src/main/resources/db/migration/V1__create_feedback_tables.sql`:
-  - Bảng `user_feedbacks`: `id`, `user_id`, `driver_id`, `trip_id`, `rating`, `comment`, `created_at`. Chỉ mục: `idx_user_feedbacks_trip_id`, `idx_user_feedbacks_driver_id`.
-  - Bảng `user_complainations`: `id`, `user_id`, `driver_id`, `trip_id`, `report_type`, `status`, `created_at`, `updated_at`. Chỉ mục: `idx_user_complainations_trip_id`, `idx_user_complainations_driver_id`.
+  - Bảng `user_feedbacks`: `id`, `user_id`, `driver_id`, `trip_id`, `rating`, `comment`, `created_at`.
+  - Bảng `user_complainations`: `id`, `user_id`, `driver_id`, `trip_id`, `report_type`, `status`, `created_at`, `updated_at`.
+  - Các chỉ mục: `idx_user_feedbacks_trip_id`, `idx_user_feedbacks_driver_id`, `idx_user_complainations_trip_id`, `idx_user_complainations_driver_id`.
 
-## Giải thích file
+---
 
-- `pom.xml`: khai báo Spring WebMVC, JPA, Security, OAuth2 Resource Server, Validation, PostgreSQL, Flyway, Lombok và test dependency.
-- `src/main/java/com/driverapp/feedbackservice/FeedbackserviceApplication.java`: class main khởi động service.
-- `config/SecurityConfig.java`: tắt CSRF, dùng session stateless và yêu cầu JWT cho mọi request.
-- `controller/FeedbackController.java`: endpoint gửi đánh giá sao tài xế (`POST /api/feedbacks`).
-- `controller/ComplaintController.java`: endpoint gửi khiếu nại vi phạm chuyến đi (`POST /api/complaints`).
-- `dto/request/CreateFeedbackRequest.java`: DTO nhận `driverId`, `tripId`, `rating`, `comment`.
-- `dto/request/CreateComplaintRequest.java`: DTO nhận `driverId`, `customerId`, `tripId`, `reportType`.
-- `models/UserFeedback.java`: entity bảng `user_feedbacks`.
-- `models/UserComplaination.java`: entity bảng `user_complainations`.
-- `models/enums/ReportType.java`: enum loại báo cáo vi phạm.
-- `models/enums/ComplainationStatus.java`: enum trạng thái khiếu nại (`PENDING`, `ACCEPTED`, `REJECTED`).
-- `repository/UserFeedbackRepository.java`: JPA repository cho `UserFeedback`.
-- `repository/UserComplainationRepository.java`: JPA repository cho `UserComplaination`.
-- `service/FeedbackService.java` & `service/impl/FeedbackServiceImpl.java`: Logic lưu đánh giá tài xế.
-- `service/ComplaintService.java` & `service/impl/ComplaintServiceImpl.java`: Logic kiểm tra role, xác định bên khiếu nại và tạo bản ghi khiếu nại.
-- `src/main/resources/application.yaml`: cấu hình port, datasource, JPA, Flyway và JWT resource server.
-- `src/main/resources/db/migration/V1__create_feedback_tables.sql`: migration tạo các bảng feedback và complainations.
-
-## Cách chạy
+## Hướng Dẫn Chạy
 
 ```bash
 cd feedbackservice
 ./mvnw spring-boot:run
 ```
+*(Yêu cầu PostgreSQL `:5432`, RabbitMQ `:5672` và Eureka `:8761` đang hoạt động)*.

@@ -1,249 +1,162 @@
 # Booking Service
 
-`bookingservice` lưu dữ liệu đặt chuyến, nhà hàng, món ăn và offer ghép tài xế. Service này dùng MongoDB và yêu cầu JWT hợp lệ từ `userservice`.
+`bookingservice` là dịch vụ trung tâm quản lý toàn bộ vòng đời cuốc xe (Trip Lifecycle), đối tác kinh doanh nhà hàng/quán ăn (Business/Restaurant), quản lý thực đơn món ăn (Food Menu) và công cụ tìm kiếm món ăn thông minh bằng **Elasticsearch 9.0**.
 
-> **Lưu ý kiến trúc**: Định danh tài xế (`driverId`) đồng nhất với `userId` (lấy từ JWT subject `sub`). Booking Service không cần gọi API phụ để tra cứu `driverId` từ `userId`, mà chỉ gọi Driver Service để kiểm tra trạng thái khả dụng (`check-available`) hoặc cập nhật `availability`.
+Service này sử dụng **MongoDB** làm cơ sở dữ liệu chính, **Elasticsearch** làm công cụ tìm kiếm toàn văn và địa lý, **RabbitMQ** để gửi nhận sự kiện theo mô hình **SAGA Choreography**.
 
-## Cấu hình chính
-
-- Port mặc định: `8083`, có thể đổi bằng `BOOKING_SERVICE_PORT`.
-- Database: MongoDB `driverapp_booking_db`.
-- JWT issuer/JWKS: mặc định `http://localhost:8081`.
-
-## Endpoint hiện có
-
-### 1. Driver Cập Nhật Trạng Thái Chuyến Đi (`PATCH /api/trips/status`)
-
-Cho phép tài xế (`ROLE_DRIVER`) cập nhật tiến độ chuyến đi theo vòng đời chuyến đi.
-
-- **HTTP Method**: `PATCH`
-- **Endpoint**: `/api/trips/status`
-- **Xác thực**: Bearer JWT Token (`ROLE_DRIVER`)
-- **Headers**:
-  ```http
-  Authorization: Bearer <Driver_JWT>
-  Content-Type: application/json
-  Accept: application/json
-  ```
-
-#### Sơ đồ tuần tự (Sequence Diagram)
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Driver as Driver (Mobile App)
-    participant Gateway as API Gateway (Port 8080)
-    participant BookingService as Booking Service (Port 8083)
-    participant MongoDB as Trip DB (MongoDB)
-    participant DriverService as Driver Service (Port 8082)
-    participant NotificationService as Notification Service (Port 8085)
-
-    Driver->>Gateway: PATCH /api/trips/status<br/>Content-Type: application/json<br/>Authorization: Bearer <Driver_JWT><br/>Body: { "tripId": "...", "status": "IN_PROGRESS" }
-    
-    rect rgb(240, 248, 255)
-        note over Gateway: 1. Kiểm tra xác thực tại API Gateway
-        Gateway->>Gateway: Giải mã JWT & kiểm tra role: hasRole("DRIVER")
-        alt Token không hợp lệ hoặc không phải DRIVER
-            Gateway-->>Driver: 401 Unauthorized / 403 Forbidden
-        end
-    end
-
-    Gateway->>BookingService: Forward request: PATCH /api/trips/status (kèm JWT context)
-
-    rect rgb(255, 240, 245)
-        note over BookingService: 2. Lấy DriverId từ JWT & Kiểm tra quyền sở hữu chuyến đi
-        BookingService->>BookingService: driverId = UUID.fromString(JWT.sub)
-
-        BookingService->>MongoDB: tripRepository.findById(tripId)
-        alt Không tìm thấy chuyến đi
-            MongoDB-->>BookingService: null
-            BookingService-->>Driver: 404 Not Found (Không tìm thấy chuyến đi)
-        end
-        MongoDB-->>BookingService: Trip entity
-
-        BookingService->>BookingService: Kiểm tra: trip.getDriverId().equals(driverId)
-        alt Không đúng tài xế đang nhận chuyến
-            BookingService-->>Driver: 403 Forbidden (Bạn không phải tài xế của chuyến đi này)
-        end
-    end
-
-    rect rgb(255, 250, 240)
-        note over BookingService: 3. Kiểm tra tính hợp lệ & Quyền hủy chuyến
-        alt Tài xế yêu cầu CANCELLED
-            BookingService-->>Driver: 403 Forbidden (Tài xế không có quyền hủy chuyến đi)
-        end
-        BookingService->>BookingService: Validate transition (VD: DRIVER_ARRIVING -> IN_PROGRESS)
-        alt Trạng thái sai quy trình hoặc chuyến đã kết thúc
-            BookingService-->>Driver: 400 Bad Request / 409 Conflict
-        end
-    end
-
-    rect rgb(245, 255, 245)
-        note over BookingService, MongoDB: 4. Cập nhật trạng thái chuyến đi
-        BookingService->>MongoDB: Cập nhật status = newStatus, updatedAt = now
-        MongoDB-->>BookingService: Cập nhật thành công
-    end
-
-    rect rgb(240, 255, 250)
-        note over BookingService, DriverService: 5. Đồng bộ Availability & Gửi thông báo
-        alt Nếu status là COMPLETED (Hoàn tất chuyến)
-            BookingService->>DriverService: updateDriverAvailability(driverId, "AVAILABLE")<br/>(giải phóng tài xế sẵn sàng nhận chuyến mới)
-        end
-
-        BookingService->>NotificationService: POST /api/notifications (gửi thông báo cho Customer)
-    end
-
-    BookingService-->>Gateway: 200 OK + {"message": "Cập nhật trạng thái chuyến đi thành công"}
-    Gateway-->>Driver: 200 OK + {"message": "Cập nhật trạng thái chuyến đi thành công"}
-```
-
-#### Request Body (JSON)
-```json
-{
-  "tripId": "651f8a7e2b3c4d5e6f7a8b9c",
-  "status": "IN_PROGRESS"
-}
-```
-
-| Trường | Kiểu dữ liệu | Bắt buộc | Mô tả |
-| :--- | :--- | :--- | :--- |
-| `tripId` | `String` | Có | ID chuyến đi trên MongoDB |
-| `status` | `TripStatus` | Có | Trạng thái mới: `DRIVER_ARRIVING`, `IN_PROGRESS`, `COMPLETED` |
-
-#### Quy tắc nghiệp vụ (Business Rules)
-1. **Kiểm tra quyền sở hữu (Driver Ownership Check)**: Lấy `driverId` trực tiếp từ JWT subject (`JWT.sub`). Kiểm tra `trip.getDriverId().equals(driverId)`. Nếu chuyến đi không thuộc về tài xế đang thực hiện, hệ thống trả về lỗi **`403 Forbidden`**.
-2. **Chặn quyền hủy chuyến của tài xế**: Tài xế **không được phép** gửi trạng thái `CANCELLED`. Nếu gửi `status = "CANCELLED"`, hệ thống trả về lỗi **`403 Forbidden`** (*"Tài xế không có quyền hủy chuyến đi"*).
-3. **Quy trình chuyển trạng thái một chiều hợp lệ**:
-   - `DRIVER_ASSIGNED` ➔ `DRIVER_ARRIVING` (Tài xế đang đến điểm đón).
-   - `DRIVER_ARRIVING` ➔ `IN_PROGRESS` (Đã đón khách / Bắt đầu hành trình).
-   - `IN_PROGRESS` ➔ `COMPLETED` (Đã tới điểm đến / Hoàn tất chuyến đi).
-   - Nếu chuyển đổi không theo đúng thứ tự, hệ thống trả về lỗi **`400 Bad Request`**.
-4. **Kiểm tra chuyến đã kết thúc**: Nếu chuyến đi đã ở trạng thái `COMPLETED` hoặc `CANCELLED`, trả về lỗi **`409 Conflict`**.
-5. **Đồng bộ Availability**: Khi trạng thái chuyển sang `COMPLETED`, hệ thống tự động gọi sang Driver Service (`driverServiceClient.updateDriverAvailability(driverId, "AVAILABLE")`) để giải phóng tài xế, cho phép tài xế nhận các chuyến đi mới.
-6. **Bắn thông báo thời gian thực**: Gửi thông báo đến Notification Service (`notificationClient.createNotification`) cho khách hàng tương ứng với mỗi mốc trạng thái mới.
-
-#### Response Body (`200 OK`)
-```json
-{
-  "message": "Cập nhật trạng thái chuyến đi thành công"
-}
-```
-
-#### Bảng mã lỗi phản hồi
-| Mã lỗi | Nguyên nhân |
-| :--- | :--- |
-| `400 Bad Request` | `tripId` hoặc `status` trống/không hợp lệ; hoặc chuyển sai luồng trạng thái |
-| `401 Unauthorized` | Token JWT không hợp lệ hoặc đã hết hạn |
-| `403 Forbidden` | Tài xế không phải người nhận chuyến đi này, hoặc tài xế cố tình gửi trạng thái `CANCELLED` |
-| `404 Not Found` | Không tìm thấy chuyến đi với `tripId` tương ứng hoặc không tìm thấy hồ sơ tài xế |
-| `409 Conflict` | Chuyến đi đã kết thúc (`COMPLETED` hoặc `CANCELLED`) |
-| `500 Internal Server Error` | Lỗi cập nhật cơ sở dữ liệu MongoDB |
+> **Lưu ý kiến trúc**: Định danh tài xế (`driverId`) đồng nhất với `userId` (lấy từ JWT subject `sub`). Booking Service không cần gọi API phụ để tra cứu `driverId` từ `userId`.
 
 ---
 
-### 2. Tạo Chuyến Đi (`POST /api/trips`)
+## Cấu hình Chính
 
-Khách hàng (`ROLE_CUSTOMER`) tạo yêu cầu đặt chuyến (chở người, giao hàng, đặt món).
+- **Port mặc định**: `8083` (biến môi trường `BOOKING_SERVICE_PORT`).
+- **Database**: MongoDB `driverapp_booking_db` (`mongodb://localhost:27017/driverapp_booking_db`).
+- **Elasticsearch**: `http://localhost:9200` (Index `foods`).
+- **RabbitMQ**: `localhost:5672` (Topic Exchange `trip.topic.exchange`, SAGA Exchange `saga.compensation.exchange`).
+- **JWT Issuer/JWKS**: `http://localhost:8081`.
 
-- **HTTP Method**: `POST`
-- **Endpoint**: `/api/trips`
-- **Xác thực**: Bearer JWT Token (`ROLE_CUSTOMER`)
-- **Cơ chế Tự Động Khởi Tạo Thanh Toán**:
-  - Lưu bản ghi chuyến đi với trạng thái `SEARCHING_DRIVER`.
-  - Phát sự kiện bất đồng bộ `trip.created` lên RabbitMQ `trip.topic.exchange`.
-  - `paymentservice` tự động lắng nghe và khởi tạo thông tin thanh toán mặc định với phương thức **`PAY_DIRECTLY`** (trạng thái `PENDING`).
+---
+
+## Danh Sách Endpoint & Nghiệp Vụ
+
+### 1. Quản Lý Cuốc Xe (`/api/trips`)
+
+#### `POST /api/trips` — Khách hàng đặt chuyến xe
+- **Method**: `POST`
+- **Xác thực**: Bearer JWT (`ROLE_CUSTOMER`). `customerId` được lấy tự động từ `JWT.sub`.
 - **Request Body**:
   ```json
   {
-    "pickUpLatitude": 10.762622,
-    "pickUpLongitude": 106.660172,
-    "pickUpAddress": "123 Lê Lợi, Quận 1",
-    "destinationLatitude": 10.776889,
-    "destinationLongitude": 106.700806,
-    "destinationAddress": "456 Nguyễn Thị Minh Khai, Quận 3",
-    "shippingType": "PASSENGER",
+    "pickupAddress": "123 Đường Lê Duẩn, Quận 1, TP.HCM",
+    "pickupLatitude": 10.7769,
+    "pickupLongitude": 106.6956,
+    "dropoffAddress": "456 Đường Nguyễn Huệ, Quận 1, TP.HCM",
+    "dropoffLatitude": 10.7735,
+    "dropoffLongitude": 106.7042,
     "vehicleType": "MOTORBIKE",
-    "shippFare": 35000.0
+    "fare": 35000.0,
+    "distanceKm": 2.5
   }
   ```
-- **Response (`201 Created`)**:
+- **Xử lý**: Lưu chuyến đi ở trạng thái `REQUESTED`, phát sinh sự kiện `trip.created` lên RabbitMQ để `paymentservice` tự động tạo bản ghi thanh toán mặc định `PAY_DIRECTLY`.
+
+#### `POST /api/trips/{tripId}/accept` — Tài xế nhận cuốc xe
+- **Method**: `POST`
+- **Xác thực**: Bearer JWT (`ROLE_DRIVER`). `driverId` lấy tự động từ `JWT.sub`.
+- **Xử lý**: 
+  - Kiểm tra trạng thái cuốc xe đang là `REQUESTED`.
+  - Gọi nội bộ Driver Service để xác minh tài xế đang `AVAILABLE`.
+  - Cập nhật trạng thái chuyến sang `ACCEPTED`, gán `driverId`.
+  - Phát sinh sự kiện `trip.driver-assigned` qua RabbitMQ để `paymentservice` và `notificationservice` cập nhật.
+
+#### `PATCH /api/trips/status` — Tài xế cập nhật tiến trình chuyến đi
+- **Method**: `PATCH`
+- **Xác thực**: Bearer JWT (`ROLE_DRIVER`).
+- **Request Body**:
   ```json
   {
     "tripId": "651f8a7e2b3c4d5e6f7a8b9c",
-    "message": "Tạo chuyến thành công"
+    "status": "IN_PROGRESS"
   }
   ```
+- **Quy tắc chuyển đổi trạng thái**:
+  `ACCEPTED` $\rightarrow$ `DRIVER_ARRIVING` $\rightarrow$ `IN_PROGRESS` $\rightarrow$ `COMPLETED`.
+  *(Tài xế bị cấm gửi trạng thái `CANCELLED`)*.
+- **Khi hoàn tất (`COMPLETED`)**:
+  - Tự động phát sinh event `trip.completed` để `driverservice` cập nhật availability về `AVAILABLE`, `paymentservice` hoàn tất thanh toán trực tiếp, và `notificationservice` gửi thông báo.
 
----
-
-### 3. Tài Xế Nhận Chuyến (`POST /api/trips/{tripId}/accept`)
-
-Tài xế (`ROLE_DRIVER`) chấp nhận thực hiện một chuyến đi đang tìm tài xế.
-
-- **HTTP Method**: `POST`
-- **Endpoint**: `/api/trips/{tripId}/accept`
-- **Xác thực**: Bearer JWT Token (`ROLE_DRIVER`)
-- **Cơ chế**:
-  - Lấy `driverId` trực tiếp từ `JWT.sub`.
-  - Kiểm tra tài xế đang `AVAILABLE` qua `driverServiceClient.checkDriverAvailable(driverId)`.
-  - Atomic update chuyến đi từ trạng thái `SEARCHING_DRIVER` sang `DRIVER_ASSIGNED`.
-  - Phát sự kiện `trip.driver-assigned` lên `trip.topic.exchange` để `paymentservice` cập nhật `driverId` vào bản ghi thanh toán (vẫn giữ nguyên phương thức `PAY_DIRECTLY`).
-- **Response (`200 OK`)**:
+#### `PATCH /api/trips/{tripId}/cancel` — Khách hàng hủy chuyến đi
+- **Method**: `PATCH`
+- **Xác thực**: Bearer JWT (`ROLE_CUSTOMER`).
+- **Request Body**:
   ```json
   {
-    "tripId": "651f8a7e2b3c4d5e6f7a8b9c",
-    "status": "DRIVER_ASSIGNED",
-    "message": "Nhận chuyến thành công"
+    "status": "CANCELLED",
+    "cancelReason": "Tôi đổi ý không muốn đi nữa"
   }
   ```
+- **Điều kiện**: Chỉ được hủy khi cuốc xe chưa có tài xế nhận (`status == REQUESTED`).
 
 ---
 
-### 4. Cơ chế SAGA Pattern & Bù Trừ (Compensating Transaction)
+### 2. Tìm Kiếm Món Ăn Bằng Elasticsearch (`/api/bookings/foods/search`)
 
-Hệ thống triển khai mô hình SAGA Choreography qua RabbitMQ Direct Exchange (`saga.compensating.exchange`):
+Tích hợp **Elasticsearch 9.0** giúp tìm kiếm món ăn cực nhanh với khả năng hiểu tiếng Việt không dấu/có dấu, sắp xếp theo khoảng cách địa lý và tự động gợi ý từ khóa.
 
-1. **Rollback Khởi Tạo Thanh Toán (`TripPaymentInitRollbackListener`)**:
-   - Khi `paymentservice` không thể tạo bản ghi thanh toán mặc định (sau khi thử lại qua Dead Letter Queue), event bù trừ `trip.payment-init.failed` sẽ được gửi về `trip.payment-init.failed.queue`.
-   - `bookingservice` lập tức:
-     - Gửi thông báo lỗi tới khách hàng qua `NotificationClient` ("Hệ thống gặp sự cố khi khởi tạo thanh toán...").
-     - **Xóa hoàn toàn chuyến đi vừa tạo khỏi MongoDB** (`tripRepository.delete(trip)`), giúp khách hàng không bị chặn khi đặt chuyến mới.
-     - Ghi nhận lịch sử bù trừ vào bảng `saga_compensation_log` với `afterState = "DELETED"`.
+#### `GET /api/bookings/foods/search` — Tìm kiếm món ăn
+- **Params**:
+  - `name`: Tên món ăn cần tìm (vd: `cơm gà`, `trà sữa`).
+  - `latitude`, `longitude`: Tọa độ hiện tại của người dùng để tính khoảng cách và sắp xếp quán ăn từ gần đến xa.
+  - `radiusKm`: Bán kính tìm kiếm (mặc định 10km).
+  - `page`, `size`: Phân trang.
+- **Ví dụ**:
+  ```http
+  GET /api/bookings/foods/search?name=cơm&latitude=10.7769&longitude=106.6956&page=0&size=10
+  ```
 
-2. **Rollback Trạng Thái Khả Dụng Tài Xế (`DriverAvailabilityRollbackListener`)**:
-   - Khi cập nhật trạng thái tài xế thất bại, tự động hoàn nguyên cuốc xe về `SEARCHING_DRIVER`.
+#### `GET /api/bookings/foods/search/suggest` — Gợi ý từ khóa tự động (Autocomplete)
+- **Params**: `prefix` (ví dụ: `bu` $\rightarrow$ gợi ý: `Bún bò Huế`, `Bún chả`, `Bún thịt nướng`).
+
+#### `POST /api/bookings/foods/search/sync-all` — Quản trị đồng bộ dữ liệu
+- Đồng bộ toàn bộ dữ liệu món ăn từ MongoDB sang Elasticsearch (được bảo vệ quyền Admin).
+- Ngoài ra, hệ thống tích hợp `FoodDataSyncRunner` tự động kiểm tra và đồng bộ chỉ mục khi khởi động service nếu chỉ mục còn trống.
 
 ---
 
-## Giải thích file
+### 3. Quản Lý Đối Tác Kinh Doanh Nhà Hàng (`/api/businesses`, `/api/bookings/restaurants`)
 
-- `pom.xml`: khai báo Spring WebMVC, Spring Data MongoDB, RabbitMQ, Security, OAuth2 Resource Server, Validation, Lombok và test dependency.
-- `src/main/java/com/driverapp/bookingservice/BookingserviceApplication.java`: class main khởi động service.
-- `client/DriverServiceClient.java`: RestClient giao tiếp với Driver Service để kiểm tra tài xế khả dụng (`checkDriverAvailable/{driverId}`).
-- `client/NotificationClient.java`: RestClient gửi thông báo thời gian thực sang Notification Service.
-- `client/PaymentServiceClient.java`: RestClient giao tiếp nội bộ với Payment Service.
-- `config/SecurityConfig.java`: tắt CSRF, dùng session stateless, mở quyền cho các endpoint nội bộ `/api/trips/internal/**` và yêu cầu JWT cho các request còn lại.
-- `config/rabbitmq/BookingRabbitMQConfig.java`: cấu hình RabbitMQ Topic Exchange `trip.topic.exchange`, exchange bù trừ `saga.compensating.exchange`, các queue và binding cho SAGA rollback.
-- `controller/TripController.java`: các endpoint liên quan đến chuyến đi (`POST /api/trips`, `POST /api/trips/{tripId}/accept`, `PATCH /api/trips/status`, `PATCH /api/trips/{tripId}/cancel`).
-- `controller/FoodController.java`: các endpoint CRUD món ăn.
-- `controller/RestaurantController.java`: các endpoint quản lý nhà hàng.
-- `controller/BusinessRegistrationController.java`: endpoint đăng ký đối tác kinh doanh.
-- `dto/request/`: các DTO request đặt chuyến, cập nhật trạng thái, hủy chuyến, đặt đồ ăn.
-- `dto/response/`: các DTO response tạo chuyến, nhận chuyến, giá vé.
-- `event/`: các class payload sự kiện Domain Event và SAGA (`TripEventPayload`, `TripPaymentInitFailedPayload`, `PaymentCompleteFailedPayload`, ...).
-- `listener/saga/`: các listener lắng nghe sự kiện bù trừ SAGA (`TripPaymentInitRollbackListener`, `DriverAvailabilityRollbackListener`, `PaymentInconsistencyListener`).
-- `publisher/TripEventPublisher.java`: phát sự kiện chuyến đi lên RabbitMQ (`trip.created`, `trip.driver-assigned`, `trip.completed`, `trip.cancelled`).
-- `models/Trip.java`: Mongo document `trips`.
-- `models/SagaCompensationLog.java`: Mongo document `saga_compensation_log` lưu lịch sử bù trừ SAGA.
-- `models/Restaurant.java`, `models/Food.java`, `models/FoodOption.java`, `models/MatchingOffer.java`.
-- `models/enums/`: enum `TripStatus`, `ShippingType`, `VehicleType`, `MatchingOfferStatus`.
-- `repository/`: Spring Data MongoDB repositories (`TripRepository`, `SagaCompensationLogRepository`, ...).
-- `service/TripService.java` & `service/impl/TripServiceImpl.java`: Logic tạo chuyến, phát event thanh toán, nhận chuyến, chuyển trạng thái và hoàn tất cuốc xe.
-- `src/main/resources/application.yaml`: cấu hình port, MongoDB URI, RabbitMQ và JWT resource server.
+- `POST /api/businesses/registration`: Khách hàng gửi hồ sơ đăng ký kinh doanh quán ăn (`multipart/form-data` kèm tên quán, tọa độ, địa chỉ và ảnh giấy phép kinh doanh tải lên MinIO).
+- `GET /api/businesses/me`: Chủ nhà hàng xem thông tin quán ăn của mình.
+- `GET /api/businesses`: Quản trị viên (`ROLE_ADMIN`) lấy danh sách đơn đăng ký.
+- `PATCH /api/businesses/{id}/status`: Admin duyệt (`APPROVED`) hoặc từ chối (`REJECTED`) đơn đăng ký kinh doanh. Khi duyệt thành công, phát sinh sự kiện cấp role `BUSINESS` cho chủ quán.
+- `PATCH /api/bookings/restaurants/{restaurantId}`: Đối tác cập nhật thông tin nhà hàng (`ROLE_BUSINESS`).
+- `DELETE /api/bookings/restaurants/{restaurantId}`: Xóa nhà hàng và tự động cascade xóa toàn bộ món ăn liên quan trong cả MongoDB lẫn Elasticsearch.
 
-## Cách chạy
+---
+
+### 4. Quản Lý Thực Đơn Món Ăn (`/api/bookings/foods`)
+
+- `POST /api/bookings/foods`: Đối tác nhà hàng (`ROLE_BUSINESS`) thêm món ăn mới. Dữ liệu tự động lưu vào MongoDB và đồng bộ sang Elasticsearch.
+- `PATCH /api/bookings/foods/{id}`: Cập nhật thông tin món ăn, giá tiền, ảnh.
+- `DELETE /api/bookings/foods/{id}`: Xóa món ăn khỏi thực đơn và xóa document khỏi Elasticsearch.
+
+---
+
+### 5. Kiến Trúc SAGA Choreography & Giao Dịch Bù Trừ
+
+`bookingservice` tích hợp các Listener xử lý bù trừ khi quy trình phân tán gặp sự cố:
+1. **`TripPaymentInitRollbackListener`**: Lắng nghe `trip.payment-init.failed`. Nếu `paymentservice` không tạo được bản ghi thanh toán sau khi retry qua DLQ, listener này sẽ tự động **Hard-Delete (xóa vĩnh viễn) cuốc xe** khỏi MongoDB để giải phóng trạng thái cho khách hàng.
+2. **`DriverAvailabilityRollbackListener`**: Lắng nghe rollback giải phóng tài xế khi nhận chuyến gặp lỗi downstream.
+3. **`BusinessRoleRollbackListener`**: Lắng nghe rollback trạng thái phê duyệt nhà hàng nếu bước cấp quyền role `BUSINESS` bên `userservice` thất bại.
+4. **`PaymentInconsistencyListener`**: Bắt các sai lệch trạng thái thanh toán và thông báo kiểm toán.
+
+---
+
+## Cấu Trúc Mã Nguồn
+
+```text
+bookingservice/src/main/java/com/driverapp/bookingservice/
+├── config/                         # Cấu hình MongoDB, RabbitMQ, Security, Elasticsearch
+├── controller/                     # REST Controllers (Trip, Food, Restaurant, Business, FoodSearch)
+├── dto/                            # Data Transfer Objects (Request/Response)
+├── elasticsearch/                  # Document, Repository & Index Settings Elasticsearch
+│   ├── document/                   # FoodDocument, FoodOptionSubDoc
+│   └── repository/                 # FoodSearchRepository
+├── event/                          # Payload domain event & SAGA compensation
+├── listener/saga/                  # Các SAGA compensation listeners (Rollback)
+├── models/                         # MongoDB Documents (Trip, Restaurant, Food, Business)
+├── repository/                     # Spring Data MongoDB Repositories
+├── runner/                         # FoodDataSyncRunner (Sync MongoDB -> ES lúc khởi động)
+└── service/                        # Interface & Implementations nghiệp vụ
+```
+
+---
+
+## Cách Chạy Dịch Vụ
 
 ```bash
 cd bookingservice
 ./mvnw spring-boot:run
 ```
+*(Yêu cầu MongoDB tại `:27017`, RabbitMQ tại `:5672`, Elasticsearch tại `:9200` và Eureka Server `:8761` đang hoạt động)*.

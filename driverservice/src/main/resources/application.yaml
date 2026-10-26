@@ -58,7 +58,7 @@ eureka:
 
 storage:
   endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}
-  public-endpoint: ${STORAGE_PUBLIC_ENDPOINT:http://localhost:9000}
+  public-endpoint: ${STORAGE_PUBLIC_ENDPOINT:http://192.168.11.199:9000}
   access-key: ${STORAGE_ACCESS_KEY:minioadmin}
   secret-key: ${STORAGE_SECRET_KEY:minioadmin}
   bucket: ${STORAGE_BUCKET:driver-documents}
