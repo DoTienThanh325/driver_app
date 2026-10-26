@@ -4,7 +4,7 @@ import { tokenStorage } from './storage/token.storage';
  * API Client kết nối qua API Gateway
  * Tự động đính kèm Token và hỗ trợ cấu hình qua biến môi trường EXPO_PUBLIC_API_URL
  */
-const RAW_GATEWAY_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.11.199:8080';
+const RAW_GATEWAY_URL = process.env.EXPO_PUBLIC_API_URL;
 const GATEWAY_URL = RAW_GATEWAY_URL.replace(/\/+$/, '');
 
 const getFullUrl = (endpoint) => {

@@ -126,7 +126,7 @@ npm install
 Tạo hoặc kiểm tra file `.env` tại thư mục `mobile/`:
 ```env
 # Địa chỉ IP của máy tính đang chạy backend (thay thế bằng IP mạng LAN thực tế của bạn)
-EXPO_PUBLIC_API_URL=http://192.168.11.199:8080
+EXPO_PUBLIC_API_URL=
 ```
 
 ### 4. Khởi chạy ứng dụng

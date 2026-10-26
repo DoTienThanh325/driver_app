@@ -3,7 +3,7 @@
  * Thay thế localhost:9000, 127.0.0.1:9000 hoặc minio:9000 bằng IP thật của máy chủ (từ EXPO_PUBLIC_API_URL)
  * để thiết bị di động / Expo Go có thể tải được ảnh.
  */
-const RAW_GATEWAY_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.11.199:8080';
+const RAW_GATEWAY_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export function normalizeImageUrl(url) {
   if (!url || typeof url !== 'string') return null;
