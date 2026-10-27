@@ -12,6 +12,8 @@
 - **Database**: PostgreSQL `driverapp_driver_db`.
 - **In-memory**: Redis `localhost:6379`.
 - **Object Storage**: MinIO tại `http://localhost:9000` (Web Console `:9001`), bucket mặc định `driver-documents`.
+- **Định dạng tệp hỗ trợ**: JPG, PNG, WEBP, HEIC, HEIF, PDF, GIF, BMP (kiểm tra an toàn qua magic bytes header & Content-Type).
+- **Giới hạn tệp tải lên (Multipart)**: `max-file-size: 15MB`, `max-request-size: 50MB`.
 - **Message Broker**: RabbitMQ `localhost:5672` (Topic Exchange).
 - **JWT Issuer/JWKS**: `http://localhost:8081`.
 - **Cơ chế lưu ảnh**: Ảnh gốc lưu trên MinIO dạng `s3://...`, API sinh Pre-signed URL có thời hạn cho client.
@@ -30,17 +32,23 @@
   | :--- | :---: | :---: | :--- |
   | `idCardFront` | File | Có | Mặt trước CCCD |
   | `idCardBack` | File | Có | Mặt sau CCCD |
-  | `driverLicenseFront` | File | Có | Mặt trước Giấy phép lái xe |
-  | `driverLicenseBack` | File | Có | Mặt sau Giấy phép lái xe |
+  | `vehicleType` | String | Có | Loại phương tiện đăng ký ban đầu (`CAR` hoặc `MOTORBIKE`) |
   | `registrationFront` | File | Có | Giấy đăng ký xe (Cavet) |
   | `plate` | File | Có | Ảnh chụp biển số xe |
-  | `vehicleType` | String | Có | `CAR` hoặc `MOTORBIKE` |
+  | `driverLicenseFront` | File | Không* | Mặt trước GPLX (tự động phân loại theo `vehicleType` nếu không gửi loại bằng riêng) |
+  | `driverLicenseBack` | File | Không* | Mặt sau GPLX |
+  | `driverLicenseMotorbikeFront` | File | Không* | Mặt trước GPLX xe máy (`DRIVER_LICENSE_MOTORBIKE`) |
+  | `driverLicenseMotorbikeBack` | File | Không* | Mặt sau GPLX xe máy |
+  | `driverLicenseCarFront` | File | Không* | Mặt trước GPLX ô tô (`DRIVER_LICENSE_CAR`) |
+  | `driverLicenseCarBack` | File | Không* | Mặt sau GPLX ô tô |
+  > *\*Lưu ý*: Bắt buộc phải có ít nhất một cặp bằng lái phù hợp với loại phương tiện đăng ký ban đầu (`vehicleType`).
 - **Xử lý**: Tải ảnh lên bucket MinIO, lưu hồ sơ vào PostgreSQL với trạng thái `PENDING`, khởi tạo bản ghi `driver_availability` là `OFFLINE`. Nếu ghi DB lỗi, ảnh vừa upload sẽ được dọn dẹp ngay để chống file rác.
 
-#### `PATCH /api/drivers/registration` — Cập nhật hồ sơ bị từ chối
+#### `PATCH /api/drivers/registration` — Cập nhật hồ sơ bị từ chối / Bổ sung giấy tờ
 - **Method**: `PATCH` (`multipart/form-data`)
-- **Quyền yêu cầu**: `ROLE_CUSTOMER`
-- **Mục đích**: Cho phép tài xế cập nhật lại ảnh giấy tờ khi hồ sơ trước đó bị Admin từ chối (`REJECTED`). Sau khi nộp lại, hồ sơ chuyển về `PENDING` để xét duyệt lại.
+- **Quyền yêu cầu**: `ROLE_CUSTOMER`, `ROLE_DRIVER`
+- **Các trường có thể cập nhật**: Bất kỳ tệp giấy tờ nào cần sửa đổi (`idCardFront`, `idCardBack`, `driverLicenseFront`, `driverLicenseBack`, `driverLicenseMotorbikeFront`, `driverLicenseMotorbikeBack`, `driverLicenseCarFront`, `driverLicenseCarBack`, `registrationFront`, `plate`).
+- **Mục đích**: Cho phép ứng viên tài xế cập nhật lại ảnh giấy tờ khi hồ sơ trước đó bị Admin từ chối (`REJECTED`) để chuyển về `PENDING` xét duyệt lại, hoặc cho phép tài xế đã duyệt cập nhật bổ sung giấy tờ.
 
 ---
 
@@ -54,7 +62,7 @@
 #### `GET /api/drivers/{driverId}` — Xem chi tiết hồ sơ tài xế
 - **Method**: `GET`
 - **Quyền yêu cầu**: `ROLE_ADMIN`, `ROLE_DRIVER`, `ROLE_CUSTOMER`
-- **Chức năng**: Trả về đầy đủ thông tin cá nhân, loại xe, trạng thái xác minh, điểm đánh giá trung bình và các Pre-signed URL để xem trực tiếp các ảnh giấy tờ từ MinIO.
+- **Chức năng**: Trả về đầy đủ thông tin cá nhân, loại xe, trạng thái xác minh, điểm đánh giá trung bình và các Pre-signed URL để xem trực tiếp các ảnh giấy tờ từ MinIO (CCCD, bằng lái xe máy, bằng lái ô tô, cavet, biển số).
 
 #### `PATCH /api/drivers/{driverId}/verification-status` — Phê duyệt / Từ chối hồ sơ
 - **Method**: `PATCH`
@@ -77,8 +85,16 @@
 
 #### `POST /api/vehicles` — Đăng ký thêm phương tiện mới
 - **Method**: `POST` (`multipart/form-data`)
-- **Quyền yêu cầu**: `ROLE_DRIVER` (hồ sơ tài xế đã được duyệt `APPROVED`).
-- **Các trường**: `registrationFront`, `plate`, `vehicleType` (`CAR`/`MOTORBIKE`).
+- **Quyền yêu cầu**: `ROLE_CUSTOMER`, `ROLE_DRIVER`
+- **Các trường gửi lên**:
+  | Tên trường | Kiểu | Bắt buộc | Mô tả |
+  | :--- | :---: | :---: | :--- |
+  | `registrationFront` | File | Có | Giấy đăng ký xe (Cavet) |
+  | `plate` | File | Có | Ảnh chụp biển số xe |
+  | `vehicleType` | Query/Part | Có | `CAR` hoặc `MOTORBIKE` |
+  | `driverLicenseFront` | File | Tùy chọn | Mặt trước GPLX tương ứng nếu tài xế chưa có bằng lái cho loại xe này |
+  | `driverLicenseBack` | File | Tùy chọn | Mặt sau GPLX tương ứng |
+- **Kết quả trả về**: `AddVehicleResponse` gồm `vehicleId`, `vehicleType`, `status` (`APPROVED` hoặc `PENDING`), `registrationFrontUrl`, `plateUrl`.
 
 #### `GET /api/drivers/check-available/{driverId}` — Kiểm tra tính khả dụng (Internal)
 - Được `bookingservice` gọi nội bộ để xác nhận tài xế đã được duyệt (`APPROVED`) và đang sẵn sàng nhận khách (`AVAILABLE`).
@@ -111,6 +127,11 @@ PostgreSQL Database: `driverapp_driver_db`
    - `processed_events`: Bảng chống trùng lặp sự kiện (Idempotent Consumer).
    - `saga_compensation_log`: Bảng ghi vết các giao dịch bù trừ SAGA.
    - Bổ sung cột `average_rating NUMERIC(2, 1) DEFAULT 5.0` trong bảng `drivers`.
+3. `V2__update_driver_documents_and_vehicles.sql`:
+   - Nâng cấp ràng buộc CHECK trên `driver_documents` hỗ trợ `DRIVER_LICENSE_MOTORBIKE` và `DRIVER_LICENSE_CAR`.
+   - Migration dữ liệu cũ: tự động ánh xạ `DRIVER_LICENSE` sang loại bằng tương ứng với phương tiện đã đăng ký.
+   - Bổ sung cột `status VARCHAR(20) NOT NULL DEFAULT 'APPROVED'` cho bảng `driver_vehicles` (với ràng buộc `CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED'))`).
+   - Đánh chỉ mục (`idx_driver_vehicles_driver_id`, `idx_driver_documents_driver_id_type`) tăng tốc độ truy vấn.
 
 ---
 

@@ -7,6 +7,7 @@
 ## Cấu hình Chính
 
 - **Port**: `8080`.
+- **Bộ nhớ đệm Codec**: `spring.codec.max-in-memory-size: 50MB` (phục vụ upload hồ sơ tài liệu/hình ảnh kích thước lớn).
 - **Service Registry**: Đăng ký và phân giải tên dịch vụ qua Eureka Server (`http://localhost:8761/eureka/`).
 - **Xác thực JWT**: Lấy public key từ `userservice` qua endpoint `http://localhost:8081/.well-known/jwks.json`.
 - **Chuyển đổi Role**: Tự động chuyển đổi claim `roles` từ JWT thành các Granted Authorities dạng `ROLE_<ROLE_NAME>`.
@@ -34,8 +35,9 @@ Cấu hình trong `SecurityConfig.java`:
 | :--- | :--- | :--- | :--- |
 | `OPTIONS` | `/**` | `permitAll()` | Cho phép Preflight CORS |
 | `POST` | `/api/auth/register`, `/api/auth/login`, `/api/auth/verify-otp`, `/api/auth/refresh`, `/api/auth/logout` | `permitAll()` | Luồng đăng ký, đăng nhập bảo mật |
-| `GET` / `POST` | `/api/drivers/test`, `/api/drivers/register` | `ROLE_CUSTOMER` | Đăng ký trở thành tài xế |
-| `PATCH` | `/api/drivers/registration` | `ROLE_CUSTOMER` | Bổ sung lại giấy tờ tài xế bị từ chối |
+| `GET` / `POST` | `/api/drivers/test`, `/api/drivers/register` | `ROLE_CUSTOMER` | Đăng ký trở thành tài xế (CCCD, bằng lái xe máy/ô tô, cavet, biển số) |
+| `PATCH` | `/api/drivers/registration` | `ROLE_CUSTOMER`, `ROLE_DRIVER` | Bổ sung/cập nhật lại giấy tờ tài xế bị từ chối hoặc nâng hạng bằng lái |
+| `POST` | `/api/vehicles`, `/api/vehicles/**` | `ROLE_CUSTOMER`, `ROLE_DRIVER` | Đăng ký thêm phương tiện mới (kèm bằng lái xe tương ứng) |
 | `*` | `/api/bookings/foods`, `/api/bookings/restaurants/**` | `ROLE_BUSINESS` | Quản lý quán ăn và thực đơn món ăn |
 | `PATCH` | `/api/trips/status` | `ROLE_DRIVER` | Tài xế cập nhật tiến trình cuốc xe |
 | `PATCH` | `/api/trips/*/cancel` | `ROLE_CUSTOMER` | Khách hàng hủy cuốc xe |

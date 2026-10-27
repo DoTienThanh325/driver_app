@@ -7,6 +7,7 @@ import com.driverapp.driverservice.models.Driver;
 import com.driverapp.driverservice.models.DriverDocument;
 import com.driverapp.driverservice.models.DriverVehicle;
 import com.driverapp.driverservice.models.enums.DocumentType;
+import com.driverapp.driverservice.models.enums.VehicleType;
 import com.driverapp.driverservice.models.enums.VerificationStatus;
 import com.driverapp.driverservice.repository.DriverDocumentRepository;
 import com.driverapp.driverservice.repository.DriverRepository;
@@ -83,8 +84,21 @@ public class DriverRegistrationServiceImpl implements DriverRegistrationService 
         // Upload từng ảnh theo đường dẫn mới: driver/{username}/{folder}/{fileName}
         String idCardFrontUrl  = track(imageStorage.uploadIdCardFront(username, request.idCardFront()), uploadedUrls);
         String idCardBackUrl   = track(imageStorage.uploadIdCardBack(username, request.idCardBack()), uploadedUrls);
-        String licenseFrontUrl = track(imageStorage.uploadDriverLicenseFront(username, request.driverLicenseFront()), uploadedUrls);
-        String licenseBackUrl  = track(imageStorage.uploadDriverLicenseBack(username, request.driverLicenseBack()), uploadedUrls);
+
+        DocumentType initialLicenseType = (request.vehicleType() == VehicleType.CAR)
+                ? DocumentType.DRIVER_LICENSE_CAR
+                : DocumentType.DRIVER_LICENSE_MOTORBIKE;
+
+        String licenseFrontUrl;
+        String licenseBackUrl;
+        if (request.vehicleType() == VehicleType.CAR) {
+            licenseFrontUrl = track(imageStorage.uploadDriverLicenseCarFront(username, request.driverLicenseFront()), uploadedUrls);
+            licenseBackUrl  = track(imageStorage.uploadDriverLicenseCarBack(username, request.driverLicenseBack()), uploadedUrls);
+        } else {
+            licenseFrontUrl = track(imageStorage.uploadDriverLicenseMotorbikeFront(username, request.driverLicenseFront()), uploadedUrls);
+            licenseBackUrl  = track(imageStorage.uploadDriverLicenseMotorbikeBack(username, request.driverLicenseBack()), uploadedUrls);
+        }
+
         String registrationUrl = track(imageStorage.uploadRegistrationFront(username, request.registrationFront()), uploadedUrls);
         String plateUrl        = track(imageStorage.uploadPlate(username, request.plate()), uploadedUrls);
 
@@ -92,7 +106,7 @@ public class DriverRegistrationServiceImpl implements DriverRegistrationService 
                 document(driver, DocumentType.ID_CARD, idCardFrontUrl, idCardBackUrl)
         );
         documentRepository.save(
-                document(driver, DocumentType.DRIVER_LICENSE, licenseFrontUrl, licenseBackUrl)
+                document(driver, initialLicenseType, licenseFrontUrl, licenseBackUrl)
         );
 
         vehicleRepository.save(
@@ -101,6 +115,7 @@ public class DriverRegistrationServiceImpl implements DriverRegistrationService 
                         .registrationFrontUrl(registrationUrl)
                         .plateImgUrl(plateUrl)
                         .vehicleType(request.vehicleType())
+                        .status(VerificationStatus.PENDING)
                         .build()
         );
 
@@ -144,13 +159,7 @@ public class DriverRegistrationServiceImpl implements DriverRegistrationService 
                         "Driver profile not found. Please register first."
                 ));
 
-        // 2. Không cho phép sửa nếu hồ sơ đã APPROVED
-        if (driver.getVerificationStatus() == VerificationStatus.APPROVED) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Cannot update registration details. Driver profile is already APPROVED."
-            );
-        }
+        // 2. Kiểm tra trạng thái hồ sơ (Cho phép cập nhật giấy tờ kể cả khi REJECTED hoặc APPROVED cần bổ sung/đổi mới)
 
         // 3. Phải có ít nhất 1 file được gửi lên
         if (!request.hasAtLeastOneFile()) {
@@ -165,6 +174,10 @@ public class DriverRegistrationServiceImpl implements DriverRegistrationService 
         validateIfPresent(request.idCardBack());
         validateIfPresent(request.driverLicenseFront());
         validateIfPresent(request.driverLicenseBack());
+        validateIfPresent(request.driverLicenseMotorbikeFront());
+        validateIfPresent(request.driverLicenseMotorbikeBack());
+        validateIfPresent(request.driverLicenseCarFront());
+        validateIfPresent(request.driverLicenseCarBack());
         validateIfPresent(request.registrationFront());
         validateIfPresent(request.plate());
 
@@ -202,26 +215,135 @@ public class DriverRegistrationServiceImpl implements DriverRegistrationService 
             }
         }
 
-        // 7. Ghi đè ảnh Bằng lái mặt trước / mặt sau qua Lombok setter
-        DriverDocument licenseDoc = docMap.get(DocumentType.DRIVER_LICENSE);
-        if (request.driverLicenseFront() != null && !request.driverLicenseFront().isEmpty()) {
-            String newUrl = imageStorage.overwriteDriverLicenseFront(
-                    username,
-                    licenseDoc != null ? licenseDoc.getFrontImgUrl() : null,
-                    request.driverLicenseFront()
-            );
-            if (licenseDoc != null) {
-                licenseDoc.setFrontImgUrl(newUrl);
+        // 7. Ghi đè ảnh Bằng lái
+        // 7.1. Bằng lái Xe máy (nếu có gửi lên)
+        DriverDocument motorbikeLicenseDoc = docMap.get(DocumentType.DRIVER_LICENSE_MOTORBIKE);
+        if (motorbikeLicenseDoc == null && docMap.containsKey(DocumentType.DRIVER_LICENSE)) {
+            boolean hasMotorbike = vehicleRepository.findByDriver_UserId(userId).stream()
+                    .anyMatch(v -> v.getVehicleType() == VehicleType.MOTORBIKE);
+            if (hasMotorbike) {
+                motorbikeLicenseDoc = docMap.get(DocumentType.DRIVER_LICENSE);
             }
         }
-        if (request.driverLicenseBack() != null && !request.driverLicenseBack().isEmpty()) {
-            String newUrl = imageStorage.overwriteDriverLicenseBack(
+
+        if (request.driverLicenseMotorbikeFront() != null && !request.driverLicenseMotorbikeFront().isEmpty()) {
+            String newUrl = imageStorage.overwriteDriverLicenseMotorbikeFront(
                     username,
-                    licenseDoc != null ? licenseDoc.getBackImgUrl() : null,
-                    request.driverLicenseBack()
+                    motorbikeLicenseDoc != null ? motorbikeLicenseDoc.getFrontImgUrl() : null,
+                    request.driverLicenseMotorbikeFront()
             );
-            if (licenseDoc != null) {
-                licenseDoc.setBackImgUrl(newUrl);
+            if (motorbikeLicenseDoc != null) {
+                motorbikeLicenseDoc.setFrontImgUrl(newUrl);
+            } else {
+                motorbikeLicenseDoc = DriverDocument.builder()
+                        .driver(driver)
+                        .documentType(DocumentType.DRIVER_LICENSE_MOTORBIKE)
+                        .frontImgUrl(newUrl)
+                        .build();
+                docMap.put(DocumentType.DRIVER_LICENSE_MOTORBIKE, motorbikeLicenseDoc);
+            }
+        }
+        if (request.driverLicenseMotorbikeBack() != null && !request.driverLicenseMotorbikeBack().isEmpty()) {
+            String newUrl = imageStorage.overwriteDriverLicenseMotorbikeBack(
+                    username,
+                    motorbikeLicenseDoc != null ? motorbikeLicenseDoc.getBackImgUrl() : null,
+                    request.driverLicenseMotorbikeBack()
+            );
+            if (motorbikeLicenseDoc != null) {
+                motorbikeLicenseDoc.setBackImgUrl(newUrl);
+            } else {
+                motorbikeLicenseDoc = DriverDocument.builder()
+                        .driver(driver)
+                        .documentType(DocumentType.DRIVER_LICENSE_MOTORBIKE)
+                        .backImgUrl(newUrl)
+                        .build();
+                docMap.put(DocumentType.DRIVER_LICENSE_MOTORBIKE, motorbikeLicenseDoc);
+            }
+        }
+        if (motorbikeLicenseDoc != null && (request.driverLicenseMotorbikeFront() != null || request.driverLicenseMotorbikeBack() != null)) {
+            documentRepository.save(motorbikeLicenseDoc);
+        }
+
+        // 7.2. Bằng lái Ô tô (nếu có gửi lên)
+        DriverDocument carLicenseDoc = docMap.get(DocumentType.DRIVER_LICENSE_CAR);
+        if (carLicenseDoc == null && docMap.containsKey(DocumentType.DRIVER_LICENSE)) {
+            boolean hasCar = vehicleRepository.findByDriver_UserId(userId).stream()
+                    .anyMatch(v -> v.getVehicleType() == VehicleType.CAR);
+            if (hasCar) {
+                carLicenseDoc = docMap.get(DocumentType.DRIVER_LICENSE);
+            }
+        }
+
+        if (request.driverLicenseCarFront() != null && !request.driverLicenseCarFront().isEmpty()) {
+            String newUrl = imageStorage.overwriteDriverLicenseCarFront(
+                    username,
+                    carLicenseDoc != null ? carLicenseDoc.getFrontImgUrl() : null,
+                    request.driverLicenseCarFront()
+            );
+            if (carLicenseDoc != null) {
+                carLicenseDoc.setFrontImgUrl(newUrl);
+            } else {
+                carLicenseDoc = DriverDocument.builder()
+                        .driver(driver)
+                        .documentType(DocumentType.DRIVER_LICENSE_CAR)
+                        .frontImgUrl(newUrl)
+                        .build();
+                docMap.put(DocumentType.DRIVER_LICENSE_CAR, carLicenseDoc);
+            }
+        }
+        if (request.driverLicenseCarBack() != null && !request.driverLicenseCarBack().isEmpty()) {
+            String newUrl = imageStorage.overwriteDriverLicenseCarBack(
+                    username,
+                    carLicenseDoc != null ? carLicenseDoc.getBackImgUrl() : null,
+                    request.driverLicenseCarBack()
+            );
+            if (carLicenseDoc != null) {
+                carLicenseDoc.setBackImgUrl(newUrl);
+            } else {
+                carLicenseDoc = DriverDocument.builder()
+                        .driver(driver)
+                        .documentType(DocumentType.DRIVER_LICENSE_CAR)
+                        .backImgUrl(newUrl)
+                        .build();
+                docMap.put(DocumentType.DRIVER_LICENSE_CAR, carLicenseDoc);
+            }
+        }
+        if (carLicenseDoc != null && (request.driverLicenseCarFront() != null || request.driverLicenseCarBack() != null)) {
+            documentRepository.save(carLicenseDoc);
+        }
+
+        // 7.3. Fallback driverLicenseFront / driverLicenseBack (dành cho legacy client)
+        if (request.driverLicenseFront() != null || request.driverLicenseBack() != null) {
+            DriverDocument fallbackLicenseDoc = docMap.get(DocumentType.DRIVER_LICENSE_MOTORBIKE);
+            if (fallbackLicenseDoc == null) {
+                fallbackLicenseDoc = docMap.get(DocumentType.DRIVER_LICENSE_CAR);
+            }
+            if (fallbackLicenseDoc == null) {
+                fallbackLicenseDoc = docMap.get(DocumentType.DRIVER_LICENSE);
+            }
+
+            if (request.driverLicenseFront() != null && !request.driverLicenseFront().isEmpty()) {
+                String newUrl = imageStorage.overwriteDriverLicenseFront(
+                        username,
+                        fallbackLicenseDoc != null ? fallbackLicenseDoc.getFrontImgUrl() : null,
+                        request.driverLicenseFront()
+                );
+                if (fallbackLicenseDoc != null) {
+                    fallbackLicenseDoc.setFrontImgUrl(newUrl);
+                }
+            }
+            if (request.driverLicenseBack() != null && !request.driverLicenseBack().isEmpty()) {
+                String newUrl = imageStorage.overwriteDriverLicenseBack(
+                        username,
+                        fallbackLicenseDoc != null ? fallbackLicenseDoc.getBackImgUrl() : null,
+                        request.driverLicenseBack()
+                );
+                if (fallbackLicenseDoc != null) {
+                    fallbackLicenseDoc.setBackImgUrl(newUrl);
+                }
+            }
+            if (fallbackLicenseDoc != null) {
+                documentRepository.save(fallbackLicenseDoc);
             }
         }
 
@@ -243,17 +365,16 @@ public class DriverRegistrationServiceImpl implements DriverRegistrationService 
             vehicle.setPlateImgUrl(newUrl);
         }
 
-        // 9. Nếu hồ sơ từng bị REJECTED, tự động chuyển về PENDING để Admin duyệt lại qua Lombok setter
-        if (driver.getVerificationStatus() == VerificationStatus.REJECTED) {
+        // 9. Nếu hồ sơ từng bị REJECTED hoặc APPROVED vừa cập nhật lại ảnh mới, chuyển về PENDING để Admin duyệt lại
+        if (driver.getVerificationStatus() == VerificationStatus.REJECTED || driver.getVerificationStatus() == VerificationStatus.APPROVED) {
             driver.setVerificationStatus(VerificationStatus.PENDING);
             driver.setRejectionReason(null);
-            log.info("Driver {} resubmitted registration after rejection", driver.getId());
+            log.info("Driver {} updated registration documents, status set to PENDING for re-verification", driver.getId());
         }
 
         // Lưu cập nhật vào DB
         driverRepository.save(driver);
         if (idCardDoc != null) documentRepository.save(idCardDoc);
-        if (licenseDoc != null) documentRepository.save(licenseDoc);
         vehicleRepository.save(vehicle);
     }
 

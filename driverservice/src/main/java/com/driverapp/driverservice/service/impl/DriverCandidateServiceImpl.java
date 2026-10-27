@@ -8,7 +8,9 @@ import com.driverapp.driverservice.dto.response.DriverDetailResponse.VehicleDeta
 import com.driverapp.driverservice.dto.response.UserInfoResponse;
 import com.driverapp.driverservice.models.Driver;
 import com.driverapp.driverservice.models.DriverDocument;
+import com.driverapp.driverservice.models.DriverVehicle;
 import com.driverapp.driverservice.models.enums.DocumentType;
+import com.driverapp.driverservice.models.enums.VehicleType;
 import com.driverapp.driverservice.models.enums.VerificationStatus;
 import com.driverapp.driverservice.repository.DriverDocumentRepository;
 import com.driverapp.driverservice.repository.DriverRepository;
@@ -89,7 +91,6 @@ public class DriverCandidateServiceImpl implements DriverCandidateService {
                     toPresignedUrl(idCardDoc.getBackImgUrl()));
         }
         DocumentImagePair licensePair = null;
-
         DriverDocument licenseDoc = docMap.get(DocumentType.DRIVER_LICENSE);
         if (licenseDoc != null) {
             licensePair = new DocumentImagePair(
@@ -97,12 +98,46 @@ public class DriverCandidateServiceImpl implements DriverCandidateService {
                     toPresignedUrl(licenseDoc.getBackImgUrl()));
         }
 
-        VehicleDetail vehicleDetail = vehicleRepository.findFirstByDriverOrderByCreatedAtDesc(driver)
-                .map(vehicle -> new VehicleDetail(
-                        vehicle.getVehicleType(),
-                        toPresignedUrl(vehicle.getRegistrationFrontUrl()),
-                        toPresignedUrl(vehicle.getPlateImgUrl())))
-                .orElse(null);
+        DocumentImagePair licenseMotorbikePair = null;
+        DriverDocument licenseMotorbikeDoc = docMap.get(DocumentType.DRIVER_LICENSE_MOTORBIKE);
+        if (licenseMotorbikeDoc != null) {
+            licenseMotorbikePair = new DocumentImagePair(
+                    toPresignedUrl(licenseMotorbikeDoc.getFrontImgUrl()),
+                    toPresignedUrl(licenseMotorbikeDoc.getBackImgUrl()));
+        }
+
+        DocumentImagePair licenseCarPair = null;
+        DriverDocument licenseCarDoc = docMap.get(DocumentType.DRIVER_LICENSE_CAR);
+        if (licenseCarDoc != null) {
+            licenseCarPair = new DocumentImagePair(
+                    toPresignedUrl(licenseCarDoc.getFrontImgUrl()),
+                    toPresignedUrl(licenseCarDoc.getBackImgUrl()));
+        }
+
+        // Tương thích ngược: Nếu chỉ có DRIVER_LICENSE cũ mà chưa có 2 loại mới
+        List<DriverVehicle> vehiclesList = vehicleRepository.findByDriverOrderByCreatedAtDesc(driver);
+        if (licensePair != null) {
+            if (licenseMotorbikePair == null && !vehiclesList.isEmpty() && vehiclesList.get(0).getVehicleType() == VehicleType.MOTORBIKE) {
+                licenseMotorbikePair = licensePair;
+            } else if (licenseCarPair == null && !vehiclesList.isEmpty() && vehiclesList.get(0).getVehicleType() == VehicleType.CAR) {
+                licenseCarPair = licensePair;
+            }
+        }
+        if (licensePair == null) {
+            licensePair = licenseMotorbikePair != null ? licenseMotorbikePair : licenseCarPair;
+        }
+
+        List<VehicleDetail> vehicles = vehiclesList.stream()
+                .<VehicleDetail>map(v -> new VehicleDetail(
+                        v.getId(),
+                        v.getVehicleType(),
+                        toPresignedUrl(v.getRegistrationFrontUrl()),
+                        toPresignedUrl(v.getPlateImgUrl()),
+                        v.getStatus() != null ? v.getStatus() : driver.getVerificationStatus(),
+                        v.getCreatedAt()))
+                .toList();
+
+        VehicleDetail primaryVehicle = vehicles.isEmpty() ? null : vehicles.get(0);
 
         return new DriverDetailResponse(
                 driver.getUserId(),
@@ -112,7 +147,10 @@ public class DriverCandidateServiceImpl implements DriverCandidateService {
                 driver.getCreatedAt(),
                 idCardPair,
                 licensePair,
-                vehicleDetail);
+                licenseMotorbikePair,
+                licenseCarPair,
+                primaryVehicle,
+                vehicles);
     }
 
     private String toPresignedUrl(String objectUrl) {

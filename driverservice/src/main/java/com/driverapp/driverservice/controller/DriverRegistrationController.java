@@ -66,6 +66,10 @@ public class DriverRegistrationController {
             @RequestPart(value = "idCardBack", required = false) MultipartFile idCardBack,
             @RequestPart(value = "driverLicenseFront", required = false) MultipartFile driverLicenseFront,
             @RequestPart(value = "driverLicenseBack", required = false) MultipartFile driverLicenseBack,
+            @RequestPart(value = "driverLicenseMotorbikeFront", required = false) MultipartFile driverLicenseMotorbikeFront,
+            @RequestPart(value = "driverLicenseMotorbikeBack", required = false) MultipartFile driverLicenseMotorbikeBack,
+            @RequestPart(value = "driverLicenseCarFront", required = false) MultipartFile driverLicenseCarFront,
+            @RequestPart(value = "driverLicenseCarBack", required = false) MultipartFile driverLicenseCarBack,
             @RequestPart(value = "registrationFront", required = false) MultipartFile registrationFront,
             @RequestPart(value = "plate", required = false) MultipartFile plate) {
 
@@ -74,6 +78,10 @@ public class DriverRegistrationController {
                 idCardBack,
                 driverLicenseFront,
                 driverLicenseBack,
+                driverLicenseMotorbikeFront,
+                driverLicenseMotorbikeBack,
+                driverLicenseCarFront,
+                driverLicenseCarBack,
                 registrationFront,
                 plate
         );

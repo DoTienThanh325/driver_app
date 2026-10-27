@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 import com.driverapp.driverservice.models.enums.VehicleType;
+import com.driverapp.driverservice.models.enums.VerificationStatus;
 
 @Entity
 @Table(name = "driver_vehicles")
@@ -37,6 +38,11 @@ public class DriverVehicle {
     @Enumerated(EnumType.STRING)
     @Column(name = "vehicle_type", nullable = false, length = 20)
     private VehicleType vehicleType;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    @Builder.Default
+    private VerificationStatus status = VerificationStatus.PENDING;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

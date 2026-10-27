@@ -6,6 +6,8 @@ import com.driverapp.driverservice.models.Driver;
 import com.driverapp.driverservice.models.DriverDocument;
 import com.driverapp.driverservice.models.DriverVehicle;
 import com.driverapp.driverservice.models.enums.DocumentType;
+import com.driverapp.driverservice.models.enums.VehicleType;
+import com.driverapp.driverservice.models.enums.VerificationStatus;
 import com.driverapp.driverservice.repository.DriverDocumentRepository;
 import com.driverapp.driverservice.repository.DriverRepository;
 import com.driverapp.driverservice.repository.DriverVehicleRepository;
@@ -43,21 +45,37 @@ public class DriverVehicleServiceImpl implements DriverVehicleService {
         imageStorage.validate(request.registrationFront());
         imageStorage.validate(request.plate());
 
-        // ── STEP 2: Kiểm tra bằng lái trực tiếp bằng userId (bỏ query bảng drivers) ──
-        boolean hasLicense = documentRepository.existsByDriver_UserIdAndDocumentType(
-                userId, DocumentType.DRIVER_LICENSE);
+        // ── STEP 2: Kiểm tra bằng lái theo loại xe (Xe máy vs Ô tô) ─────────────
+        VehicleType vehicleType = request.vehicleType();
+        DocumentType requiredLicenseType = (vehicleType == VehicleType.CAR)
+                ? DocumentType.DRIVER_LICENSE_CAR
+                : DocumentType.DRIVER_LICENSE_MOTORBIKE;
+
+        boolean hasLicense = documentRepository.existsByDriver_UserIdAndDocumentType(userId, requiredLicenseType);
+        if (!hasLicense) {
+            // Kiểm tra tương thích dữ liệu cũ: nếu đã có DRIVER_LICENSE và xe cũ cùng vehicleType
+            boolean hasLegacyLicense = documentRepository.existsByDriver_UserIdAndDocumentType(userId, DocumentType.DRIVER_LICENSE);
+            if (hasLegacyLicense) {
+                boolean hasSameTypeVehicle = vehicleRepository.findByDriver_UserId(userId).stream()
+                        .anyMatch(v -> v.getVehicleType() == vehicleType);
+                if (hasSameTypeVehicle) {
+                    hasLicense = true;
+                }
+            }
+        }
         boolean needLicense = !hasLicense;
 
         if (needLicense) {
+            String typeLabel = (vehicleType == VehicleType.CAR) ? "ô tô" : "xe máy";
             if (request.driverLicenseFront() == null || request.driverLicenseFront().isEmpty()) {
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST,
-                        "Driver license front image is required when adding a car for the first time.");
+                        "Bạn chưa có bằng lái " + typeLabel + ". Vui lòng tải lên ảnh mặt trước giấy phép lái xe " + typeLabel + ".");
             }
             if (request.driverLicenseBack() == null || request.driverLicenseBack().isEmpty()) {
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST,
-                        "Driver license back image is required when adding a car for the first time.");
+                        "Bạn chưa có bằng lái " + typeLabel + ". Vui lòng tải lên ảnh mặt sau giấy phép lái xe " + typeLabel + ".");
             }
             imageStorage.validate(request.driverLicenseFront());
             imageStorage.validate(request.driverLicenseBack());
@@ -95,28 +113,40 @@ public class DriverVehicleServiceImpl implements DriverVehicleService {
 
         // ── STEP 6: Lưu bằng lái nếu cần ────────────────────────────────────
         if (needLicense) {
-            String licenseFrontUrl = track(
-                    imageStorage.uploadDriverLicenseFront(username, request.driverLicenseFront()),
-                    uploadedUrls);
-            String licenseBackUrl = track(
-                    imageStorage.uploadDriverLicenseBack(username, request.driverLicenseBack()),
-                    uploadedUrls);
+            String licenseFrontUrl;
+            String licenseBackUrl;
+            if (vehicleType == VehicleType.CAR) {
+                licenseFrontUrl = track(
+                        imageStorage.uploadDriverLicenseCarFront(username, request.driverLicenseFront()),
+                        uploadedUrls);
+                licenseBackUrl = track(
+                        imageStorage.uploadDriverLicenseCarBack(username, request.driverLicenseBack()),
+                        uploadedUrls);
+            } else {
+                licenseFrontUrl = track(
+                        imageStorage.uploadDriverLicenseMotorbikeFront(username, request.driverLicenseFront()),
+                        uploadedUrls);
+                licenseBackUrl = track(
+                        imageStorage.uploadDriverLicenseMotorbikeBack(username, request.driverLicenseBack()),
+                        uploadedUrls);
+            }
             documentRepository.save(
                     DriverDocument.builder()
                             .driver(driver)
-                            .documentType(DocumentType.DRIVER_LICENSE)
+                            .documentType(requiredLicenseType)
                             .frontImgUrl(licenseFrontUrl)
                             .backImgUrl(licenseBackUrl)
                             .build());
         }
 
-        // ── STEP 7: Lưu thông tin xe mới ─────────────────────────────────────
+        // ── STEP 7: Lưu thông tin xe mới (status = PENDING) ──────────────────
         DriverVehicle vehicle = vehicleRepository.save(
                 DriverVehicle.builder()
                         .driver(driver)
                         .registrationFrontUrl(registrationUrl)
                         .plateImgUrl(plateUrl)
                         .vehicleType(request.vehicleType())
+                        .status(VerificationStatus.PENDING)
                         .build());
 
         return new AddVehicleResponse(

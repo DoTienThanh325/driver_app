@@ -7,6 +7,10 @@ public record UpdateDriverRegistrationRequest(
         MultipartFile idCardBack,
         MultipartFile driverLicenseFront,
         MultipartFile driverLicenseBack,
+        MultipartFile driverLicenseMotorbikeFront,
+        MultipartFile driverLicenseMotorbikeBack,
+        MultipartFile driverLicenseCarFront,
+        MultipartFile driverLicenseCarBack,
         MultipartFile registrationFront,
         MultipartFile plate
 ) {
@@ -18,6 +22,10 @@ public record UpdateDriverRegistrationRequest(
                 || (idCardBack != null && !idCardBack.isEmpty())
                 || (driverLicenseFront != null && !driverLicenseFront.isEmpty())
                 || (driverLicenseBack != null && !driverLicenseBack.isEmpty())
+                || (driverLicenseMotorbikeFront != null && !driverLicenseMotorbikeFront.isEmpty())
+                || (driverLicenseMotorbikeBack != null && !driverLicenseMotorbikeBack.isEmpty())
+                || (driverLicenseCarFront != null && !driverLicenseCarFront.isEmpty())
+                || (driverLicenseCarBack != null && !driverLicenseCarBack.isEmpty())
                 || (registrationFront != null && !registrationFront.isEmpty())
                 || (plate != null && !plate.isEmpty());
     }

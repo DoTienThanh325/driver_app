@@ -13,12 +13,16 @@ public interface DriverVehicleRepository extends JpaRepository<DriverVehicle, UU
 
     List<DriverVehicle> findByDriver(Driver driver);
 
+    List<DriverVehicle> findByDriverOrderByCreatedAtDesc(Driver driver);
+
     Optional<DriverVehicle> findFirstByDriverOrderByCreatedAtDesc(Driver driver);
 
     // Truy vấn trực tiếp theo userId
     long countByDriver_UserId(UUID userId);
 
     List<DriverVehicle> findByDriver_UserId(UUID userId);
+
+    List<DriverVehicle> findByDriver_UserIdOrderByCreatedAtDesc(UUID userId);
 
     Optional<DriverVehicle> findFirstByDriver_UserIdOrderByCreatedAtDesc(UUID userId);
 }

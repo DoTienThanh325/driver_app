@@ -84,7 +84,12 @@ Mỗi service là một ứng dụng độc lập sử dụng **Java 21**, **Spr
    - Cơ chế tự động đồng bộ dữ liệu MongoDB $\rightarrow$ Elasticsearch khi khởi động (`FoodDataSyncRunner`) và endpoint quản trị `/sync-all`.
 
 6. **Lưu trữ Giấy tờ & Hình ảnh với MinIO (S3 Compatible)**:
-   - Hồ sơ tài xế (CCCD, GPLX, cavet xe, biển số) và hồ sơ giấy phép kinh doanh nhà hàng được lưu trữ dạng Object trên MinIO.
+   - Hồ sơ tài xế (CCCD, GPLX xe máy/ô tô, cavet xe, biển số) và hồ sơ giấy phép kinh doanh nhà hàng được lưu trữ dạng Object trên MinIO.
+   - **Đa định dạng & Kiểm tra Magic Bytes**: Hỗ trợ JPG, PNG, WEBP, HEIC, HEIF, PDF, GIF, BMP. Xác thực tệp tin an toàn từ header bytes (`magic bytes`), chống giả mạo định dạng file.
+   - **Hỗ trợ tệp dung lượng lớn**: Hỗ trợ upload tệp lên đến 15MB/file và 50MB/request; API Gateway cấu hình bộ nhớ đệm `max-in-memory-size: 50MB` phục vụ upload tài liệu chất lượng cao, file PDF nhiều trang.
+   - **Tách biệt bằng lái & Trạng thái xe độc lập**:
+     - Phân định rõ bằng lái xe máy (`DRIVER_LICENSE_MOTORBIKE`) và ô tô (`DRIVER_LICENSE_CAR`), cho phép tài xế sở hữu và quản lý đồng thời cả hai loại bằng.
+     - Bảng `driver_vehicles` có trạng thái duyệt độc lập (`PENDING`, `APPROVED`, `REJECTED`) cho từng phương tiện.
    - Chỉ lưu URI `s3://...` vào cơ sở dữ liệu. Khi truy xuất qua API, hệ thống sinh **Pre-signed URL** an toàn có thời hạn để client xem trực tiếp.
    - Tự động dọn dẹp file rác trên MinIO nếu transaction database thất bại.
 
@@ -117,12 +122,12 @@ Mỗi service là một ứng dụng độc lập sử dụng **Java 21**, **Spr
 | `/.well-known/jwks.json` | `lb://userservice` | `GET` (Public `permitAll()`) | Expose JWK Set chứa RSA public key |
 | `/api/users/me` | `lb://userservice` | `GET` (Authenticated) | Xem thông tin tài khoản hiện tại |
 | `/api/users/{userId}` | `lb://userservice` | `GET` (Authenticated) | Tra cứu thông tin người dùng theo ID |
-| `/api/drivers/register`, `/api/drivers/test` | `lb://driverservice` | `POST`/`GET` (`ROLE_CUSTOMER`) | Khách hàng đăng ký trở thành tài xế |
-| `/api/drivers/registration` | `lb://driverservice` | `PATCH` (`ROLE_CUSTOMER`) | Cập nhật lại giấy tờ khi hồ sơ bị từ chối |
+| `/api/drivers/register`, `/api/drivers/test` | `lb://driverservice` | `POST`/`GET` (`ROLE_CUSTOMER`) | Khách hàng đăng ký trở thành tài xế (CCCD, bằng lái xe máy/ô tô, cavet, biển số) |
+| `/api/drivers/registration` | `lb://driverservice` | `PATCH` (`ROLE_CUSTOMER`, `ROLE_DRIVER`) | Cập nhật lại giấy tờ khi hồ sơ bị từ chối hoặc bổ sung bằng lái |
 | `/api/drivers/candidates` | `lb://driverservice` | `GET` (`ROLE_ADMIN`) | Lấy danh sách hồ sơ tài xế chờ xét duyệt |
-| `/api/drivers/{driverId}` | `lb://driverservice` | `GET` (`ADMIN`, `DRIVER`, `CUSTOMER`) | Xem chi tiết hồ sơ tài xế kèm link ảnh giấy tờ |
+| `/api/drivers/{driverId}` | `lb://driverservice` | `GET` (`ADMIN`, `DRIVER`, `CUSTOMER`) | Xem chi tiết hồ sơ tài xế kèm link ảnh giấy tờ và các loại bằng lái |
 | `/api/drivers/{driverId}/verification-status` | `lb://driverservice` | `PATCH` (`ROLE_ADMIN`) | Admin phê duyệt hoặc từ chối hồ sơ tài xế |
-| `/api/vehicles` | `lb://driverservice` | `POST` (`ROLE_DRIVER`) | Thêm phương tiện mới cho tài xế |
+| `/api/vehicles`, `/api/vehicles/**` | `lb://driverservice` | `POST` (`ROLE_CUSTOMER`, `ROLE_DRIVER`) | Đăng ký thêm phương tiện mới (kèm giấy tờ xe và bằng lái tương ứng) |
 | `/api/trips` | `lb://bookingservice` | `POST` (`ROLE_CUSTOMER`) | Đặt chuyến xe mới |
 | `/api/trips/{tripId}/accept` | `lb://bookingservice` | `POST` (`ROLE_DRIVER`) | Tài xế nhận cuốc xe |
 | `/api/trips/status` | `lb://bookingservice` | `PATCH` (`ROLE_DRIVER`) | Tài xế cập nhật trạng thái tiến trình chuyến đi |
