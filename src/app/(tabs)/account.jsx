@@ -22,12 +22,12 @@ export default function AccountScreen() {
     const hasDriverRole = await userStorage.isDriver();
     setIsDriver(hasDriverRole);
 
-    if (userProfile?.id && !hasDriverRole) {
+    if (userProfile?.id) {
       try {
         const regInfo = await driverService.getRegistrationStatus(userProfile.id);
         setDriverRegStatus(regInfo.status);
       } catch {
-        setDriverRegStatus('NOT_REGISTERED');
+        setDriverRegStatus(hasDriverRole ? 'APPROVED' : 'NOT_REGISTERED');
       }
     }
   }, []);
@@ -84,6 +84,8 @@ export default function AccountScreen() {
     )
   );
 
+  const hasDriverProfile = isDriver || (driverRegStatus && driverRegStatus !== 'NOT_REGISTERED');
+
   return (
     <ThemedView style={styles.container}>
       {/* 1. Header Banner Teal */}
@@ -118,16 +120,33 @@ export default function AccountScreen() {
         <View style={styles.section}>
           <ThemedText style={styles.sectionTitle}>Hồ sơ của bạn</ThemedText>
           <View style={styles.card}>
-            {/* Nếu có role DRIVER: hiển thị Hồ sơ Tài xế */}
-            {isDriver && (
+            {/* Nếu đã có hồ sơ tài xế (kể cả PENDING, APPROVED, REJECTED hoặc có role DRIVER): hiển thị Hồ sơ Tài xế */}
+            {hasDriverProfile && (
               <Pressable style={styles.itemRow} onPress={handleDriverProfilePress}>
                 <View style={styles.itemLeft}>
                   <View style={styles.iconBoxTeal}>
                     <Ionicons name="car-sport-outline" size={22} color="#00B5B8" />
                   </View>
                   <View style={styles.itemTextContainer}>
-                    <ThemedText style={styles.itemTitle}>Hồ sơ Tài xế</ThemedText>
-                    <ThemedText style={styles.itemSubtitle}>Đã xác minh</ThemedText>
+                    <View style={styles.itemTitleRow}>
+                      <ThemedText style={styles.itemTitle}>Hồ sơ Tài xế</ThemedText>
+                      {driverRegStatus === 'PENDING' && (
+                        <View style={styles.statusBadgePending}>
+                          <ThemedText style={styles.statusTextPending}>Chờ duyệt</ThemedText>
+                        </View>
+                      )}
+                      {driverRegStatus === 'REJECTED' && (
+                        <View style={styles.statusBadgeRejected}>
+                          <ThemedText style={styles.statusTextRejected}>Cần bổ sung</ThemedText>
+                        </View>
+                      )}
+                    </View>
+                    {driverRegStatus === 'PENDING' && (
+                      <ThemedText style={styles.itemSubtitle}>Hồ sơ đang chờ quản trị viên xét duyệt</ThemedText>
+                    )}
+                    {driverRegStatus === 'REJECTED' && (
+                      <ThemedText style={styles.itemSubtitle}>Hồ sơ cần cập nhật lại thông tin</ThemedText>
+                    )}
                   </View>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
@@ -157,34 +176,16 @@ export default function AccountScreen() {
         <View style={styles.section}>
           <ThemedText style={styles.sectionTitle}>Mở rộng</ThemedText>
           <View style={styles.card}>
-            {/* Nếu CHƯA có role DRIVER: hiển thị Đăng ký Tài xế kèm trạng thái */}
-            {!isDriver && (
+            {/* Chỉ hiển thị Đăng ký Tài xế khi hoàn toàn CHƯA nộp hồ sơ */}
+            {!hasDriverProfile && (
               <Pressable style={styles.itemRow} onPress={handleDriverRegisterPress}>
                 <View style={styles.itemLeft}>
                   <View style={styles.iconBoxTeal}>
                     <Ionicons name="person-add-outline" size={22} color="#00B5B8" />
                   </View>
                   <View style={styles.itemTextContainer}>
-                    <View style={styles.itemTitleRow}>
-                      <ThemedText style={styles.itemTitle}>Đăng ký Tài xế</ThemedText>
-                      {driverRegStatus === 'PENDING' && (
-                        <View style={styles.statusBadgePending}>
-                          <ThemedText style={styles.statusTextPending}>Chờ duyệt</ThemedText>
-                        </View>
-                      )}
-                      {driverRegStatus === 'REJECTED' && (
-                        <View style={styles.statusBadgeRejected}>
-                          <ThemedText style={styles.statusTextRejected}>Cần bổ sung</ThemedText>
-                        </View>
-                      )}
-                    </View>
-                    <ThemedText style={styles.itemSubtitle}>
-                      {driverRegStatus === 'PENDING'
-                        ? 'Hồ sơ của bạn đang được xét duyệt'
-                        : driverRegStatus === 'REJECTED'
-                        ? 'Hồ sơ cần chỉnh sửa/bổ sung ảnh'
-                        : 'Gửi hồ sơ xác minh để nhận chuyến'}
-                    </ThemedText>
+                    <ThemedText style={styles.itemTitle}>Đăng ký Tài xế</ThemedText>
+                    <ThemedText style={styles.itemSubtitle}>Gửi hồ sơ xác minh để nhận chuyến</ThemedText>
                   </View>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />

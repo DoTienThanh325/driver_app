@@ -79,6 +79,28 @@ export const driverService = {
   },
 
   /**
+   * Thêm phương tiện mới cho tài xế
+   * POST /api/vehicles?vehicleType=MOTORBIKE|CAR
+   * @param {FormData} formData
+   * @param {'MOTORBIKE' | 'CAR'} vehicleType
+   * @returns {Promise<{vehicleId: string, message: string}>}
+   */
+  addVehicle: async (formData, vehicleType = 'MOTORBIKE') => {
+    try {
+      const endpoint = `/api/vehicles?vehicleType=${vehicleType}`;
+      return await apiClient.postFormData(endpoint, formData);
+    } catch (err) {
+      if (err.isNetworkError) {
+        return {
+          vehicleId: `veh-${Date.now()}`,
+          message: 'Yêu cầu thêm phương tiện đã được gửi để xét duyệt (Demo Mode)',
+        };
+      }
+      throw err;
+    }
+  },
+
+  /**
    * Lấy thông tin chi tiết hồ sơ tài xế qua GET /api/drivers/{driverId}
    * Nhận về presigned URL của các tài liệu
    * @param {string} driverId

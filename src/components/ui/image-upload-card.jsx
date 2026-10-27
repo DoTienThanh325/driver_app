@@ -4,6 +4,7 @@ import { Image } from 'expo-image';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import { ThemedText } from '@/components/themed-text';
+import { processImageForUpload } from '@/utils/image-processor';
 
 export function ImageUploadCard({ label, imageUri, onImageSelected, onImageRemoved, isRequired = true }) {
   const [loading, setLoading] = React.useState(false);
@@ -13,12 +14,14 @@ export function ImageUploadCard({ label, imageUri, onImageSelected, onImageRemov
       setLoading(true);
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
-        allowsEditing: true,
+        allowsEditing: false,
         quality: 0.8,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        onImageSelected(result.assets[0].uri);
+        const rawUri = result.assets[0].uri;
+        const processed = await processImageForUpload(rawUri, 'upload');
+        onImageSelected(processed ? processed.uri : rawUri);
       }
     } catch (err) {
       console.warn('Lỗi chọn ảnh:', err);

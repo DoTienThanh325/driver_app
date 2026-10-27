@@ -58,7 +58,7 @@ export const apiClient = {
         error.message?.includes('Network request failed') ||
         error.message?.includes('Failed to fetch')
       ) {
-        const netErr = new Error(`Không thể kết nối tới máy chủ (${GATEWAY_URL}). Vui lòng kiểm tra dịch vụ backend.`);
+        const netErr = new Error('Không thể kết nối tới hệ thống. Vui lòng kiểm tra kết nối mạng và thử lại.');
         netErr.isNetworkError = true;
         throw netErr;
       }
@@ -109,7 +109,7 @@ export const apiClient = {
         error.message?.includes('Network request failed') ||
         error.message?.includes('Failed to fetch')
       ) {
-        const netErr = new Error(`Không thể kết nối tới máy chủ (${GATEWAY_URL}). Vui lòng kiểm tra dịch vụ backend.`);
+        const netErr = new Error('Không thể kết nối tới hệ thống. Vui lòng kiểm tra kết nối mạng và thử lại.');
         netErr.isNetworkError = true;
         throw netErr;
       }
@@ -157,100 +157,91 @@ export const apiClient = {
         error.message?.includes('Network request failed') ||
         error.message?.includes('Failed to fetch')
       ) {
-        const netErr = new Error(`Không thể kết nối tới máy chủ (${GATEWAY_URL}). Vui lòng kiểm tra dịch vụ backend.`);
+        const netErr = new Error('Không thể kết nối tới hệ thống. Vui lòng kiểm tra kết nối mạng và thử lại.');
         netErr.isNetworkError = true;
         throw netErr;
       }
       throw error;
     }
+  },
+
+  /**
+   * Helper gửi Multipart FormData bằng XMLHttpRequest thuần của React Native.
+   * Giải quyết triệt để lỗi 'Unsupported FormDataPart implementation' do Expo SDK 58 Winter Fetch gây ra.
+   */
+  sendMultipartXHR: (endpoint, formData, method = 'POST', token = null, isRetry = false) => {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const authToken = token || (await tokenStorage.getAccessToken());
+        const fullUrl = getFullUrl(endpoint);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open(method, fullUrl);
+
+        if (authToken) {
+          xhr.setRequestHeader('Authorization', `Bearer ${authToken}`);
+        }
+
+        xhr.onload = async () => {
+          if (xhr.status === 401 && !isRetry) {
+            const refreshed = await apiClient.tryRefreshToken();
+            if (refreshed) {
+              try {
+                const retryRes = await apiClient.sendMultipartXHR(endpoint, formData, method, null, true);
+                return resolve(retryRes);
+              } catch (retryErr) {
+                return reject(retryErr);
+              }
+            }
+          }
+
+          let data = {};
+          try {
+            data = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+          } catch (e) {
+            // Not a JSON response
+          }
+
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(data);
+          } else {
+            const errMsg = data.detail || data.message || `Lỗi tải lên: mã ${xhr.status}`;
+            console.warn(`[apiClient.${method}XHR Error ${xhr.status}] ${fullUrl}:`, errMsg);
+            reject(new Error(errMsg));
+          }
+        };
+
+        xhr.onerror = () => {
+          const netErr = new Error('Không thể kết nối tới hệ thống. Vui lòng kiểm tra kết nối mạng và thử lại.');
+          netErr.isNetworkError = true;
+          reject(netErr);
+        };
+
+        xhr.ontimeout = () => {
+          const timeoutErr = new Error('Quá thời gian kết nối tới máy chủ (Timeout).');
+          timeoutErr.isNetworkError = true;
+          reject(timeoutErr);
+        };
+
+        xhr.send(formData);
+      } catch (err) {
+        reject(err);
+      }
+    });
   },
 
   /**
    * Gọi API POST với Multipart FormData (Upload file/ảnh)
    */
   postFormData: async (endpoint, formData, token = null, isRetry = false) => {
-    const headers = {};
-    const authToken = token || (await tokenStorage.getAccessToken());
-    if (authToken) {
-      headers['Authorization'] = `Bearer ${authToken}`;
-    }
-
-    const fullUrl = getFullUrl(endpoint);
-
-    try {
-      const response = await fetch(fullUrl, {
-        method: 'POST',
-        headers,
-        body: formData,
-      });
-
-      if (response.status === 401 && !isRetry) {
-        const refreshed = await apiClient.tryRefreshToken();
-        if (refreshed) {
-          return apiClient.postFormData(endpoint, formData, null, true);
-        }
-      }
-
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data.message || `Lỗi tải lên: mã ${response.status}`);
-      }
-      return data;
-    } catch (error) {
-      if (
-        error.message?.includes('Network request failed') ||
-        error.message?.includes('Failed to fetch')
-      ) {
-        const netErr = new Error(`Không thể kết nối tới máy chủ (${GATEWAY_URL}). Vui lòng kiểm tra dịch vụ backend.`);
-        netErr.isNetworkError = true;
-        throw netErr;
-      }
-      throw error;
-    }
+    return apiClient.sendMultipartXHR(endpoint, formData, 'POST', token, isRetry);
   },
 
   /**
    * Gọi API PATCH với Multipart FormData (Cập nhật file/ảnh)
    */
   patchFormData: async (endpoint, formData, token = null, isRetry = false) => {
-    const headers = {};
-    const authToken = token || (await tokenStorage.getAccessToken());
-    if (authToken) {
-      headers['Authorization'] = `Bearer ${authToken}`;
-    }
-
-    const fullUrl = getFullUrl(endpoint);
-
-    try {
-      const response = await fetch(fullUrl, {
-        method: 'PATCH',
-        headers,
-        body: formData,
-      });
-
-      if (response.status === 401 && !isRetry) {
-        const refreshed = await apiClient.tryRefreshToken();
-        if (refreshed) {
-          return apiClient.patchFormData(endpoint, formData, null, true);
-        }
-      }
-
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data.message || `Lỗi cập nhật: mã ${response.status}`);
-      }
-      return data;
-    } catch (error) {
-      if (
-        error.message?.includes('Network request failed') ||
-        error.message?.includes('Failed to fetch')
-      ) {
-        const netErr = new Error(`Không thể kết nối tới máy chủ (${GATEWAY_URL}). Vui lòng kiểm tra dịch vụ backend.`);
-        netErr.isNetworkError = true;
-        throw netErr;
-      }
-      throw error;
-    }
+    return apiClient.sendMultipartXHR(endpoint, formData, 'PATCH', token, isRetry);
   },
 
   /**

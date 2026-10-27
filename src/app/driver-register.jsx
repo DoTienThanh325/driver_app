@@ -40,37 +40,33 @@ export default function DriverRegisterScreen() {
           </ThemedText>
 
           {/* Phần 1: Giấy tờ tùy thân */}
+          <View style={styles.sectionHeaderContainer}>
+            <ThemedText style={styles.sectionHeading}>1. Giấy tờ tùy thân</ThemedText>
+            <ThemedText style={styles.sectionSubHeading}>Căn cước công dân (CCCD/CMND) còn hạn sử dụng</ThemedText>
+          </View>
+
           <ImageUploadCard
-            label="CCCD mặt trước:"
+            label="CCCD/CMND mặt trước: *"
             imageUri={idCardFront}
             onImageSelected={setIdCardFront}
             onImageRemoved={() => setIdCardFront(null)}
           />
 
           <ImageUploadCard
-            label="CCCD mặt sau:"
+            label="CCCD/CMND mặt sau: *"
             imageUri={idCardBack}
             onImageSelected={setIdCardBack}
             onImageRemoved={() => setIdCardBack(null)}
           />
 
-          <ImageUploadCard
-            label="Giấy phép lái xe mặt trước:"
-            imageUri={driverLicenseFront}
-            onImageSelected={setDriverLicenseFront}
-            onImageRemoved={() => setDriverLicenseFront(null)}
-          />
-
-          <ImageUploadCard
-            label="Giấy phép lái xe mặt sau:"
-            imageUri={driverLicenseBack}
-            onImageSelected={setDriverLicenseBack}
-            onImageRemoved={() => setDriverLicenseBack(null)}
-          />
-
-          {/* Phần 2: Thông tin phương tiện */}
+          {/* Phần 2: Thông tin phương tiện & Giấy tờ xe */}
           <View style={styles.sectionDivider}>
-            <ThemedText style={styles.sectionHeading}>Thông tin phương tiện</ThemedText>
+            <View style={styles.sectionHeaderContainer}>
+              <ThemedText style={styles.sectionHeading}>2. Thông tin phương tiện & Giấy tờ lái xe</ThemedText>
+              <ThemedText style={styles.sectionSubHeading}>
+                Chọn loại phương tiện và cung cấp đầy đủ giấy tờ tương ứng
+              </ThemedText>
+            </View>
 
             {/* Bộ chọn loại phương tiện */}
             <View style={styles.vehicleTypeContainer}>
@@ -109,15 +105,48 @@ export default function DriverRegisterScreen() {
               </Pressable>
             </View>
 
+            {/* Giấy phép lái xe tương ứng với loại phương tiện */}
             <ImageUploadCard
-              label="Giấy tờ xe mặt trước:"
+              label={
+                vehicleType === 'CAR'
+                  ? 'GPLX Ô tô mặt trước: *'
+                  : 'GPLX Xe máy mặt trước: *'
+              }
+              imageUri={driverLicenseFront}
+              onImageSelected={setDriverLicenseFront}
+              onImageRemoved={() => setDriverLicenseFront(null)}
+            />
+
+            <ImageUploadCard
+              label={
+                vehicleType === 'CAR'
+                  ? 'GPLX Ô tô mặt sau: *'
+                  : 'GPLX Xe máy mặt sau: *'
+              }
+              imageUri={driverLicenseBack}
+              onImageSelected={setDriverLicenseBack}
+              onImageRemoved={() => setDriverLicenseBack(null)}
+            />
+
+            {/* Giấy tờ đăng ký xe tương ứng */}
+            <ImageUploadCard
+              label={
+                vehicleType === 'CAR'
+                  ? 'Đăng ký ô tô mặt trước (Cà vẹt): *'
+                  : 'Đăng ký xe máy mặt trước (Cà vẹt): *'
+              }
               imageUri={registrationFront}
               onImageSelected={setRegistrationFront}
               onImageRemoved={() => setRegistrationFront(null)}
             />
 
+            {/* Ảnh biển số xe tương ứng */}
             <ImageUploadCard
-              label="Biển số xe:"
+              label={
+                vehicleType === 'CAR'
+                  ? 'Ảnh biển số xe ô tô: *'
+                  : 'Ảnh biển số xe máy: *'
+              }
               imageUri={plate}
               onImageSelected={setPlate}
               onImageRemoved={() => setPlate(null)}

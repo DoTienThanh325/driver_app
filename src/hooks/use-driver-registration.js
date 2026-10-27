@@ -1,7 +1,9 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Alert } from 'react-native';
 import { router } from 'expo-router';
 import { driverService } from '@/services/driver.service';
+import { userStorage } from '@/services/storage/user.storage';
+import { processImageForUpload } from '@/utils/image-processor';
 
 export function useDriverRegistration() {
   const [vehicleType, setVehicleType] = useState('MOTORBIKE');
@@ -15,18 +17,35 @@ export function useDriverRegistration() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
 
-  const appendImagePart = (formData, fieldName, uri) => {
-    if (!uri) return;
-    const filename = uri.split('/').pop() || `${fieldName}.jpg`;
-    const match = /\.(\w+)$/.exec(filename);
-    const type = match ? `image/${match[1]}` : 'image/jpeg';
-
-    formData.append(fieldName, {
-      uri,
-      name: filename,
-      type,
-    });
-  };
+  // Kiểm tra nếu tài khoản đã nộp hồ sơ thì thông báo và chuyển sang Hồ sơ Tài xế
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      const userProfile = await userStorage.getUserProfile();
+      if (userProfile?.id && isMounted) {
+        try {
+          const regInfo = await driverService.getRegistrationStatus(userProfile.id);
+          if (regInfo?.status && regInfo.status !== 'NOT_REGISTERED') {
+            Alert.alert(
+              'Hồ sơ đã tồn tại',
+              'Tài khoản của bạn đã gửi hồ sơ đăng ký tài xế trên hệ thống. Đang chuyển tới trang Hồ sơ Tài xế.',
+              [
+                {
+                  text: 'Đồng ý',
+                  onPress: () => router.replace('/driver-profile'),
+                },
+              ]
+            );
+          }
+        } catch {
+          // Bỏ qua lỗi kết nối
+        }
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const submitRegistration = useCallback(async () => {
     if (!idCardFront || !idCardBack) {
@@ -51,12 +70,23 @@ export function useDriverRegistration() {
       setErrorMessage(null);
 
       const formData = new FormData();
-      appendImagePart(formData, 'idCardFront', idCardFront);
-      appendImagePart(formData, 'idCardBack', idCardBack);
-      appendImagePart(formData, 'driverLicenseFront', driverLicenseFront);
-      appendImagePart(formData, 'driverLicenseBack', driverLicenseBack);
-      appendImagePart(formData, 'registrationFront', registrationFront);
-      appendImagePart(formData, 'plate', plate);
+
+      // Nén và chuẩn hóa ảnh trước khi đưa vào FormData
+      const [pIdFront, pIdBack, pLicFront, pLicBack, pRegFront, pPlate] = await Promise.all([
+        processImageForUpload(idCardFront, 'idCardFront'),
+        processImageForUpload(idCardBack, 'idCardBack'),
+        processImageForUpload(driverLicenseFront, 'driverLicenseFront'),
+        processImageForUpload(driverLicenseBack, 'driverLicenseBack'),
+        processImageForUpload(registrationFront, 'registrationFront'),
+        processImageForUpload(plate, 'plate'),
+      ]);
+
+      if (pIdFront) formData.append('idCardFront', pIdFront);
+      if (pIdBack) formData.append('idCardBack', pIdBack);
+      if (pLicFront) formData.append('driverLicenseFront', pLicFront);
+      if (pLicBack) formData.append('driverLicenseBack', pLicBack);
+      if (pRegFront) formData.append('registrationFront', pRegFront);
+      if (pPlate) formData.append('plate', pPlate);
 
       const res = await driverService.registerDriver(formData, vehicleType);
 
@@ -73,9 +103,24 @@ export function useDriverRegistration() {
 
       return res;
     } catch (err) {
-      const msg = err.message || 'Đăng ký hồ sơ thất bại. Vui lòng thử lại.';
+      let msg = err.message || 'Đăng ký hồ sơ thất bại. Vui lòng thử lại.';
+      if (
+        msg.includes('409') ||
+        msg.toLowerCase().includes('already has a driver profile') ||
+        msg.toLowerCase().includes('conflicts')
+      ) {
+        msg = 'Tài khoản của bạn đã gửi hồ sơ đăng ký tài xế trên hệ thống. Vui lòng kiểm tra lại tại mục Hồ sơ Tài xế.';
+        Alert.alert('Hồ sơ đã tồn tại', msg, [
+          {
+            text: 'Đến Hồ sơ Tài xế',
+            onPress: () => router.replace('/driver-profile'),
+          },
+          { text: 'Đóng', style: 'cancel' },
+        ]);
+      } else {
+        Alert.alert('Lỗi đăng ký', msg);
+      }
       setErrorMessage(msg);
-      Alert.alert('Lỗi đăng ký', msg);
     } finally {
       setIsSubmitting(false);
     }

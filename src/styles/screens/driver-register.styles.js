@@ -34,10 +34,17 @@ export const driverRegisterStyles = StyleSheet.create({
     paddingTop: 12,
   },
   sectionHeading: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
     color: '#111827',
-    marginBottom: 10,
+  },
+  sectionHeaderContainer: {
+    marginBottom: 12,
+  },
+  sectionSubHeading: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
   },
   vehicleTypeContainer: {
     flexDirection: 'row',
