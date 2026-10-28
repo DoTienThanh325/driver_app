@@ -34,6 +34,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -42,8 +44,11 @@ import java.util.stream.Collectors;
 public class MatchingServiceImpl implements MatchingService {
 
     private static final int OFFER_TIMEOUT_SECONDS = 12;
-    private static final double SEARCH_RADIUS_KM = 3.0;
+    private static final double[] SEARCH_ROUNDS_RADIUS = {3.0, 5.0, 8.0};
+    private static final int MAX_SEARCH_ROUNDS = 3;
+    private static final int RETRY_DELAY_SECONDS = 5;
     private static final int MAX_CANDIDATES = 40;
+    private static final int TOP_AI_BROADCAST_CANDIDATES = 3; // Phát danh sách cuốc cho Top 3 tài xế tiềm năng nhất
 
     private final DriverServiceClient driverServiceClient;
     private final RoutingService routingService;
@@ -71,6 +76,8 @@ public class MatchingServiceImpl implements MatchingService {
                 .and("status").is(TripStatus.REQUESTED.name()));
         Update update = new Update()
                 .set("status", TripStatus.SEARCHING_DRIVER.name())
+                .set("searchRound", 1)
+                .set("searchRadiusKm", SEARCH_ROUNDS_RADIUS[0])
                 .set("updatedAt", LocalDateTime.now());
 
         Trip trip = mongoTemplate.findAndModify(query, update,
@@ -81,19 +88,66 @@ public class MatchingServiceImpl implements MatchingService {
             return;
         }
 
+        // Bắt đầu Vòng 1 tìm kiếm
+        executeMatchingRound(tripId, 1);
+    }
+
+    private void executeMatchingRound(String tripId, int round) {
+        Trip trip = tripRepository.findById(tripId).orElse(null);
+        if (trip == null || !TripStatus.SEARCHING_DRIVER.equals(trip.getStatus())) {
+            log.info("[Matching] Trip {} không còn SEARCHING_DRIVER (hiện tại={}). Dừng quét vòng {}.",
+                    tripId, trip != null ? trip.getStatus() : "NULL", round);
+            return;
+        }
+
+        double radiusKm = (round <= SEARCH_ROUNDS_RADIUS.length) ? SEARCH_ROUNDS_RADIUS[round - 1] : 8.0;
+
+        // Cập nhật thông tin vòng quét để App hiển thị trực quan cho khách
+        mongoTemplate.updateFirst(
+                new Query(Criteria.where("id").is(tripId)),
+                new Update().set("searchRound", round).set("searchRadiusKm", radiusKm).set("updatedAt", LocalDateTime.now()),
+                Trip.class
+        );
+
         double pickUpLat = trip.getPickUpLatitude();
         double pickUpLng = trip.getPickUpLongitude();
         String vehicleType = trip.getVehicleType() != null ? trip.getVehicleType().name() : null;
 
-        log.info("[Matching] Bắt đầu tìm tài xế cho Trip {} tại ({}, {})", tripId, pickUpLat, pickUpLng);
+        log.info("[Matching] VÒNG {} (Bán kính {}km) tìm tài xế cho Trip {} tại ({}, {})",
+                round, radiusKm, tripId, pickUpLat, pickUpLng);
 
-        // 2. Quét Redis GEO lấy tối đa 40 tài xế lân cận
-        List<NearbyDriverDto> candidates = driverServiceClient.getNearbyDrivers(
-                pickUpLat, pickUpLng, SEARCH_RADIUS_KM, vehicleType, MAX_CANDIDATES);
+        // 1. Quét Redis GEO lấy tài xế AVAILABLE
+        List<NearbyDriverDto> availableDrivers = driverServiceClient.getNearbyDrivers(
+                pickUpLat, pickUpLng, radiusKm, vehicleType, MAX_CANDIDATES);
+
+        // 2. [Giải pháp 3]: Quét tài xế đang chở khách sắp tới điểm trả (Cuốc gối đầu / Back-to-back)
+        List<NearbyDriverDto> backToBackDrivers = findBackToBackCandidates(trip, radiusKm);
+
+        // Hợp nhất ứng viên (loại trừ trùng lặp driverId)
+        Map<UUID, NearbyDriverDto> candidateMap = new LinkedHashMap<>();
+        if (availableDrivers != null) {
+            for (NearbyDriverDto d : availableDrivers) {
+                candidateMap.put(d.driverUserId(), d);
+            }
+        }
+        for (NearbyDriverDto b2b : backToBackDrivers) {
+            if (!candidateMap.containsKey(b2b.driverUserId())) {
+                candidateMap.put(b2b.driverUserId(), b2b);
+            }
+        }
+        List<NearbyDriverDto> candidates = new ArrayList<>(candidateMap.values());
 
         if (candidates.isEmpty()) {
-            log.warn("[Matching] Không tìm thấy tài xế nào trong bán kính {}km cho Trip {}", SEARCH_RADIUS_KM, tripId);
-            markTripNoDriverFound(tripId);
+            if (round < MAX_SEARCH_ROUNDS) {
+                log.info("[Matching] Vòng {} ({}km) chưa có tài xế cho Trip {}. Chờ {}s để mở rộng sang Vòng {}...",
+                        round, radiusKm, tripId, RETRY_DELAY_SECONDS, round + 1);
+                CompletableFuture.delayedExecutor(RETRY_DELAY_SECONDS, TimeUnit.SECONDS)
+                        .execute(() -> executeMatchingRound(tripId, round + 1));
+            } else {
+                log.warn("[Matching] Đã quét hết {} vòng (tối đa {}km) cho Trip {}. Chuyển sang NO_DRIVER_FOUND",
+                        MAX_SEARCH_ROUNDS, radiusKm, tripId);
+                markTripNoDriverFound(tripId);
+            }
             return;
         }
 
@@ -104,21 +158,84 @@ public class MatchingServiceImpl implements MatchingService {
 
         List<Double> etas = routingService.calculateEtasToPickup(pickUpLat, pickUpLng, driverCoords);
 
-        // 4. Xếp hạng: Gọi AI Scoring Model (Fallback về Rule-based ETA nếu AI lỗi/timeout)
+        // 4. Xếp hạng: AI Scoring Model (Fallback về Rule-based ETA)
         List<MatchingSession.CandidateDriver> rankedList = rankCandidates(trip, candidates, etas);
 
         // 5. Lưu session điều phối vào MongoDB
         MatchingSession session = MatchingSession.builder()
                 .tripId(tripId)
                 .currentRank(1)
+                .searchRound(round)
+                .currentRadiusKm(radiusKm)
                 .candidates(rankedList)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
         matchingSessionRepository.save(session);
 
-        // 6. Phát offer cho tài xế hạng #1
-        dispatchOfferToCandidate(tripId, session, 1);
+        // 6. Phát offer đồng thời cho Top các tài xế tiềm năng nhất
+        int broadcastCount = Math.min(TOP_AI_BROADCAST_CANDIDATES, rankedList.size());
+        log.info("[Matching] Vòng {}: Phát cuốc xe {} đồng thời cho Top {} tài xế (Tổng {} ứng viên, gồm {} tài xế gối đầu)",
+                round, tripId, broadcastCount, rankedList.size(), backToBackDrivers.size());
+        for (int rank = 1; rank <= broadcastCount; rank++) {
+            dispatchOfferToCandidate(tripId, session, rank);
+        }
+    }
+
+    /**
+     * Tìm các tài xế đang chở khách (IN_PROGRESS) mà điểm trả khách gần điểm đón của khách mới (<= maxDistanceKm)
+     */
+    private List<NearbyDriverDto> findBackToBackCandidates(Trip newTrip, double maxDistanceKm) {
+        try {
+            Query query = new Query(Criteria.where("status").is(TripStatus.IN_PROGRESS.name()));
+            if (newTrip.getVehicleType() != null) {
+                query.addCriteria(Criteria.where("vehicleType").is(newTrip.getVehicleType().name()));
+            }
+            List<Trip> activeTrips = mongoTemplate.find(query, Trip.class);
+            if (activeTrips.isEmpty()) return Collections.emptyList();
+
+            List<NearbyDriverDto> b2bCandidates = new ArrayList<>();
+            double pickupLat = newTrip.getPickUpLatitude();
+            double pickupLng = newTrip.getPickUpLongitude();
+
+            for (Trip activeTrip : activeTrips) {
+                if (activeTrip.getDriverId() == null) continue;
+                if (activeTrip.getId().equals(newTrip.getId())) continue;
+
+                double dropLat = activeTrip.getDestinationLatitude();
+                double dropLng = activeTrip.getDestinationLongitude();
+
+                double distanceKm = calculateHaversineDistance(dropLat, dropLng, pickupLat, pickupLng);
+                // Giới hạn bán kính cuốc gối đầu tối đa 4km hoặc theo maxDistanceKm
+                if (distanceKm <= Math.min(maxDistanceKm, 4.0)) {
+                    log.info("[BackToBack] Tìm thấy tài xế {} đang hoàn thành cuốc xe {} (cách điểm đón mới {}km)",
+                            activeTrip.getDriverId(), activeTrip.getId(), String.format("%.2f", distanceKm));
+                    b2bCandidates.add(new NearbyDriverDto(
+                            activeTrip.getDriverId(),
+                            dropLat,
+                            dropLng,
+                            Math.round(distanceKm * 100.0) / 100.0,
+                            newTrip.getVehicleType() != null ? newTrip.getVehicleType().name() : "MOTORBIKE",
+                            true
+                    ));
+                }
+            }
+            return b2bCandidates;
+        } catch (Exception e) {
+            log.warn("[BackToBack] Lỗi khi quét ứng viên cuốc gối đầu: {}", e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    private double calculateHaversineDistance(double lat1, double lon1, double lat2, double lon2) {
+        final int R = 6371; // Bán kính Trái Đất (km)
+        double latDistance = Math.toRadians(lat2 - lat1);
+        double lonDistance = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(latDistance / 2) * Math.sin(latDistance / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(lonDistance / 2) * Math.sin(lonDistance / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
     }
 
     private List<MatchingSession.CandidateDriver> rankCandidates(
@@ -174,6 +291,7 @@ public class MatchingServiceImpl implements MatchingService {
                                     .etaMinutes(eta)
                                     .distanceKm(d.distanceKm())
                                     .rank(sc.rank())
+                                    .backToBack(Boolean.TRUE.equals(d.backToBack()))
                                     .build());
                         }
                     }
@@ -193,6 +311,7 @@ public class MatchingServiceImpl implements MatchingService {
                     .driverId(d.driverUserId())
                     .etaMinutes(eta)
                     .distanceKm(d.distanceKm())
+                    .backToBack(Boolean.TRUE.equals(d.backToBack()))
                     .build());
         }
         rankedList.sort(Comparator.comparingDouble(MatchingSession.CandidateDriver::getEtaMinutes));
@@ -208,8 +327,16 @@ public class MatchingServiceImpl implements MatchingService {
         int index = targetRank - 1;
 
         if (index >= candidates.size()) {
-            log.warn("[Matching] Đã hết ứng viên cho Trip {}", tripId);
-            markTripNoDriverFound(tripId);
+            int currentRound = session.getSearchRound() > 0 ? session.getSearchRound() : 1;
+            if (currentRound < MAX_SEARCH_ROUNDS) {
+                log.info("[Matching] Đã hết ứng viên Vòng {}. Mở rộng sang Vòng {} sau {}s...",
+                        currentRound, currentRound + 1, RETRY_DELAY_SECONDS);
+                CompletableFuture.delayedExecutor(RETRY_DELAY_SECONDS, TimeUnit.SECONDS)
+                        .execute(() -> executeMatchingRound(tripId, currentRound + 1));
+            } else {
+                log.warn("[Matching] Đã hết ứng viên cho Trip {} sau {} vòng.", tripId, MAX_SEARCH_ROUNDS);
+                markTripNoDriverFound(tripId);
+            }
             return;
         }
 
@@ -227,6 +354,7 @@ public class MatchingServiceImpl implements MatchingService {
                 .driverId(candidate.getDriverId())
                 .tripId(tripId)
                 .status(MatchingOfferStatus.PENDING)
+                .backToBack(candidate.isBackToBack())
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
@@ -239,10 +367,15 @@ public class MatchingServiceImpl implements MatchingService {
         matchingSessionRepository.save(session);
 
         // Push thông báo đến App tài xế
+        String notifMsg = candidate.isBackToBack()
+                ? String.format("⚡ Cuốc gối đầu! Khách cách điểm trả của bạn %.1f phút. Bạn có %ds để nhận cuốc.",
+                        candidate.getEtaMinutes(), OFFER_TIMEOUT_SECONDS)
+                : String.format("Khách cách bạn %.1f phút. Bạn có %ds để nhận cuốc.",
+                        candidate.getEtaMinutes(), OFFER_TIMEOUT_SECONDS);
+
         notificationClient.createNotification(new CreateNotificationRequest(
-                "Có cuốc xe mới!",
-                String.format("Khách cách bạn %.1f phút. Bạn có %ds để nhận cuốc.",
-                        candidate.getEtaMinutes(), OFFER_TIMEOUT_SECONDS),
+                candidate.isBackToBack() ? "Có cuốc xe gối đầu mới!" : "Có cuốc xe mới!",
+                notifMsg,
                 candidate.getDriverId()));
 
         // Hẹn giờ timeout 12s qua RabbitMQ Delay Queue
@@ -274,8 +407,8 @@ public class MatchingServiceImpl implements MatchingService {
             }
         }
 
-        log.info("[Matching] Đã gửi Offer {} cho Tài xế {} (Rank {}, ETA={}phút)",
-                savedOffer.getId(), candidate.getDriverId(), targetRank, candidate.getEtaMinutes());
+        log.info("[Matching] Đã gửi Offer {} (B2B={}) cho Tài xế {} (Rank {}, ETA={}phút)",
+                savedOffer.getId(), candidate.isBackToBack(), candidate.getDriverId(), targetRank, candidate.getEtaMinutes());
     }
 
     @Override
@@ -350,6 +483,63 @@ public class MatchingServiceImpl implements MatchingService {
         }
     }
 
+    @Override
+    public List<com.driverapp.bookingservice.dto.response.DriverOfferResponse> getPendingOffersForDriver(UUID driverId) {
+        List<MatchingOffer> pendingOffers = matchingOfferRepository.findByDriverIdAndStatus(driverId, MatchingOfferStatus.PENDING);
+        if (pendingOffers.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<com.driverapp.bookingservice.dto.response.DriverOfferResponse> result = new ArrayList<>();
+        for (MatchingOffer offer : pendingOffers) {
+            Trip trip = tripRepository.findById(offer.getTripId()).orElse(null);
+            // Chỉ hiển thị cuốc xe vẫn đang ở trạng thái tìm tài xế
+            if (trip != null && (TripStatus.SEARCHING_DRIVER.equals(trip.getStatus()) || TripStatus.REQUESTED.equals(trip.getStatus()))) {
+                MatchingSession session = matchingSessionRepository.findById(trip.getId()).orElse(null);
+                int rank = 1;
+                double etaMinutes = 3.0;
+                double distanceKm = 1.0;
+                boolean isB2B = Boolean.TRUE.equals(offer.getBackToBack());
+
+                if (session != null && session.getCandidates() != null) {
+                    for (MatchingSession.CandidateDriver cd : session.getCandidates()) {
+                        if (cd.getDriverId().equals(driverId)) {
+                            rank = cd.getRank();
+                            etaMinutes = cd.getEtaMinutes();
+                            distanceKm = cd.getDistanceKm();
+                            if (cd.isBackToBack()) isB2B = true;
+                            break;
+                        }
+                    }
+                }
+
+                result.add(com.driverapp.bookingservice.dto.response.DriverOfferResponse.builder()
+                        .offerId(offer.getId())
+                        .tripId(trip.getId())
+                        .pickUpAddress(trip.getPickUpAddress())
+                        .pickUpLatitude(trip.getPickUpLatitude())
+                        .pickUpLongitude(trip.getPickUpLongitude())
+                        .destinationAddress(trip.getDestinationAddress())
+                        .destinationLatitude(trip.getDestinationLatitude())
+                        .destinationLongitude(trip.getDestinationLongitude())
+                        .distanceKm(distanceKm)
+                        .etaMinutes(etaMinutes)
+                        .shippFare(trip.getShippFare())
+                        .totalFoodPrice(trip.getTotalFoodPrice())
+                        .shippingType(trip.getShippingType())
+                        .vehicleType(trip.getVehicleType())
+                        .aiRank(rank)
+                        .backToBack(isB2B)
+                        .createdAt(offer.getCreatedAt())
+                        .build());
+            }
+        }
+
+        // Sắp xếp: Ưu tiên cuốc mà AI xếp tài xế này ở Rank cao nhất
+        result.sort(Comparator.comparingInt(com.driverapp.bookingservice.dto.response.DriverOfferResponse::getAiRank));
+        return result;
+    }
+
     private void markTripNoDriverFound(String tripId) {
         Query query = new Query(Criteria.where("id").is(tripId)
                 .and("status").is(TripStatus.SEARCHING_DRIVER.name()));
@@ -360,7 +550,7 @@ public class MatchingServiceImpl implements MatchingService {
             log.warn("[Matching] Trip {} → NO_DRIVER_FOUND. Gửi thông báo cho khách hàng.", tripId);
             notificationClient.createNotification(new CreateNotificationRequest(
                     "Không tìm được tài xế",
-                    "Rất tiếc, các tài xế lân cận hiện đang bận hoặc không phản hồi. Vui lòng thử lại sau.",
+                    "Rất tiếc, các tài xế lân cận hiện đang bận hoặc không phản hồi sau nhiều vòng tìm kiếm. Vui lòng thử lại sau.",
                     updated.getCustomerId()));
         }
     }

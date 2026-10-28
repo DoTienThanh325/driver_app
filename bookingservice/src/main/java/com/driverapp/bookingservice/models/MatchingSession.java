@@ -23,6 +23,9 @@ public class MatchingSession {
     private String currentOfferId;
     private List<CandidateDriver> candidates;
 
+    private int searchRound;
+    private double currentRadiusKm;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -36,5 +39,6 @@ public class MatchingSession {
         private double etaMinutes;
         private double distanceKm;
         private int rank;
+        private boolean backToBack;
     }
 }

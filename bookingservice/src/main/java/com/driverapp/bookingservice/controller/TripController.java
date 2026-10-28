@@ -6,6 +6,7 @@ import com.driverapp.bookingservice.dto.request.UpdateTripStatusRequest;
 import com.driverapp.bookingservice.dto.response.AcceptTripResponse;
 import com.driverapp.bookingservice.dto.response.CreateTripResponse;
 import com.driverapp.bookingservice.dto.response.CustomerTripCountDto;
+import com.driverapp.bookingservice.models.Trip;
 import com.driverapp.bookingservice.service.TripService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -97,4 +98,26 @@ public class TripController {
     public com.driverapp.bookingservice.dto.response.TripPriceDto getTripPrice(@PathVariable String tripId) {
         return tripService.getTripPrice(tripId);
     }
-}
+
+    @GetMapping("/current")
+    public Trip getCurrentTrip(@AuthenticationPrincipal Jwt jwt) {
+        UUID customerId = UUID.fromString(jwt.getSubject());
+        return tripService.getCurrentTrip(customerId);
+    }
+
+    @GetMapping("/{tripId}")
+    public Trip getTripById(@PathVariable String tripId) {
+        return tripService.getTripById(tripId);
+    }
+
+    @PostMapping("/test/simulate-match")
+    public java.util.Map<String, Object> simulateMatch(
+            @RequestParam(defaultValue = "21.028511") double lat,
+            @RequestParam(defaultValue = "105.854444") double lng,
+            @RequestParam(required = false) com.driverapp.bookingservice.models.enums.VehicleType vehicleType,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        UUID driverUserId = UUID.fromString(jwt.getSubject());
+        return tripService.simulateMatchingForDriver(driverUserId, lat, lng, vehicleType);
+    }
+}

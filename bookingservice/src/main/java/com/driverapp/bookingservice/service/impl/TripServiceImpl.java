@@ -56,22 +56,16 @@ public class TripServiceImpl implements TripService {
         public CreateTripResponse createTrip(UUID customerId, CreateTripRequest request) {
 
                 // ── Kiểm tra điều kiện: Cuốc xe trước đó phải kết thúc hoặc bị hủy ──
+                // Cho phep tao cuoc moi neu cuoc cu khong con tim tai xe
                 tripRepository.findTopByCustomerIdOrderByCreatedAtDesc(customerId)
                                 .ifPresent(lastTrip -> {
-                                        if (lastTrip.getStatus() != TripStatus.COMPLETED
-                                                        && lastTrip.getStatus() != TripStatus.CANCELLED
-							&& lastTrip.getStatus() != TripStatus.NO_DRIVER_FOUND) {
+                                        if (lastTrip.getStatus() == TripStatus.REQUESTED
+                                                        || lastTrip.getStatus() == TripStatus.SEARCHING_DRIVER) {
                                                 throw new ResponseStatusException(
                                                                 HttpStatus.CONFLICT,
-                                                                "Bạn đang có chuyến đi chưa hoàn tất (mã: "
-                                                                                + lastTrip.getId()
-                                                                                + ", trạng thái: "
-                                                                                + lastTrip.getStatus()
-                                                                                + "). Cuốc xe trước đó phải kết thúc hoặc bị hủy trước khi đặt chuyến mới.");
+                                                                "Dang co chuyen di tim tai xe");
                                         }
                                 });
-
-                // ── Validate food nếu là FOOD_DELIVERY ──────────────────────────────
                 List<FoodSelected> foodSelectedList = null;
                 Double totalFoodPrice = null;
 
@@ -169,6 +163,11 @@ public class TripServiceImpl implements TripService {
                 // Kiểm tra driver có tồn tại, APPROVED và đang AVAILABLE
                 driverServiceClient.checkDriverAvailable(driverUserId);
 
+                // Kiểm tra xem lượt nhận này có phải là cuốc gối đầu (Back-to-Back) không
+                boolean isB2B = matchingOfferRepository.findByTripIdAndStatus(tripId, MatchingOfferStatus.PENDING)
+                                .map(o -> Boolean.TRUE.equals(o.getBackToBack()))
+                                .orElse(false);
+
                 // ── BƯỚC 2: Cập nhật có điều kiện (Atomic update bằng Mongo findAndModify) ──
                 Query query = new Query(Criteria.where("id").is(tripId)
                                 .and("status").is(TripStatus.SEARCHING_DRIVER.name()));
@@ -176,6 +175,7 @@ public class TripServiceImpl implements TripService {
                 Update update = new Update()
                                 .set("driverId", driverUserId) // ✅ Gán trực tiếp userId làm driverId
                                 .set("status", TripStatus.DRIVER_ASSIGNED.name())
+                                .set("backToBack", isB2B)
                                 .set("updatedAt", LocalDateTime.now());
 
                 Trip updated = mongoTemplate.findAndModify(
@@ -411,5 +411,57 @@ public class TripServiceImpl implements TripService {
                                 trip.getStatus() != null ? trip.getStatus().name() : null
                 );
         }
-}
 
+        @Override
+        public Trip getTripById(String tripId) {
+                return tripRepository.findById(tripId)
+                                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy chuyến đi với id: " + tripId));
+        }
+
+        @Override
+        public Trip getCurrentTrip(UUID customerId) {
+                return tripRepository.findTopByCustomerIdOrderByCreatedAtDesc(customerId)
+                                .orElse(null);
+        }
+
+        @Override
+        public java.util.Map<String, Object> simulateMatchingForDriver(UUID driverUserId, double lat, double lng, com.driverapp.bookingservice.models.enums.VehicleType vehicleType) {
+                // 1. Tạo cuốc xe mô phỏng của khách tại tọa độ của tài xế
+                Trip trip = Trip.builder()
+                                .customerId(UUID.randomUUID())
+                                .pickUpLatitude(lat)
+                                .pickUpLongitude(lng)
+                                .pickUpAddress("Điểm đón mô phỏng (Hồ Hoàn Kiếm, Hà Nội)")
+                                .destinationLatitude(21.007050)
+                                .destinationLongitude(105.843180)
+                                .destinationAddress("Đại học Bách Khoa, Hai Bà Trưng, Hà Nội")
+                                .shippingType(ShippingType.PASSENGER)
+                                .vehicleType(vehicleType != null ? vehicleType : com.driverapp.bookingservice.models.enums.VehicleType.MOTORBIKE)
+                                .shippFare(25000.0)
+                                .status(TripStatus.SEARCHING_DRIVER)
+                                .createdAt(LocalDateTime.now())
+                                .updatedAt(LocalDateTime.now())
+                                .build();
+                Trip savedTrip = tripRepository.save(trip);
+
+                // 2. Tạo lời mời MatchingOffer gán thẳng cho tài xế này
+                MatchingOffer offer = MatchingOffer.builder()
+                                .driverId(driverUserId)
+                                .tripId(savedTrip.getId())
+                                .status(MatchingOfferStatus.PENDING)
+                                .createdAt(LocalDateTime.now())
+                                .updatedAt(LocalDateTime.now())
+                                .build();
+                MatchingOffer savedOffer = matchingOfferRepository.save(offer);
+
+                return java.util.Map.of(
+                                "message", "Mô phỏng cuốc xe ghép thành công!",
+                                "tripId", savedTrip.getId(),
+                                "offerId", savedOffer.getId(),
+                                "pickUpAddress", savedTrip.getPickUpAddress(),
+                                "destinationAddress", savedTrip.getDestinationAddress(),
+                                "shippFare", savedTrip.getShippFare(),
+                                "driverId", driverUserId.toString()
+                );
+        }
+}

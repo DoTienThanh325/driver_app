@@ -7,5 +7,10 @@ public record NearbyDriverDto(
         Double latitude,
         Double longitude,
         Double distanceKm,
-        String vehicleType
-) {}
+        String vehicleType,
+        Boolean backToBack
+) {
+    public NearbyDriverDto(UUID driverUserId, Double latitude, Double longitude, Double distanceKm, String vehicleType) {
+        this(driverUserId, latitude, longitude, distanceKm, vehicleType, false);
+    }
+}

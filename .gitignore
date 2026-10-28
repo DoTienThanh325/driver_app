@@ -3,7 +3,14 @@
 .vscode/
 docs/
 *.log
-infra/osrm/data/*.pbf
-infra/osrm/data/*.osrm*
-
 document/
+
+# Scripts & Automation
+scripts/
+
+# OSRM Data & Map Binary Files (>100MB)
+**/osrm/data/*
+!**/osrm/data/.gitkeep
+*.pbf
+*.osrm*
+*.cell_metrics

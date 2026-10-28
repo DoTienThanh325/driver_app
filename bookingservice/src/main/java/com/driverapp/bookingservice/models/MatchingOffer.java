@@ -22,7 +22,8 @@ public class MatchingOffer {
     private UUID driverId;
     private String tripId;
     private MatchingOfferStatus status;
+    private Boolean backToBack;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
-}
+}

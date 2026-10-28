@@ -10,4 +10,6 @@ public interface MatchingService {
     void handleOfferTimeout(OfferTimeoutPayload payload);
 
     void rejectOffer(String offerId);
+
+    java.util.List<com.driverapp.bookingservice.dto.response.DriverOfferResponse> getPendingOffersForDriver(java.util.UUID driverId);
 }
