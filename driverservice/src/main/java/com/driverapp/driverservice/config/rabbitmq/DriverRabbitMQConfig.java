@@ -73,6 +73,25 @@ public class DriverRabbitMQConfig {
         return BindingBuilder.bind(roleGrantDriverFailedQueue).to(compensatingExchange).with("role.grant.driver.failed");
     }
 
+    // Driver Revoke Role Queue (khi driver cập nhật hồ sơ → thu hồi role DRIVER)
+    @Bean
+    public Queue driverRevokeRoleQueue() {
+        return QueueBuilder.durable("driver.revoke-role.queue")
+                .withArgument("x-dead-letter-exchange", SAGA_COMPENSATING_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", "driver.revoke-role.dlq")
+                .build();
+    }
+
+    @Bean
+    public Queue driverRevokeRoleDlq() {
+        return QueueBuilder.durable("driver.revoke-role.dlq").build();
+    }
+
+    @Bean
+    public Binding driverRevokeRoleDlqBinding(Queue driverRevokeRoleDlq, DirectExchange compensatingExchange) {
+        return BindingBuilder.bind(driverRevokeRoleDlq).to(compensatingExchange).with("driver.revoke-role.dlq");
+    }
+
     // Feedback Rating Update Queue
     @Bean
     public Queue feedbackRatingQueue() {

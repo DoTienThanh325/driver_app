@@ -8,12 +8,15 @@ import com.driverapp.driverservice.models.DriverVehicle;
 import com.driverapp.driverservice.models.enums.DocumentType;
 import com.driverapp.driverservice.models.enums.VehicleType;
 import com.driverapp.driverservice.models.enums.VerificationStatus;
+import com.driverapp.driverservice.publisher.DriverEventPublisher;
+import com.driverapp.driverservice.repository.DriverAvailabilityRepository;
 import com.driverapp.driverservice.repository.DriverDocumentRepository;
 import com.driverapp.driverservice.repository.DriverRepository;
 import com.driverapp.driverservice.repository.DriverVehicleRepository;
 import com.driverapp.driverservice.service.DriverVehicleService;
 import com.driverapp.driverservice.storage.DriverImageStorage;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DriverVehicleServiceImpl implements DriverVehicleService {
@@ -33,6 +37,8 @@ public class DriverVehicleServiceImpl implements DriverVehicleService {
     private final DriverVehicleRepository vehicleRepository;
     private final DriverRepository driverRepository;
     private final DriverImageStorage imageStorage;
+    private final DriverAvailabilityRepository availabilityRepository;
+    private final DriverEventPublisher driverEventPublisher;
 
     @Override
     @Transactional
@@ -148,6 +154,29 @@ public class DriverVehicleServiceImpl implements DriverVehicleService {
                         .vehicleType(request.vehicleType())
                         .status(VerificationStatus.PENDING)
                         .build());
+
+        // ── STEP 8: Nếu driver đang APPROVED → đặt lại PENDING, xóa availability,
+        //            revoke role bất đồng bộ qua RabbitMQ để chờ duyệt lại ─────────
+        if (driver.getVerificationStatus() == VerificationStatus.APPROVED) {
+            driver.setVerificationStatus(VerificationStatus.PENDING);
+            driver.setRejectionReason(null);
+            driverRepository.save(driver);
+            log.info("[AddVehicle] Driver userId={} reset to PENDING due to new vehicle submission", userId);
+
+            // [Đồng bộ] Xóa availability → driver lập tức không nhận chuyến
+            availabilityRepository.deleteByDriver_UserId(userId);
+            log.info("[AddVehicle] Deleted DriverAvailability for userId={}", userId);
+
+            // [Bất đồng bộ] Publish sau commit → userservice revoke role DRIVER
+            final String driverIdStr = driver.getId().toString();
+            final String userIdStr = userId.toString();
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    driverEventPublisher.publishDriverRegistrationUpdated(driverIdStr, userIdStr);
+                }
+            });
+        }
 
         return new AddVehicleResponse(
                 vehicle.getId(),

@@ -64,6 +64,30 @@ public class UserRabbitMQConfig {
         return BindingBuilder.bind(driverRoleDlq).to(compensatingExchange).with("driver.role-grant.dlq");
     }
 
+    // Driver Revoke Role Queue & DLQ (khi driver cập nhật hồ sơ → thu hồi role DRIVER)
+    @Bean
+    public Queue driverRevokeRoleQueue() {
+        return QueueBuilder.durable("driver.revoke-role.queue")
+                .withArgument("x-dead-letter-exchange", SAGA_COMPENSATING_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", "driver.revoke-role.dlq")
+                .build();
+    }
+
+    @Bean
+    public Binding driverRevokeRoleBinding(Queue driverRevokeRoleQueue, DirectExchange driverDirectExchange) {
+        return BindingBuilder.bind(driverRevokeRoleQueue).to(driverDirectExchange).with("driver.registration.updated");
+    }
+
+    @Bean
+    public Queue driverRevokeRoleDlq() {
+        return QueueBuilder.durable("driver.revoke-role.dlq").build();
+    }
+
+    @Bean
+    public Binding driverRevokeRoleDlqBinding(Queue driverRevokeRoleDlq, DirectExchange compensatingExchange) {
+        return BindingBuilder.bind(driverRevokeRoleDlq).to(compensatingExchange).with("driver.revoke-role.dlq");
+    }
+
     // SMS Queue
     @Bean
     public Queue smsOtpQueue() { return QueueBuilder.durable("user.sms-otp.queue").build(); }

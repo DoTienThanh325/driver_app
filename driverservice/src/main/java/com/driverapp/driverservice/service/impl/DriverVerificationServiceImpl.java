@@ -8,6 +8,7 @@ import com.driverapp.driverservice.models.enums.AvailabilityStatus;
 import com.driverapp.driverservice.models.enums.VerificationStatus;
 import com.driverapp.driverservice.repository.DriverAvailabilityRepository;
 import com.driverapp.driverservice.repository.DriverRepository;
+import com.driverapp.driverservice.repository.DriverVehicleRepository;
 import com.driverapp.driverservice.service.DriverVerificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +28,7 @@ public class DriverVerificationServiceImpl implements DriverVerificationService 
 
     private final DriverRepository driverRepository;
     private final DriverAvailabilityRepository availabilityRepository;
+    private final DriverVehicleRepository vehicleRepository;
     private final UserServiceClient userServiceClient;
     private final com.driverapp.driverservice.publisher.DriverEventPublisher driverEventPublisher;
 
@@ -56,7 +58,15 @@ public class DriverVerificationServiceImpl implements DriverVerificationService 
         driver.approve();
         driverRepository.save(driver);
 
-        // Step 2: driver-service creates driver_availability with status OFFLINE (driverId là userId)
+        // Step 2: Cập nhật tất cả xe đang PENDING → APPROVED
+        int updatedCount = vehicleRepository.updateStatusByDriverUserId(
+                driver.getUserId(),
+                VerificationStatus.PENDING,
+                VerificationStatus.APPROVED
+        );
+        log.info("Updated {} vehicle(s) to APPROVED for driverId={}", updatedCount, driver.getId());
+
+        // Step 3: driver-service creates driver_availability with status OFFLINE (driverId là userId)
         if (availabilityRepository.findByDriverId(driver.getUserId()).isEmpty()) {
             availabilityRepository.save(DriverAvailability.builder()
                     .driver(driver)
@@ -64,7 +74,7 @@ public class DriverVerificationServiceImpl implements DriverVerificationService 
                     .build());
         }
 
-        // Step 3: driver-service publishes driver.approved event asynchronously
+        // Step 4: driver-service publishes driver.approved event asynchronously
         driverEventPublisher.publishDriverApproved(driver.getId().toString(), driver.getUserId().toString());
 
         log.info("Driver approved successfully: driverId={}, userId={}", driver.getId(), driver.getUserId());

@@ -1,5 +1,7 @@
 package com.driverapp.driverservice.service.impl;
 
+import com.driverapp.driverservice.publisher.DriverEventPublisher;
+import com.driverapp.driverservice.repository.DriverAvailabilityRepository;
 import com.driverapp.driverservice.dto.request.RegisterDriverRequest;
 import com.driverapp.driverservice.dto.request.UpdateDriverRegistrationRequest;
 import com.driverapp.driverservice.dto.response.RegisterDriverResponse;
@@ -35,6 +37,10 @@ public class DriverRegistrationServiceImpl implements DriverRegistrationService 
     private final DriverDocumentRepository documentRepository;
     private final DriverVehicleRepository vehicleRepository;
     private final DriverImageStorage imageStorage;
+    private final DriverAvailabilityRepository availabilityRepository;
+    private final DriverEventPublisher driverEventPublisher;
+
+    private static final String DRIVER_ROLE = "DRIVER";
 
     @Override
     @Transactional
@@ -365,11 +371,30 @@ public class DriverRegistrationServiceImpl implements DriverRegistrationService 
             vehicle.setPlateImgUrl(newUrl);
         }
 
-        // 9. Nếu hồ sơ từng bị REJECTED hoặc APPROVED vừa cập nhật lại ảnh mới, chuyển về PENDING để Admin duyệt lại
-        if (driver.getVerificationStatus() == VerificationStatus.REJECTED || driver.getVerificationStatus() == VerificationStatus.APPROVED) {
-            driver.setVerificationStatus(VerificationStatus.PENDING);
-            driver.setRejectionReason(null);
-            log.info("Driver {} updated registration documents, status set to PENDING for re-verification", driver.getId());
+        // 9. Đặt lại trạng thái PENDING khi driver cập nhật hồ sơ
+        //    Đồng thời xóa availability và thu hồi role DRIVER (bất đồng bộ qua RabbitMQ)
+        boolean wasActiveDriver = driver.getVerificationStatus() == VerificationStatus.APPROVED;
+
+        driver.setVerificationStatus(VerificationStatus.PENDING);
+        driver.setRejectionReason(null);
+        log.info("Driver {} updated registration documents, status reset to PENDING for re-verification", driver.getId());
+
+        if (wasActiveDriver) {
+            // 9a. [ĐỒNG BỘ] Xóa DriverAvailability ngay trong transaction
+            //     → driver lập tức không nhận chuyến mới
+            availabilityRepository.deleteByDriver_UserId(userId);
+            log.info("Deleted DriverAvailability for userId={} due to registration update", userId);
+
+            // 9b. [BẤT ĐỒNG BỘ] Publish event sau khi transaction commit thành công
+            //     → userservice lắng nghe và revoke role DRIVER qua RabbitMQ
+            final String driverIdStr = driver.getId().toString();
+            final String userIdStr = userId.toString();
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    driverEventPublisher.publishDriverRegistrationUpdated(driverIdStr, userIdStr);
+                }
+            });
         }
 
         // Lưu cập nhật vào DB
