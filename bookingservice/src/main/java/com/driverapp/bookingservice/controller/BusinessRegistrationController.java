@@ -2,6 +2,7 @@ package com.driverapp.bookingservice.controller;
 
 import com.driverapp.bookingservice.dto.request.RegisterBusinessRequest;
 import com.driverapp.bookingservice.dto.request.ReviewBusinessRequest;
+import com.driverapp.bookingservice.dto.response.BusinessRegistrationDetailResponse;
 import com.driverapp.bookingservice.dto.response.RegisterBusinessResponse;
 import com.driverapp.bookingservice.models.Business;
 import com.driverapp.bookingservice.models.enums.BusinessRegistrationStatus;
@@ -50,13 +51,32 @@ public class BusinessRegistrationController {
     }
 
     /**
+     * GET /api/businesses/registration/user/{userId}
+     * Lấy hồ sơ đăng ký kinh doanh theo userId: Tên nhà hàng, Địa chỉ, MinIO License URLs.
+     */
+    @GetMapping("/registration/user/{userId}")
+    public BusinessRegistrationDetailResponse getRegistrationByUserId(@PathVariable UUID userId) {
+        return businessService.getRegistrationDetailByUserId(userId);
+    }
+
+    /**
+     * GET /api/businesses/registration/me
+     * Lấy hồ sơ đăng ký kinh doanh của chính tài khoản hiện tại từ JWT.
+     */
+    @GetMapping("/registration/me")
+    public BusinessRegistrationDetailResponse getMyRegistrationDetail(@AuthenticationPrincipal Jwt jwt) {
+        UUID userId = UUID.fromString(jwt.getSubject());
+        return businessService.getRegistrationDetailByUserId(userId);
+    }
+
+    /**
      * GET /api/businesses/me
-     * Customer xem đơn của mình (trả về 1 đơn duy nhất).
+     * Customer xem đơn của mình kèm thông tin nhà hàng và ảnh giấy phép.
      */
     @GetMapping("/me")
-    public Business getMyBusiness(@AuthenticationPrincipal Jwt jwt) {
+    public BusinessRegistrationDetailResponse getMyBusiness(@AuthenticationPrincipal Jwt jwt) {
         UUID userId = UUID.fromString(jwt.getSubject());
-        return businessService.getMyBusiness(userId);
+        return businessService.getRegistrationDetailByUserId(userId);
     }
 
     /**

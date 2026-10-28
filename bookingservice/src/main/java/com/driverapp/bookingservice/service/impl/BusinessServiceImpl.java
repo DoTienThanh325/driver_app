@@ -3,11 +3,13 @@ package com.driverapp.bookingservice.service.impl;
 import com.driverapp.bookingservice.client.UserServiceClient;
 import com.driverapp.bookingservice.dto.request.RegisterBusinessRequest;
 import com.driverapp.bookingservice.dto.request.ReviewBusinessRequest;
+import com.driverapp.bookingservice.dto.response.BusinessRegistrationDetailResponse;
 import com.driverapp.bookingservice.dto.response.RegisterBusinessResponse;
 import com.driverapp.bookingservice.models.Business;
 import com.driverapp.bookingservice.models.Restaurant;
 import com.driverapp.bookingservice.models.enums.BusinessRegistrationStatus;
 import com.driverapp.bookingservice.repository.BusinessRepository;
+import com.driverapp.bookingservice.repository.RestaurantRepository;
 import com.driverapp.bookingservice.dto.request.RestaurantRequest;
 import com.driverapp.bookingservice.service.BusinessService;
 import com.driverapp.bookingservice.service.RestaurantService;
@@ -29,6 +31,7 @@ import java.util.UUID;
 public class BusinessServiceImpl implements BusinessService {
 
         private final RestaurantService restaurantService;
+        private final RestaurantRepository restaurantRepository;
         private final BusinessRepository businessRepository;
         private final BusinessImageStorage imageStorage;
         private final UserServiceClient userServiceClient;
@@ -96,6 +99,53 @@ public class BusinessServiceImpl implements BusinessService {
                 return businessRepository.findByUserId(userId)
                                 .orElseThrow(() -> new ResponseStatusException(
                                                 HttpStatus.NOT_FOUND, "Bạn chưa có đơn đăng ký kinh doanh."));
+        }
+
+        // ───────────────────────────── CUSTOMER / BUSINESS: LẤY CHI TIẾT ĐĂNG KÝ (TÊN, ĐỊA CHỈ, MINIO LICENSE URLS)
+        @Override
+        public BusinessRegistrationDetailResponse getRegistrationDetailByUserId(UUID userId) {
+                Business business = businessRepository.findByUserId(userId)
+                                .orElseThrow(() -> new ResponseStatusException(
+                                                HttpStatus.NOT_FOUND, "Không tìm thấy hồ sơ đăng ký kinh doanh cho người dùng này."));
+
+                Restaurant restaurant = null;
+                if (business.getRestaurantId() != null && !business.getRestaurantId().isBlank()) {
+                        restaurant = restaurantRepository.findById(business.getRestaurantId()).orElse(null);
+                }
+
+                List<String> presignedLicenseUrls = new ArrayList<>();
+                if (business.getBusinessLicense() != null) {
+                        for (String url : business.getBusinessLicense()) {
+                                if (url == null || url.isBlank()) {
+                                        continue;
+                                }
+                                if (url.startsWith("http://") || url.startsWith("https://")) {
+                                        presignedLicenseUrls.add(url);
+                                } else {
+                                        try {
+                                                String viewUrl = imageStorage.signedReadUrl(url);
+                                                presignedLicenseUrls.add(viewUrl);
+                                        } catch (Exception e) {
+                                                presignedLicenseUrls.add(url);
+                                        }
+                                }
+                        }
+                }
+
+                return BusinessRegistrationDetailResponse.builder()
+                                .id(business.getId())
+                                .userId(business.getUserId())
+                                .restaurantId(business.getRestaurantId())
+                                .restaurantName(restaurant != null ? restaurant.getName() : "Chưa cập nhật tên")
+                                .restaurantAddress(restaurant != null ? restaurant.getLocationAddress() : "Chưa cập nhật địa chỉ")
+                                .restaurantLatitude(restaurant != null ? restaurant.getLocationLatitude() : 0.0)
+                                .restaurantLongitude(restaurant != null ? restaurant.getLocationLongitude() : 0.0)
+                                .businessLicenseUrls(presignedLicenseUrls)
+                                .status(business.getStatus() != null ? business.getStatus().name() : "PENDING")
+                                .rejectReason(business.getRejectReason())
+                                .createdAt(business.getCreatedAt())
+                                .updatedAt(business.getUpdatedAt())
+                                .build();
         }
 
         // ───────────────────────────── ADMIN: DUYỆT HOẶC TỪ CHỐI (1 API gộp)

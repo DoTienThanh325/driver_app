@@ -50,7 +50,13 @@ public class SecurityConfig {
                                                 .pathMatchers(HttpMethod.PATCH, "/api/trips/*/cancel")
                                                 .hasRole("CUSTOMER")
                                                 .pathMatchers("/api/trips").hasAnyRole("CUSTOMER", "DRIVER")
-                                                .pathMatchers("/api/businesses/registration").hasRole("CUSTOMER")
+                                                .pathMatchers(HttpMethod.GET,
+                                                                "/api/businesses/registration/user/*",
+                                                                "/api/businesses/registration/me",
+                                                                "/api/businesses/registration/**",
+                                                                "/api/businesses/me")
+                                                .hasAnyRole("CUSTOMER", "BUSINESS")
+                                                .pathMatchers(HttpMethod.POST, "/api/businesses/registration").hasRole("CUSTOMER")
                                                 .pathMatchers("/api/businesses/*/review").hasRole("ADMIN")
                                                 .pathMatchers("/api/drivers/*/verification-status").hasRole("ADMIN")
                                                 .pathMatchers("/api/drivers/candidates").hasRole("ADMIN")
