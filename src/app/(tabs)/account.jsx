@@ -7,6 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { authService } from '@/services/auth.service';
 import { driverService } from '@/services/driver.service';
+import { businessService } from '@/services/business.service';
 import { userStorage } from '@/services/storage/user.storage';
 import { accountStyles as styles } from '@/styles/screens/account.styles';
 
@@ -14,6 +15,8 @@ export default function AccountScreen() {
   const [profile, setProfile] = useState(null);
   const [isDriver, setIsDriver] = useState(false);
   const [driverRegStatus, setDriverRegStatus] = useState('NOT_REGISTERED'); // NOT_REGISTERED | PENDING | REJECTED | APPROVED
+  const [isBusiness, setIsBusiness] = useState(false);
+  const [businessRegStatus, setBusinessRegStatus] = useState('NOT_REGISTERED'); // NOT_REGISTERED | PENDING | REJECTED | ACCEPTED
 
   const loadUserData = useCallback(async () => {
     const userProfile = await userStorage.getUserProfile();
@@ -22,6 +25,9 @@ export default function AccountScreen() {
     const hasDriverRole = await userStorage.isDriver();
     setIsDriver(hasDriverRole);
 
+    const hasBusinessRole = await userStorage.isBusiness();
+    setIsBusiness(hasBusinessRole);
+
     if (userProfile?.id) {
       try {
         const regInfo = await driverService.getRegistrationStatus(userProfile.id);
@@ -29,6 +35,13 @@ export default function AccountScreen() {
       } catch {
         setDriverRegStatus(hasDriverRole ? 'APPROVED' : 'NOT_REGISTERED');
       }
+    }
+
+    try {
+      const bRegInfo = await businessService.getRegistrationStatus();
+      setBusinessRegStatus(bRegInfo.status);
+    } catch {
+      setBusinessRegStatus(hasBusinessRole ? 'ACCEPTED' : 'NOT_REGISTERED');
     }
   }, []);
 
@@ -60,6 +73,14 @@ export default function AccountScreen() {
     router.push('/driver-register');
   };
 
+  const handleBusinessProfilePress = () => {
+    router.push('/business-profile');
+  };
+
+  const handleBusinessRegisterPress = () => {
+    router.push('/business-register');
+  };
+
   const initialLetter = (profile?.fullName || profile?.username || 'T').charAt(0).toUpperCase();
 
   // Ánh xạ role của người dùng theo yêu cầu
@@ -85,6 +106,7 @@ export default function AccountScreen() {
   );
 
   const hasDriverProfile = isDriver || (driverRegStatus && driverRegStatus !== 'NOT_REGISTERED');
+  const hasBusinessProfile = isBusiness || (businessRegStatus && businessRegStatus !== 'NOT_REGISTERED');
 
   return (
     <ThemedView style={styles.container}>
@@ -153,22 +175,41 @@ export default function AccountScreen() {
               </Pressable>
             )}
 
-            {/* Hồ sơ Kinh doanh */}
-            <Pressable
-              style={styles.itemRow}
-              onPress={() => Alert.alert('Hồ sơ Kinh doanh', 'Quản lý cửa hàng T&M Quán Ăn')}
-            >
-              <View style={styles.itemLeft}>
-                <View style={styles.iconBoxOrange}>
-                  <Ionicons name="storefront-outline" size={22} color="#FF7A00" />
+            {/* Hồ sơ Kinh doanh (Hiển thị khi đã có role BUSINESS hoặc hồ sơ PENDING/REJECTED/ACCEPTED) */}
+            {hasBusinessProfile && (
+              <Pressable style={styles.itemRow} onPress={handleBusinessProfilePress}>
+                <View style={styles.itemLeft}>
+                  <View style={styles.iconBoxOrange}>
+                    <Ionicons name="storefront-outline" size={22} color="#FF7A00" />
+                  </View>
+                  <View style={styles.itemTextContainer}>
+                    <View style={styles.itemTitleRow}>
+                      <ThemedText style={styles.itemTitle}>Hồ sơ Kinh doanh</ThemedText>
+                      {businessRegStatus === 'PENDING' && (
+                        <View style={styles.statusBadgePending}>
+                          <ThemedText style={styles.statusTextPending}>Chờ duyệt</ThemedText>
+                        </View>
+                      )}
+                      {businessRegStatus === 'REJECTED' && (
+                        <View style={styles.statusBadgeRejected}>
+                          <ThemedText style={styles.statusTextRejected}>Cần bổ sung</ThemedText>
+                        </View>
+                      )}
+                    </View>
+                    {businessRegStatus === 'PENDING' && (
+                      <ThemedText style={styles.itemSubtitle}>Hồ sơ đang chờ quản trị viên xét duyệt</ThemedText>
+                    )}
+                    {businessRegStatus === 'REJECTED' && (
+                      <ThemedText style={styles.itemSubtitle}>Hồ sơ cần cập nhật lại thông tin</ThemedText>
+                    )}
+                    {(isBusiness || businessRegStatus === 'ACCEPTED') && (
+                      <ThemedText style={styles.itemSubtitle}>Đang hoạt động • Quản lý nhà hàng</ThemedText>
+                    )}
+                  </View>
                 </View>
-                <View style={styles.itemTextContainer}>
-                  <ThemedText style={styles.itemTitle}>Hồ sơ Kinh doanh</ThemedText>
-                  <ThemedText style={styles.itemSubtitle}>Đang hoạt động • T&M Quán Ăn</ThemedText>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
-            </Pressable>
+                <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+              </Pressable>
+            )}
           </View>
         </View>
 
@@ -192,22 +233,21 @@ export default function AccountScreen() {
               </Pressable>
             )}
 
-            {/* Đăng ký Kinh doanh */}
-            <Pressable
-              style={styles.itemRow}
-              onPress={() => Alert.alert('Đăng ký Kinh doanh', 'Đăng ký đối tác mở nhà hàng, quán ăn')}
-            >
-              <View style={styles.itemLeft}>
-                <View style={styles.iconBoxOrange}>
-                  <Ionicons name="business-outline" size={22} color="#FF7A00" />
+            {/* Đăng ký Kinh doanh (Chỉ hiển thị khi hoàn toàn CHƯA nộp hồ sơ và CHƯA có role BUSINESS) */}
+            {!hasBusinessProfile && (
+              <Pressable style={styles.itemRow} onPress={handleBusinessRegisterPress}>
+                <View style={styles.itemLeft}>
+                  <View style={styles.iconBoxOrange}>
+                    <Ionicons name="business-outline" size={22} color="#FF7A00" />
+                  </View>
+                  <View style={styles.itemTextContainer}>
+                    <ThemedText style={styles.itemTitle}>Đăng ký Kinh doanh</ThemedText>
+                    <ThemedText style={styles.itemSubtitle}>Đăng ký mở nhà hàng, quán ăn</ThemedText>
+                  </View>
                 </View>
-                <View style={styles.itemTextContainer}>
-                  <ThemedText style={styles.itemTitle}>Đăng ký Kinh doanh</ThemedText>
-                  <ThemedText style={styles.itemSubtitle}>Đăng ký mở nhà hàng, quán ăn</ThemedText>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
-            </Pressable>
+                <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+              </Pressable>
+            )}
           </View>
         </View>
 

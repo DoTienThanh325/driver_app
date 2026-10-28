@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ThemedText } from '@/components/themed-text';
 
-export function SubHeader({ title, rightElement = null, onBack = null }) {
+export function SubHeader({ title, rightElement = null, onBack = null, backgroundColor = null }) {
   const handleBack = () => {
     if (onBack) {
       onBack();
@@ -14,7 +14,7 @@ export function SubHeader({ title, rightElement = null, onBack = null }) {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, backgroundColor && { backgroundColor }]}>
       <View style={styles.content}>
         <View style={styles.leftGroup}>
           <Pressable style={styles.backButton} onPress={handleBack} hitSlop={10}>

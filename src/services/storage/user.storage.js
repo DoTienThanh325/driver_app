@@ -53,6 +53,23 @@ export const userStorage = {
   },
 
   /**
+   * Kiểm tra nhanh xem người dùng có quyền Kinh doanh (BUSINESS) hay không
+   * @returns {Promise<boolean>}
+   */
+  isBusiness: async () => {
+    try {
+      const profile = await userStorage.getUserProfile();
+      if (!profile || !Array.isArray(profile.roles)) return false;
+      return profile.roles.some((r) => {
+        const role = String(r).toUpperCase();
+        return role === 'BUSINESS' || role === 'ROLE_BUSINESS' || role === 'MERCHANT' || role === 'ROLE_MERCHANT';
+      });
+    } catch (error) {
+      return false;
+    }
+  },
+
+  /**
    * Xóa thông tin cá nhân khi Đăng xuất (Logout)
    */
   clearUserProfile: async () => {
