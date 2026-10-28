@@ -1,7 +1,10 @@
 package com.driverapp.bookingservice.service.impl;
 
+import com.driverapp.bookingservice.client.AiMatchingClient;
 import com.driverapp.bookingservice.client.DriverServiceClient;
 import com.driverapp.bookingservice.client.NotificationClient;
+import com.driverapp.bookingservice.dto.ai.DriverScoringRequest;
+import com.driverapp.bookingservice.dto.ai.DriverScoringResponse;
 import com.driverapp.bookingservice.dto.request.CreateNotificationRequest;
 import com.driverapp.bookingservice.dto.response.NearbyDriverDto;
 import com.driverapp.bookingservice.event.OfferTimeoutPayload;
@@ -30,9 +33,8 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -45,6 +47,7 @@ public class MatchingServiceImpl implements MatchingService {
 
     private final DriverServiceClient driverServiceClient;
     private final RoutingService routingService;
+    private final AiMatchingClient aiMatchingClient;
     private final MatchingOfferRepository matchingOfferRepository;
     private final MatchingOfferLogRepository matchingOfferLogRepository;
     private final MatchingSessionRepository matchingSessionRepository;
@@ -55,6 +58,9 @@ public class MatchingServiceImpl implements MatchingService {
 
     @Value("${matching.shadow-logging:true}")
     private boolean shadowLogging;
+
+    @Value("${matching.strategy:AI_MODEL}")
+    private String matchingStrategy;
 
     @Override
     public void handleTripCreated(TripEventPayload payload) {
@@ -98,8 +104,88 @@ public class MatchingServiceImpl implements MatchingService {
 
         List<Double> etas = routingService.calculateEtasToPickup(pickUpLat, pickUpLng, driverCoords);
 
-        // 4. Xếp hạng: ETA tăng dần
+        // 4. Xếp hạng: Gọi AI Scoring Model (Fallback về Rule-based ETA nếu AI lỗi/timeout)
+        List<MatchingSession.CandidateDriver> rankedList = rankCandidates(trip, candidates, etas);
+
+        // 5. Lưu session điều phối vào MongoDB
+        MatchingSession session = MatchingSession.builder()
+                .tripId(tripId)
+                .currentRank(1)
+                .candidates(rankedList)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        matchingSessionRepository.save(session);
+
+        // 6. Phát offer cho tài xế hạng #1
+        dispatchOfferToCandidate(tripId, session, 1);
+    }
+
+    private List<MatchingSession.CandidateDriver> rankCandidates(
+            Trip trip, List<NearbyDriverDto> candidates, List<Double> etas) {
+
         List<MatchingSession.CandidateDriver> rankedList = new ArrayList<>();
+        LocalDateTime now = LocalDateTime.now();
+
+        if ("AI_MODEL".equalsIgnoreCase(matchingStrategy)) {
+            try {
+                // Chuẩn bị Feature Vector cho AI Scoring
+                List<DriverScoringRequest.CandidateFeature> features = new ArrayList<>();
+                for (int i = 0; i < candidates.size(); i++) {
+                    NearbyDriverDto d = candidates.get(i);
+                    double eta = (i < etas.size()) ? etas.get(i) : 999.0;
+
+                    features.add(DriverScoringRequest.CandidateFeature.builder()
+                            .driverId(d.driverUserId())
+                            .pickupDistanceKm(d.distanceKm())
+                            .pickupEtaMinutes(eta)
+                            .driverRating(4.8)
+                            .acceptRate7d(0.85)
+                            .tripsCompletedToday(5)
+                            .build());
+                }
+
+                DriverScoringRequest aiRequest = new DriverScoringRequest(
+                        trip.getId(),
+                        trip.getShippFare(),
+                        now.getHour(),
+                        now.getDayOfWeek().getValue(),
+                        features
+                );
+
+                // Gọi AI Scoring Service qua Circuit Breaker (Timeout 50ms)
+                Optional<DriverScoringResponse> aiResponse = aiMatchingClient.scoreCandidates(aiRequest);
+
+                if (aiResponse.isPresent() && !aiResponse.get().rankedCandidates().isEmpty()) {
+                    log.info("[Matching] Áp dụng xếp hạng AI Matching Model cho Trip {}", trip.getId());
+                    Map<UUID, NearbyDriverDto> driverMap = candidates.stream()
+                            .collect(Collectors.toMap(NearbyDriverDto::driverUserId, d -> d));
+
+                    for (DriverScoringResponse.ScoredCandidate sc : aiResponse.get().rankedCandidates()) {
+                        NearbyDriverDto d = driverMap.get(sc.driverId());
+                        if (d != null) {
+                            double eta = features.stream()
+                                    .filter(f -> f.driverId().equals(sc.driverId()))
+                                    .map(DriverScoringRequest.CandidateFeature::pickupEtaMinutes)
+                                    .findFirst().orElse(999.0);
+
+                            rankedList.add(MatchingSession.CandidateDriver.builder()
+                                    .driverId(sc.driverId())
+                                    .etaMinutes(eta)
+                                    .distanceKm(d.distanceKm())
+                                    .rank(sc.rank())
+                                    .build());
+                        }
+                    }
+                    return rankedList;
+                }
+            } catch (Exception e) {
+                log.warn("[Matching] Gặp lỗi khi gọi AI Service ({}). Kích hoạt Rule-based Fallback.", e.getMessage());
+            }
+        }
+
+        // Fallback: Rule-based (ETA tăng dần)
+        log.info("[Matching] Áp dụng thuật toán Rule-based (ETA tăng dần) cho Trip {}", trip.getId());
         for (int i = 0; i < candidates.size(); i++) {
             NearbyDriverDto d = candidates.get(i);
             double eta = (i < etas.size()) ? etas.get(i) : 999.0;
@@ -114,18 +200,7 @@ public class MatchingServiceImpl implements MatchingService {
             rankedList.get(i).setRank(i + 1);
         }
 
-        // 5. Lưu session điều phối vào MongoDB
-        MatchingSession session = MatchingSession.builder()
-                .tripId(tripId)
-                .currentRank(1)
-                .candidates(rankedList)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .build();
-        matchingSessionRepository.save(session);
-
-        // 6. Phát offer cho tài xế hạng #1
-        dispatchOfferToCandidate(tripId, session, 1);
+        return rankedList;
     }
 
     private void dispatchOfferToCandidate(String tripId, MatchingSession session, int targetRank) {
