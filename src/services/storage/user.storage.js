@@ -70,6 +70,30 @@ export const userStorage = {
   },
 
   /**
+   * Lưu thông tin cơ sở kinh doanh (Tên nhà hàng, Địa chỉ, Tọa độ) đã đăng ký
+   */
+  saveBusinessInfo: async (info) => {
+    try {
+      if (!info) return;
+      await AsyncStorage.setItem('tm_business_info', JSON.stringify(info));
+    } catch (error) {
+      console.error('Lỗi khi lưu thông tin kinh doanh vào AsyncStorage:', error);
+    }
+  },
+
+  /**
+   * Lấy thông tin cơ sở kinh doanh đã lưu
+   */
+  getBusinessInfo: async () => {
+    try {
+      const val = await AsyncStorage.getItem('tm_business_info');
+      return val ? JSON.parse(val) : null;
+    } catch (error) {
+      return null;
+    }
+  },
+
+  /**
    * Xóa thông tin cá nhân khi Đăng xuất (Logout)
    */
   clearUserProfile: async () => {

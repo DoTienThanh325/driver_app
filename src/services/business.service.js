@@ -37,6 +37,32 @@ export const businessService = {
   },
 
   /**
+   * Lấy chi tiết hồ sơ kinh doanh (kết hợp tên nhà hàng, địa chỉ, danh sách link ảnh license MinIO)
+   * - Nếu truyền userId: GET /api/businesses/registration/user/{userId}
+   * - Nếu không truyền: GET /api/businesses/registration/me hoặc /api/businesses/me
+   * @param {string} [userId]
+   * @returns {Promise<Object|null>}
+   */
+  getBusinessRegistration: async (userId) => {
+    try {
+      const endpoint = userId
+        ? `/api/businesses/registration/user/${userId}`
+        : '/api/businesses/registration/me';
+      return await apiClient.get(endpoint);
+    } catch (err) {
+      if (
+        err.message?.includes('404') ||
+        err.message?.includes('not found') ||
+        err.message?.includes('không tìm thấy')
+      ) {
+        return null;
+      }
+      // Fallback về getMyBusiness nếu endpoint mới chưa sẵn sàng
+      return await businessService.getMyBusiness();
+    }
+  },
+
+  /**
    * Lấy thông tin hồ sơ kinh doanh của tôi qua GET /api/businesses/me
    * @returns {Promise<Object|null>}
    */

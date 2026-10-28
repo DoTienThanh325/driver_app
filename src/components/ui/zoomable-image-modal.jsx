@@ -12,7 +12,8 @@ import { ThemedText } from '@/components/themed-text';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-export function ZoomableImageModal({ visible, imageUrl, title, onClose, useModal = true }) {
+export function ZoomableImageModal({ visible, imageUrl, imageUri, title, onClose, useModal = true }) {
+  const activeUrl = imageUrl || imageUri;
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
   const translationX = useSharedValue(0);
@@ -106,7 +107,7 @@ export function ZoomableImageModal({ visible, imageUrl, title, onClose, useModal
     ],
   }));
 
-  if (!visible || !imageUrl) return null;
+  if (!visible || !activeUrl) return null;
 
   const content = (
     <View style={useModal ? styles.overlay : styles.overlayAbsolute}>
@@ -127,7 +128,7 @@ export function ZoomableImageModal({ visible, imageUrl, title, onClose, useModal
         <View style={styles.imageContainer}>
           <Animated.View style={[styles.animatedWrap, animatedImageStyle]}>
             <Image
-              source={{ uri: imageUrl }}
+              source={{ uri: activeUrl }}
               style={styles.image}
               contentFit="contain"
               transition={200}

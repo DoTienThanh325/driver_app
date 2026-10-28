@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 
 import { businessService } from '@/services/business.service';
+import { userStorage } from '@/services/storage/user.storage';
 import { processImageForUpload } from '@/utils/image-processor';
 import { geocodeAddress, reverseGeocodeCoords } from '@/utils/geocoding';
 
@@ -170,6 +171,14 @@ export function useBusinessRegistration() {
       }
 
       const res = await businessService.registerBusiness(formData);
+
+      // Lưu lại thông tin cơ sở kinh doanh vào local storage để hiển thị tại trang Hồ sơ
+      await userStorage.saveBusinessInfo({
+        restaurantName: trimmedName,
+        restaurantAddress: trimmedAddress,
+        locationCoords,
+        registeredAt: new Date().toISOString(),
+      });
 
       Alert.alert(
         'Nộp hồ sơ thành công',
