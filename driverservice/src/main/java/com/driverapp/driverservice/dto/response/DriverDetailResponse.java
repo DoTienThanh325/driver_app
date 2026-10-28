@@ -4,6 +4,7 @@ import com.driverapp.driverservice.models.enums.VehicleType;
 import com.driverapp.driverservice.models.enums.VerificationStatus;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 public record DriverDetailResponse(
@@ -14,7 +15,10 @@ public record DriverDetailResponse(
         LocalDateTime createdAt,
         DocumentImagePair idCard,
         DocumentImagePair license,
-        VehicleDetail vehicle
+        DocumentImagePair licenseMotorbike,
+        DocumentImagePair licenseCar,
+        VehicleDetail vehicle,
+        List<VehicleDetail> vehicles
 ) {
     public record DocumentImagePair(
             String front,
@@ -22,8 +26,11 @@ public record DriverDetailResponse(
     ) {}
 
     public record VehicleDetail(
+            UUID id,
             VehicleType vehicleType,
             String registrationFront,
-            String plate
+            String plate,
+            VerificationStatus status,
+            LocalDateTime createdAt
     ) {}
 }

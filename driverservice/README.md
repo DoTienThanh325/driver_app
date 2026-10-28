@@ -1,148 +1,144 @@
 # Driver Service
 
-`driverservice` quản lý hồ sơ tài xế, trạng thái xác minh, giấy tờ, phương tiện và trạng thái sẵn sàng nhận chuyến. Service yêu cầu JWT hợp lệ từ `userservice`; ảnh giấy tờ và phương tiện được lưu trên MinIO, còn URI `s3://...` được lưu trong PostgreSQL.
+`driverservice` phụ trách quản lý toàn bộ vòng đời hồ sơ tài xế: tiếp nhận đăng ký trực tuyến, lưu trữ giấy tờ tùy thân & bằng lái xe trên MinIO, thẩm định hồ sơ của Quản trị viên (Admin Verification), quản lý phương tiện di chuyển, đồng bộ trạng thái sẵn sàng nhận chuyến (**Driver Availability**) và cập nhật điểm đánh giá trung bình (**Average Rating**).
 
-> **Lưu ý kiến trúc**: Định danh tài xế (`driverId`) được đồng nhất hoàn toàn với mã người dùng (`userId` từ JWT subject). Bảng `drivers` sử dụng `user_id` làm Primary Key. Do đó, các service khác không cần gọi API phụ để tra cứu `driverId` từ `userId`.
+> **Lưu ý kiến trúc then chốt**: Định danh tài xế (`driverId`) được đồng nhất hoàn toàn với mã người dùng (`userId` từ JWT subject). Bảng `drivers` sử dụng `user_id UUID PRIMARY KEY`.
 
-## Cấu hình chính
+---
 
-- Port: `8082`.
-- Database: PostgreSQL `driverapp_driver_db`.
-- Redis: `localhost:6379`.
-- Object storage: MinIO tại `http://localhost:9000`, bucket mặc định `driver-documents`.
-- JWT issuer/JWKS: `http://localhost:8081`.
-- Migration: Flyway trong `src/main/resources/db/migration` (`V0__create_driver_tables.sql`).
-- Mỗi ảnh phải là JPEG, PNG hoặc WebP, dung lượng từ 1 byte đến 5 MiB.
-- Giới hạn multipart: 5 MB mỗi file và 21 MB mỗi request.
+## Cấu hình Chính
 
-Các biến cấu hình object storage:
+- **Port**: `8082`.
+- **Database**: PostgreSQL `driverapp_driver_db`.
+- **In-memory**: Redis `localhost:6379`.
+- **Object Storage**: MinIO tại `http://localhost:9000` (Web Console `:9001`), bucket mặc định `driver-documents`.
+- **Định dạng tệp hỗ trợ**: JPG, PNG, WEBP, HEIC, HEIF, PDF, GIF, BMP (kiểm tra an toàn qua magic bytes header & Content-Type).
+- **Giới hạn tệp tải lên (Multipart)**: `max-file-size: 15MB`, `max-request-size: 50MB`.
+- **Message Broker**: RabbitMQ `localhost:5672` (Topic Exchange).
+- **JWT Issuer/JWKS**: `http://localhost:8081`.
+- **Cơ chế lưu ảnh**: Ảnh gốc lưu trên MinIO dạng `s3://...`, API sinh Pre-signed URL có thời hạn cho client.
 
-| Biến | Giá trị mặc định | Ý nghĩa |
-| --- | --- | --- |
-| `STORAGE_ENDPOINT` | `http://localhost:9000` | Endpoint Driver Service dùng để upload/xóa object |
-| `STORAGE_PUBLIC_ENDPOINT` | `http://localhost:9000` | Endpoint dùng khi tạo URL đọc ảnh có thời hạn |
-| `STORAGE_ACCESS_KEY` | `minioadmin` | Access key |
-| `STORAGE_SECRET_KEY` | `minioadmin` | Secret key |
-| `STORAGE_BUCKET` | `driver-documents` | Bucket lưu ảnh |
+---
 
-## Endpoint hiện có
+## Danh Sách Endpoint Hiện Có
 
-### `GET /api/drivers/test`
+### 1. Đăng Ký & Bổ Sung Hồ Sơ Tài Xế
 
-Kiểm tra route và xác thực. Khi gọi qua API Gateway, JWT phải có role `CUSTOMER`.
+#### `POST /api/drivers/register` — Khách hàng đăng ký làm tài xế
+- **Method**: `POST` (`multipart/form-data`)
+- **Quyền yêu cầu**: `ROLE_CUSTOMER`
+- **Các trường gửi lên**:
+  | Tên trường | Kiểu | Bắt buộc | Mô tả |
+  | :--- | :---: | :---: | :--- |
+  | `idCardFront` | File | Có | Mặt trước CCCD |
+  | `idCardBack` | File | Có | Mặt sau CCCD |
+  | `vehicleType` | String | Có | Loại phương tiện đăng ký ban đầu (`CAR` hoặc `MOTORBIKE`) |
+  | `registrationFront` | File | Có | Giấy đăng ký xe (Cavet) |
+  | `plate` | File | Có | Ảnh chụp biển số xe |
+  | `driverLicenseFront` | File | Không* | Mặt trước GPLX (tự động phân loại theo `vehicleType` nếu không gửi loại bằng riêng) |
+  | `driverLicenseBack` | File | Không* | Mặt sau GPLX |
+  | `driverLicenseMotorbikeFront` | File | Không* | Mặt trước GPLX xe máy (`DRIVER_LICENSE_MOTORBIKE`) |
+  | `driverLicenseMotorbikeBack` | File | Không* | Mặt sau GPLX xe máy |
+  | `driverLicenseCarFront` | File | Không* | Mặt trước GPLX ô tô (`DRIVER_LICENSE_CAR`) |
+  | `driverLicenseCarBack` | File | Không* | Mặt sau GPLX ô tô |
+  > *\*Lưu ý*: Bắt buộc phải có ít nhất một cặp bằng lái phù hợp với loại phương tiện đăng ký ban đầu (`vehicleType`).
+- **Xử lý**: Tải ảnh lên bucket MinIO, lưu hồ sơ vào PostgreSQL với trạng thái `PENDING`, khởi tạo bản ghi `driver_availability` là `OFFLINE`. Nếu ghi DB lỗi, ảnh vừa upload sẽ được dọn dẹp ngay để chống file rác.
 
-### `POST /api/drivers/register`
+#### `PATCH /api/drivers/registration` — Cập nhật hồ sơ bị từ chối / Bổ sung giấy tờ
+- **Method**: `PATCH` (`multipart/form-data`)
+- **Quyền yêu cầu**: `ROLE_CUSTOMER`, `ROLE_DRIVER`
+- **Các trường có thể cập nhật**: Bất kỳ tệp giấy tờ nào cần sửa đổi (`idCardFront`, `idCardBack`, `driverLicenseFront`, `driverLicenseBack`, `driverLicenseMotorbikeFront`, `driverLicenseMotorbikeBack`, `driverLicenseCarFront`, `driverLicenseCarBack`, `registrationFront`, `plate`).
+- **Mục đích**: Cho phép ứng viên tài xế cập nhật lại ảnh giấy tờ khi hồ sơ trước đó bị Admin từ chối (`REJECTED`) để chuyển về `PENDING` xét duyệt lại, hoặc cho phép tài xế đã duyệt cập nhật bổ sung giấy tờ.
 
-Tạo hồ sơ tài xế ở trạng thái `PENDING`, lưu giấy tờ tùy thân, bằng lái và phương tiện đầu tiên. Endpoint nhận `multipart/form-data` và khi gọi qua API Gateway yêu cầu role `CUSTOMER`.
+---
 
-| Trường | Kiểu | Bắt buộc |
-| --- | --- | --- |
-| `idCardFront` | file | Có |
-| `idCardBack` | file | Có |
-| `driverLicenseFront` | file | Có |
-| `driverLicenseBack` | file | Có |
-| `registrationFront` | file | Có |
-| `plate` | file | Có |
-| `vehicleType` | `CAR` hoặc `MOTORBIKE` | Có |
+### 2. Quản Trị Viên Xét Duyệt Hồ Sơ (`ROLE_ADMIN`)
 
-Response `201 Created` gồm `driverId`, `status` và `message`. Một user chỉ được tạo một hồ sơ tài xế.
+#### `GET /api/drivers/candidates` — Danh sách hồ sơ chờ duyệt
+- **Method**: `GET`
+- **Quyền yêu cầu**: `ROLE_ADMIN`
+- **Chức năng**: Lấy danh sách toàn bộ ứng viên tài xế đang ở trạng thái `PENDING`.
 
-### `POST /api/vehicles`
+#### `GET /api/drivers/{driverId}` — Xem chi tiết hồ sơ tài xế
+- **Method**: `GET`
+- **Quyền yêu cầu**: `ROLE_ADMIN`, `ROLE_DRIVER`, `ROLE_CUSTOMER`
+- **Chức năng**: Trả về đầy đủ thông tin cá nhân, loại xe, trạng thái xác minh, điểm đánh giá trung bình và các Pre-signed URL để xem trực tiếp các ảnh giấy tờ từ MinIO (CCCD, bằng lái xe máy, bằng lái ô tô, cavet, biển số).
 
-Thêm phương tiện cho tài xế đã có hồ sơ với trạng thái `APPROVED`. Endpoint nhận `multipart/form-data`:
-
-| Trường | Kiểu | Bắt buộc |
-| --- | --- | --- |
-| `registrationFront` | file | Có |
-| `plate` | file | Có |
-| `driverLicenseFront` | file | Khi tài xế chưa có giấy tờ `DRIVER_LICENSE` |
-| `driverLicenseBack` | file | Khi tài xế chưa có giấy tờ `DRIVER_LICENSE` |
-| `vehicleType` | `CAR` hoặc `MOTORBIKE` | Có |
-
-Response `201 Created` gồm `vehicleId`, `vehicleType` và `message`.
-
-Nếu transaction database thất bại, service sẽ cố gắng xóa các ảnh vừa upload để tránh object rác trên MinIO.
-
-### `GET /api/drivers/check-available/{driverId}`
-
-Kiểm tra tài xế có tồn tại, đã được duyệt (`APPROVED`) và đang sẵn sàng nhận chuyến (`AVAILABLE`) hay không (dành cho `bookingservice` gọi nội bộ khi tài xế nhấn nhận chuyến `acceptTrip`).
-
-- **HTTP Method**: `GET`
-- **Path Variable**: `driverId` (UUID, chính là `userId` của tài xế)
-- **Response `200 OK`**:
-  ```json
-  {
-    "driverId": "b4c80242-63b7-4a0b-8d02-1a3b5a77c8e9",
-    "status": "AVAILABLE"
-  }
-  ```
-
-### `PATCH /api/drivers/availability`
-
-Cập nhật trạng thái sẵn sàng nhận chuyến của tài xế (`AVAILABLE`, `ON_TRIP`, `OFFLINE`). Khi `bookingservice` hoàn tất chuyến (`COMPLETED`), endpoint này được gọi để giải phóng tài xế về trạng thái `AVAILABLE`.
-
-- **HTTP Method**: `PATCH`
+#### `PATCH /api/drivers/{driverId}/verification-status` — Phê duyệt / Từ chối hồ sơ
+- **Method**: `PATCH`
+- **Quyền yêu cầu**: `ROLE_ADMIN`
 - **Request Body**:
   ```json
   {
-    "driverId": "b4c80242-63b7-4a0b-8d02-1a3b5a77c8e9",
-    "status": "AVAILABLE"
+    "status": "APPROVED",
+    "rejectReason": null
   }
   ```
-- **Response**: `200 OK`
-  ```json
-  {
-    "message": "Driver availability updated successfully"
-  }
-  ```
+  *(Nếu từ chối: `"status": "REJECTED"`, `"rejectReason": "Ảnh bằng lái bị mờ, không rõ số hiệu"`)*.
+- **Quy trình Bất đồng bộ qua RabbitMQ**:
+  - Khi Admin chọn `APPROVED`: `driverservice` phát sự kiện `driver.approved` lên RabbitMQ.
+  - `userservice` lắng nghe sự kiện này và tự động cấp thêm quyền `ROLE_DRIVER` cho tài khoản người dùng tương ứng.
 
-## Cơ sở dữ liệu & Migration
+---
 
-Cơ sở dữ liệu PostgreSQL `driverapp_driver_db` được khởi tạo qua 1 file migration duy nhất:
-- `src/main/resources/db/migration/V0__create_driver_tables.sql`:
-  - Bảng `drivers`: Khóa chính `user_id UUID PRIMARY KEY`, lưu `verification_status` (`PENDING`, `APPROVED`, `REJECTED`), `reject_reason`, `created_at`, `approved_at`.
-  - Bảng `driver_documents`: Khóa ngoại `driver_id REFERENCES drivers(user_id)`, lưu `document_type`, `front_image_uri`, `back_image_uri`.
-  - Bảng `driver_vehicles`: Khóa ngoại `driver_id REFERENCES drivers(user_id)`, lưu `registration_front_uri`, `plate_uri`, `vehicle_type`.
-  - Bảng `driver_availability`: Khóa ngoại `driver_id REFERENCES drivers(user_id)` UNIQUE, lưu `status` (`OFFLINE`, `AVAILABLE`, `ON_TRIP`, `SUSPENDED`), `updated_at`.
+### 3. Quản Lý Phương Tiện & Trạng Thái Hoạt Động
 
-## Giải thích file
+#### `POST /api/vehicles` — Đăng ký thêm phương tiện mới
+- **Method**: `POST` (`multipart/form-data`)
+- **Quyền yêu cầu**: `ROLE_CUSTOMER`, `ROLE_DRIVER`
+- **Các trường gửi lên**:
+  | Tên trường | Kiểu | Bắt buộc | Mô tả |
+  | :--- | :---: | :---: | :--- |
+  | `registrationFront` | File | Có | Giấy đăng ký xe (Cavet) |
+  | `plate` | File | Có | Ảnh chụp biển số xe |
+  | `vehicleType` | Query/Part | Có | `CAR` hoặc `MOTORBIKE` |
+  | `driverLicenseFront` | File | Tùy chọn | Mặt trước GPLX tương ứng nếu tài xế chưa có bằng lái cho loại xe này |
+  | `driverLicenseBack` | File | Tùy chọn | Mặt sau GPLX tương ứng |
+- **Kết quả trả về**: `AddVehicleResponse` gồm `vehicleId`, `vehicleType`, `status` (`APPROVED` hoặc `PENDING`), `registrationFrontUrl`, `plateUrl`.
 
-- `pom.xml`: khai báo Spring WebMVC, JPA, Security, OAuth2 Resource Server, Validation, PostgreSQL, Flyway, Redis, MinIO SDK, Lombok và test dependency.
-- `src/main/java/com/driverapp/driverservice/DriverserviceApplication.java`: class main khởi động service.
-- `config/SecurityConfig.java`: tắt CSRF, dùng session stateless và yêu cầu JWT cho mọi request.
-- `config/ObjectStorageConfig.java`: tạo MinIO client nội bộ và client dùng endpoint public.
-- `controller/DriverRegistrationController.java`: nhận request multipart đăng ký tài xế.
-- `controller/DriverVehicleController.java`: nhận request multipart thêm phương tiện.
-- `controller/DriverAvailabilityController.java`: kiểm tra tài xế khả dụng (`check-available`) và cập nhật availability (`PATCH /api/drivers/availability`).
-- `controller/DriverTestController.java`: controller test route `GET /api/drivers/test`.
-- `dto/request/`: các record request cho đăng ký tài xế, thêm phương tiện và cập nhật trạng thái khả dụng.
-- `dto/response/`: các record response tương ứng.
-- `service/` và `service/impl/`: nghiệp vụ đăng ký tài xế, thêm phương tiện, cập nhật availability, upload ảnh và dọn ảnh khi transaction rollback.
-- `storage/DriverImageStorage.java`: validate định dạng/kích thước, upload, xóa và tạo signed URL cho ảnh MinIO.
-- `exception/`: chuyển lỗi xung đột dữ liệu hoặc object storage thành Problem Details phù hợp.
-- `models/Driver.java`: entity bảng `drivers`, `userId` làm Primary Key, lưu trạng thái xác minh, lý do từ chối, thời điểm tạo và approve.
-- `models/DriverDocument.java`: entity bảng `driver_documents`, lưu URI mặt trước/mặt sau giấy tờ tài xế.
-- `models/DriverVehicle.java`: entity bảng `driver_vehicles`, lưu URI ảnh đăng ký xe, ảnh biển số và loại xe.
-- `models/DriverAvailability.java`: entity bảng `driver_availability`, lưu trạng thái sẵn sàng của tài xế.
-- `models/enums/AvailabilityStatus.java`: enum `OFFLINE`, `AVAILABLE`, `ON_TRIP`, `SUSPENDED`.
-- `models/enums/DocumentType.java`: enum `ID_CARD`, `DRIVER_LICENSE`.
-- `models/enums/VehicleType.java`: enum `CAR`, `MOTORBIKE`.
-- `models/enums/VerificationStatus.java`: enum `PENDING`, `APPROVED`, `REJECTED`.
-- `repository/`: các JPA repository cho driver, giấy tờ, phương tiện và trạng thái hoạt động.
-- `src/main/resources/application.yaml`: cấu hình port, datasource, JPA, Flyway, Redis, JWT, multipart và MinIO.
-- `src/main/resources/db/migration/V0__create_driver_tables.sql`: migration tạo các bảng driver, document, vehicle và availability.
+#### `GET /api/drivers/check-available/{driverId}` — Kiểm tra tính khả dụng (Internal)
+- Được `bookingservice` gọi nội bộ để xác nhận tài xế đã được duyệt (`APPROVED`) và đang sẵn sàng nhận khách (`AVAILABLE`).
 
-## Chạy local
+#### `PATCH /api/drivers/availability` — Cập nhật trạng thái nhận cuốc
+- Cập nhật trạng thái của tài xế: `AVAILABLE`, `ON_TRIP`, `OFFLINE`, `SUSPENDED`.
 
-Từ thư mục gốc backend, khởi động MinIO:
+---
 
-```bash
-docker compose up -d minio
-```
+### 4. Xử Lý Sự Kiện Bất Đồng Bộ (RabbitMQ Listeners)
 
-Mở `http://localhost:9001`, đăng nhập bằng credential trong `docker-compose.yml` và tạo bucket `driver-documents`. Sau đó chạy service:
+1. **`DriverAvailabilityEventListener`**: Lắng nghe sự kiện vòng đời cuốc xe từ `bookingservice` để tự động cập nhật trạng thái hoạt động:
+   - Khi tài xế nhận cuốc: chuyển sang `ON_TRIP`.
+   - Khi hoàn tất cuốc (`trip.completed`): tự động giải phóng tài xế về lại `AVAILABLE`.
+2. **`FeedbackRatingUpdateListener`**: Lắng nghe sự kiện đánh giá từ `feedbackservice`. Mỗi khi khách hàng chấm sao cho chuyến đi, listener này sẽ tự động tính toán lại điểm đánh giá trung bình (`average_rating`) và lưu vào bảng `drivers`.
+3. **`DriverRoleRollbackListener`**: Thành phần SAGA bù trừ. Nếu `userservice` gặp sự cố không thể cấp role `DRIVER`, sự kiện bù trừ sẽ kích hoạt rollback trạng thái hồ sơ tài xế từ `APPROVED` về `PENDING` và ghi nhận chi tiết vào bảng `saga_compensation_log`.
+
+---
+
+## Cơ Sở Dữ Liệu & Flyway Migration
+
+PostgreSQL Database: `driverapp_driver_db`
+
+1. `V0__create_driver_tables.sql`:
+   - `drivers`: `user_id UUID PRIMARY KEY`, trạng thái xác minh, lý do từ chối, thời gian duyệt.
+   - `driver_documents`: Lưu URI giấy tờ (`ID_CARD`, `DRIVER_LICENSE`).
+   - `driver_vehicles`: Lưu thông tin xe và loại xe (`CAR`, `MOTORBIKE`).
+   - `driver_availability`: Trạng thái sẵn sàng (`OFFLINE`, `AVAILABLE`, `ON_TRIP`, `SUSPENDED`).
+2. `V1__create_async_and_saga_tables.sql`:
+   - `processed_events`: Bảng chống trùng lặp sự kiện (Idempotent Consumer).
+   - `saga_compensation_log`: Bảng ghi vết các giao dịch bù trừ SAGA.
+   - Bổ sung cột `average_rating NUMERIC(2, 1) DEFAULT 5.0` trong bảng `drivers`.
+3. `V2__update_driver_documents_and_vehicles.sql`:
+   - Nâng cấp ràng buộc CHECK trên `driver_documents` hỗ trợ `DRIVER_LICENSE_MOTORBIKE` và `DRIVER_LICENSE_CAR`.
+   - Migration dữ liệu cũ: tự động ánh xạ `DRIVER_LICENSE` sang loại bằng tương ứng với phương tiện đã đăng ký.
+   - Bổ sung cột `status VARCHAR(20) NOT NULL DEFAULT 'APPROVED'` cho bảng `driver_vehicles` (với ràng buộc `CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED'))`).
+   - Đánh chỉ mục (`idx_driver_vehicles_driver_id`, `idx_driver_documents_driver_id_type`) tăng tốc độ truy vấn.
+
+---
+
+## Hướng Dẫn Chạy
 
 ```bash
 cd driverservice
 ./mvnw spring-boot:run
 ```
+*(Đảm bảo PostgreSQL, Redis, MinIO và Eureka Server đang chạy)*.

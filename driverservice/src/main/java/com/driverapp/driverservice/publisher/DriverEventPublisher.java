@@ -3,6 +3,7 @@ package com.driverapp.driverservice.publisher;
 import com.driverapp.driverservice.config.rabbitmq.DriverRabbitMQConfig;
 import com.driverapp.driverservice.event.DomainEvent;
 import com.driverapp.driverservice.event.DriverApprovedPayload;
+import com.driverapp.driverservice.event.DriverRegistrationUpdatedPayload;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -29,5 +30,21 @@ public class DriverEventPublisher {
 
         log.info("[Event] Publishing driver.approved: driverId={}, userId={}", driverId, userId);
         rabbitTemplate.convertAndSend(DriverRabbitMQConfig.DRIVER_DIRECT_EXCHANGE, "driver.approved", event);
+    }
+
+    public void publishDriverRegistrationUpdated(String driverId, String userId) {
+        DriverRegistrationUpdatedPayload payload = DriverRegistrationUpdatedPayload.builder()
+                .driverId(driverId)
+                .userId(userId)
+                .build();
+
+        DomainEvent<DriverRegistrationUpdatedPayload> event = DomainEvent.of(
+                "driver.registration.updated",
+                "driverservice",
+                payload
+        );
+
+        log.info("[Event] Publishing driver.registration.updated: driverId={}, userId={}", driverId, userId);
+        rabbitTemplate.convertAndSend(DriverRabbitMQConfig.DRIVER_DIRECT_EXCHANGE, "driver.registration.updated", event);
     }
 }

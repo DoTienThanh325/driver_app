@@ -39,7 +39,9 @@ public class SecurityConfig {
                                                 .pathMatchers("/api/drivers/test").hasRole("CUSTOMER")
                                                 .pathMatchers("/api/drivers/register").hasRole("CUSTOMER")
                                                 .pathMatchers(HttpMethod.PATCH, "/api/drivers/registration")
-                                                .hasRole("CUSTOMER")
+                                                .hasAnyRole("CUSTOMER", "DRIVER")
+                                                .pathMatchers(HttpMethod.POST, "/api/vehicles", "/api/vehicles/**")
+                                                .hasAnyRole("CUSTOMER", "DRIVER")
                                                 .pathMatchers("/api/bookings/foods").hasRole("BUSINESS")
                                                 .pathMatchers("/api/bookings/restaurants",
                                                                 "/api/bookings/restaurants/**")
