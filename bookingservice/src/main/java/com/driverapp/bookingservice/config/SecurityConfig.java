@@ -23,6 +23,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/businesses/internal/**").permitAll()
                         .requestMatchers("/api/trips/internal/**").permitAll()
                         .requestMatchers("/api/bookings/foods/search/**").permitAll()
+                        .requestMatchers("/api/bookings/foods/recommendations/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 ->

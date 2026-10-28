@@ -65,7 +65,9 @@ services:
     base-url: ${PAYMENT_SERVICE_URL:http://paymentservice}
   osrm:
     url: ${OSRM_URL:http://localhost:5000}
+  ai-matching:
+    url: ${AI_MATCHING_URL:http://localhost:8087}
 
 matching:
-  strategy: ${MATCHING_STRATEGY:RULE_BASED}
+  strategy: ${MATCHING_STRATEGY:AI_MODEL}
   shadow-logging: ${MATCHING_SHADOW_LOGGING:true}
