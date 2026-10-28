@@ -18,8 +18,8 @@ public class RedisConfig {
         template.setKeySerializer(RedisSerializer.string());
         template.setHashKeySerializer(RedisSerializer.string());
 
-        // Value và HashValue dùng Json Serializer
-        template.setValueSerializer(RedisSerializer.json());
+        // Value dùng String serializer (cho GEO sets), HashValue dùng Json Serializer
+        template.setValueSerializer(RedisSerializer.string());
         template.setHashValueSerializer(RedisSerializer.json());
 
         template.afterPropertiesSet();

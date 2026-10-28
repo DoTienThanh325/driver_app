@@ -16,6 +16,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/error").permitAll()
                         .requestMatchers("/api/drivers/check-available/**").permitAll()
                         .requestMatchers("/api/drivers/availability").permitAll()
                         .requestMatchers("/api/drivers/*/verification-status").permitAll()

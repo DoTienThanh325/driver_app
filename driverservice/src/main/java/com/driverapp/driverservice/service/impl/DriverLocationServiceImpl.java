@@ -109,7 +109,7 @@ public class DriverLocationServiceImpl implements DriverLocationService {
         List<NearbyDriverResponse> candidates = new ArrayList<>();
 
         for (var result : geoResults) {
-            String driverUserIdStr = result.getContent().getName().toString();
+            String driverUserIdStr = result.getContent().getName().toString().replace("\"", "").trim();
             UUID driverUserId = UUID.fromString(driverUserIdStr);
 
             // 2. Kiểm tra heartbeat (Tài xế còn ping trong 60s gần nhất không?)
