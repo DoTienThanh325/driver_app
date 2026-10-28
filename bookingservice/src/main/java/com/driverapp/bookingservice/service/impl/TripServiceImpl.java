@@ -59,7 +59,8 @@ public class TripServiceImpl implements TripService {
                 tripRepository.findTopByCustomerIdOrderByCreatedAtDesc(customerId)
                                 .ifPresent(lastTrip -> {
                                         if (lastTrip.getStatus() != TripStatus.COMPLETED
-                                                        && lastTrip.getStatus() != TripStatus.CANCELLED) {
+                                                        && lastTrip.getStatus() != TripStatus.CANCELLED
+							&& lastTrip.getStatus() != TripStatus.NO_DRIVER_FOUND) {
                                                 throw new ResponseStatusException(
                                                                 HttpStatus.CONFLICT,
                                                                 "Bạn đang có chuyến đi chưa hoàn tất (mã: "
