@@ -8,7 +8,7 @@ export const driverStyles = StyleSheet.create({
   scrollContent: {
     padding: 16,
     paddingTop: 12,
-    paddingBottom: 32,
+    paddingBottom: 40,
   },
 
   // Khối thẻ chứa Profile và Switch phía trên
@@ -21,7 +21,7 @@ export const driverStyles = StyleSheet.create({
     shadowOpacity: 0.04,
     shadowRadius: 8,
     elevation: 2,
-    marginBottom: 20,
+    marginBottom: 16,
   },
   profileCard: {
     flexDirection: 'row',
@@ -71,15 +71,13 @@ export const driverStyles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Thẻ công tắc nhận chuyến
   switchCard: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
   },
   switchInfo: {
     flex: 1,
@@ -96,18 +94,67 @@ export const driverStyles = StyleSheet.create({
     color: '#6B7280',
   },
 
+  // Thẻ giả lập vị trí GPS của tài xế (tiện test matching)
+  gpsCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  gpsInfoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 8,
+  },
+  gpsIconBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#E6F8F8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  gpsTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  gpsValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  gpsChangeBtn: {
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  gpsChangeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#00B5B8',
+  },
+
   // Trạng thái tạm nghỉ (Offline)
   offlineStateContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 64,
+    marginTop: 40,
     paddingHorizontal: 24,
   },
   exclamationCircle: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#000000',
+    backgroundColor: '#111827',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
@@ -131,32 +178,189 @@ export const driverStyles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // Trạng thái trực tuyến (Online)
+  // Trạng thái trực tuyến (Online radar)
   onlineStateContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 64,
+    marginTop: 20,
     paddingHorizontal: 24,
+    marginBottom: 20,
   },
   radarPulse: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: '#E6F8F8',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   onlineTitle: {
     fontSize: 16,
     fontWeight: '700',
     color: '#00B5B8',
-    marginBottom: 6,
+    marginBottom: 4,
     textAlign: 'center',
   },
   onlineSubtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#6B7280',
     textAlign: 'center',
+  },
+
+  // THẺ LỜI MỜI CUỐC XE MỚI (INCOMING TRIP OFFER)
+  offerCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#FF7A00',
+    shadowColor: '#FF7A00',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  offerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  aiBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF7ED',
+    borderColor: '#FFEDD5',
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  aiBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#EA580C',
+    marginLeft: 4,
+  },
+  fareHighlight: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#10B981',
+  },
+  offerRouteBox: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 14,
+  },
+  offerRouteRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  offerRouteText: {
+    fontSize: 13,
+    color: '#374151',
+    marginLeft: 8,
+    flex: 1,
+    lineHeight: 18,
+  },
+  offerMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    paddingTop: 10,
+    marginBottom: 16,
+  },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  metaText: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginLeft: 4,
+  },
+  offerActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  rejectBtn: {
+    flex: 1,
+    backgroundColor: '#FEE2E2',
+    paddingVertical: 12,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rejectBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#EF4444',
+  },
+  acceptBtn: {
+    flex: 2,
+    backgroundColor: '#00B5B8',
+    paddingVertical: 12,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  acceptBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+  // THẺ CUỐC XE ĐANG THỰC HIỆN (ACTIVE TRIP WORKFLOW)
+  activeTripCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 18,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  activeTripHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  statusBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  statusBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#065F46',
+  },
+  tripIdText: {
+    fontSize: 12,
+    color: '#9CA3AF',
+  },
+  activeStepBtn: {
+    backgroundColor: '#00B5B8',
+    borderRadius: 16,
+    paddingVertical: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 14,
+  },
+  activeStepBtnText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
   },
 });

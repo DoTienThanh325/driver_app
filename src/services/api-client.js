@@ -4,8 +4,26 @@ import { tokenStorage } from './storage/token.storage';
  * API Client kết nối qua API Gateway
  * Tự động đính kèm Token và hỗ trợ cấu hình qua biến môi trường EXPO_PUBLIC_API_URL
  */
-const RAW_GATEWAY_URL = process.env.EXPO_PUBLIC_API_URL;
+const RAW_GATEWAY_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.8:8080';
 const GATEWAY_URL = RAW_GATEWAY_URL.replace(/\/+$/, '');
+
+const fetchWithTimeout = async (url, options = {}, timeoutMs = 8000) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    return res;
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      const timeoutErr = new Error('Quá thời gian kết nối (8s). Máy chủ Gateway (Port 8080) chưa phản hồi.');
+      timeoutErr.isNetworkError = true;
+      throw timeoutErr;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
 
 const getFullUrl = (endpoint) => {
   const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
@@ -32,7 +50,7 @@ export const apiClient = {
     const fullUrl = getFullUrl(endpoint);
 
     try {
-      const response = await fetch(fullUrl, {
+      const response = await fetchWithTimeout(fullUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
@@ -83,7 +101,7 @@ export const apiClient = {
     const fullUrl = getFullUrl(endpoint);
 
     try {
-      const response = await fetch(fullUrl, {
+      const response = await fetchWithTimeout(fullUrl, {
         method: 'PATCH',
         headers,
         body: JSON.stringify(body),
@@ -134,7 +152,7 @@ export const apiClient = {
     const fullUrl = getFullUrl(endpoint);
 
     try {
-      const response = await fetch(fullUrl, {
+      const response = await fetchWithTimeout(fullUrl, {
         method: 'GET',
         headers,
       });

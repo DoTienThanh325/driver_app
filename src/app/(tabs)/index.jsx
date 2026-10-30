@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   ScrollView,
@@ -7,27 +7,51 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { userStorage } from '@/services/storage/user.storage';
+import { tripService, TRIP_STATUS } from '@/services/trip.service';
 import { homeStyles as styles } from '@/styles/screens/home.styles';
 
 export default function HomeScreen() {
   const [userProfile, setUserProfile] = useState(null);
+  const [activeTrip, setActiveTrip] = useState(null);
 
-  useEffect(() => {
-    userStorage.getUserProfile().then((profile) => {
-      if (profile) setUserProfile(profile);
-    });
+  const loadData = useCallback(async () => {
+    const profile = await userStorage.getUserProfile();
+    if (profile) setUserProfile(profile);
+
+    // Kiểm tra chuyến đi hiện tại
+    const trip = await tripService.getCurrentTrip();
+    if (
+      trip &&
+      [
+        TRIP_STATUS.REQUESTED,
+        TRIP_STATUS.SEARCHING_DRIVER,
+        TRIP_STATUS.DRIVER_ASSIGNED,
+        TRIP_STATUS.DRIVER_ARRIVING,
+        TRIP_STATUS.IN_PROGRESS,
+      ].includes(trip.status)
+    ) {
+      setActiveTrip(trip);
+    } else {
+      setActiveTrip(null);
+    }
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
 
   const displayName = userProfile?.fullName || userProfile?.username || 'Thành Trung';
   const initialLetter = displayName.charAt(0).toUpperCase();
 
   const handleBookingTransit = () => {
-    Alert.alert('Đặt xe', 'Dịch vụ gọi xe T&M Transit sẽ sớm ra mắt tính năng bản đồ trực tiếp!');
+    router.push('/book-trip');
   };
 
   const handleBookingMeal = () => {
@@ -62,13 +86,59 @@ export default function HomeScreen() {
             </Pressable>
           </View>
 
+          {/* Banner Chuyến đi đang hoạt động (Nếu có) */}
+          {activeTrip && (
+            <Pressable
+              style={{
+                backgroundColor: '#ECFDF5',
+                borderColor: '#10B981',
+                borderWidth: 1.5,
+                borderRadius: 16,
+                padding: 14,
+                marginBottom: 16,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+              onPress={() => router.push('/book-trip')}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
+                <View
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 19,
+                    backgroundColor: '#10B981',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginRight: 10,
+                  }}
+                >
+                  <Ionicons name="car" size={22} color="#FFFFFF" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <ThemedText style={{ fontSize: 14, fontWeight: '700', color: '#065F46' }}>
+                    Chuyến đi đang hoạt động
+                  </ThemedText>
+                  <ThemedText
+                    style={{ fontSize: 12, color: '#047857' }}
+                    numberOfLines={1}
+                  >
+                    Đến: {activeTrip.destinationAddress}
+                  </ThemedText>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#10B981" />
+            </Pressable>
+          )}
+
           {/* 2. Thanh tìm kiếm nhanh */}
           <Pressable
             style={styles.searchBar}
-            onPress={() => Alert.alert('Tìm kiếm', 'Nhập địa chỉ đến hoặc quán ăn bạn yêu thích')}
+            onPress={handleBookingTransit}
           >
             <Ionicons name="search-outline" size={20} color="#9CA3AF" style={styles.searchIcon} />
-            <ThemedText style={styles.searchText}>Bạn muốn đi đâu hoặc ăn gì?</ThemedText>
+            <ThemedText style={styles.searchText}>Bạn muốn đi đâu hoặc giao hàng tới đâu?</ThemedText>
           </Pressable>
 
           {/* 3. Thẻ dịch vụ chính: Đặt xe & Đặt món */}
@@ -108,7 +178,7 @@ export default function HomeScreen() {
             {/* Banner Transit */}
             <Pressable
               style={styles.promotionCardTeal}
-              onPress={() => Alert.alert('Khuyến mãi', 'Áp dụng mã giảm 50% cho chuyến xe đầu tiên!')}
+              onPress={() => router.push('/book-trip')}
             >
               <ThemedText style={styles.promoTitle}>Giảm 50% chuyến xe đầu tiên</ThemedText>
               <ThemedText style={styles.promoSubtitle}>Áp dụng cho dịch vụ T&M Transit</ThemedText>
