@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Alert } from 'react-native';
+import { authService } from '@/services/auth.service';
 import { userStorage } from '@/services/storage/user.storage';
 import { driverService } from '@/services/driver.service';
 import { processImageForUpload } from '@/utils/image-processor';
@@ -8,6 +9,8 @@ export function useDriverProfile() {
   const [profile, setProfile] = useState(null);
   const [driverDetail, setDriverDetail] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   // Chế độ chỉnh sửa (Edit Mode)
@@ -45,15 +48,42 @@ export function useDriverProfile() {
   const [isDocModalVisible, setIsDocModalVisible] = useState(false);
   const [isAddVehicleModalVisible, setIsAddVehicleModalVisible] = useState(false);
 
-  const fetchProfile = useCallback(async () => {
+  const fetchProfile = useCallback(async (isManualCheck = false) => {
     try {
-      setIsLoading(true);
+      if (!isManualCheck) setIsLoading(true);
       const user = await userStorage.getUserProfile();
       setProfile(user);
 
       if (user?.id) {
         const detail = await driverService.getDriverDetail(user.id);
         setDriverDetail(detail);
+
+        // [ROLE UPDATE STRATEGY]
+        // Nếu verificationStatus là APPROVED:
+        // Kiểm tra xem userStorage đã có role DRIVER chưa. Nếu chưa -> refresh token + update profile
+        const isApproved = detail?.verificationStatus === 'APPROVED';
+        if (isApproved) {
+          const hasDriverRole = await userStorage.isDriver();
+          if (!hasDriverRole) {
+            const syncResult = await authService.syncRolesAndProfile();
+            if (syncResult?.refreshed) {
+              Alert.alert(
+                '🎉 Chúc mừng!',
+                'Hồ sơ tài xế của bạn đã được quản trị viên phê duyệt thành công. Quyền đối tác tài xế đã được kích hoạt!'
+              );
+            }
+          }
+        }
+
+        if (isManualCheck) {
+          if (isApproved) {
+            Alert.alert('🎉 Thành công', 'Hồ sơ tài xế đã được phê duyệt và quyền tài xế đã sẵn sàng hoạt động!');
+          } else if (detail?.verificationStatus === 'PENDING') {
+            Alert.alert('Đang xét duyệt', 'Hồ sơ tài xế của bạn đang được ban quản trị xét duyệt. Vui lòng quay lại sau ít phút!');
+          } else {
+            Alert.alert('Trạng thái hồ sơ', `Trạng thái hiện tại: ${detail?.verificationStatus || 'Chờ duyệt'}`);
+          }
+        }
 
         if (detail?.vehicles && detail.vehicles.length > 0) {
           setVehicles(
@@ -83,10 +113,25 @@ export function useDriverProfile() {
       }
     } catch (err) {
       console.warn('Lỗi tải thông tin hồ sơ tài xế:', err);
+      if (isManualCheck) {
+        Alert.alert('Lỗi', 'Không thể kiểm tra trạng thái lúc này. Vui lòng thử lại sau.');
+      }
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
+      setIsCheckingStatus(false);
     }
   }, []);
+
+  const handlePullRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await fetchProfile();
+  }, [fetchProfile]);
+
+  const handleCheckApprovalStatus = useCallback(async () => {
+    setIsCheckingStatus(true);
+    await fetchProfile(true);
+  }, [fetchProfile]);
 
   useEffect(() => {
     fetchProfile();
@@ -318,6 +363,8 @@ export function useDriverProfile() {
     profile,
     driverDetail,
     isLoading,
+    isRefreshing,
+    isCheckingStatus,
     isSaving,
     isEditMode,
     draftImages,
@@ -330,6 +377,8 @@ export function useDriverProfile() {
     hasMotorbikeLicense,
     hasCarLicense,
     fetchProfile,
+    handlePullRefresh,
+    handleCheckApprovalStatus,
     handleToggleEditMode,
     handleCancelEdit,
     handleSaveProfileImages,

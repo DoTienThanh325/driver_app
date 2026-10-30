@@ -270,7 +270,43 @@ export const businessProfileStyles = StyleSheet.create({
     fontWeight: '600',
   },
 
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#E6F8F8',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#9CEBF9',
+  },
+  editButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#00B5B8',
+  },
+
   // Nút hành động
+  primaryActionButton: {
+    backgroundColor: '#00B5B8',
+    borderRadius: 14,
+    height: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    shadowColor: '#00B5B8',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  primaryActionText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   reRegisterButton: {
     backgroundColor: '#00B5B8',
     borderRadius: 14,
@@ -302,5 +338,22 @@ export const businessProfileStyles = StyleSheet.create({
     color: '#374151',
     fontSize: 14,
     fontWeight: '600',
+  },
+  checkStatusButton: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: 14,
+    height: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FDE68A',
+    gap: 8,
+    marginTop: 8,
+  },
+  checkStatusButtonText: {
+    color: '#D97706',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

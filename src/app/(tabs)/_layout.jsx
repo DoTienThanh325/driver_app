@@ -14,6 +14,12 @@ export default function TabLayout() {
 
   useEffect(() => {
     checkDriverRole();
+    const unsubscribe = userStorage.subscribe?.(() => {
+      checkDriverRole();
+    });
+    return () => {
+      unsubscribe?.();
+    };
   }, [checkDriverRole]);
 
   return (

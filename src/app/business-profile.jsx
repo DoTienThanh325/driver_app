@@ -1,19 +1,21 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   ScrollView,
   Pressable,
   ActivityIndicator,
   Alert,
+  RefreshControl,
 } from 'react-native';
 import { Image } from 'expo-image';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { SubHeader } from '@/components/ui/sub-header';
 import { ZoomableImageModal } from '@/components/ui/zoomable-image-modal';
+import { authService } from '@/services/auth.service';
 import { businessService } from '@/services/business.service';
 import { userStorage } from '@/services/storage/user.storage';
 import { normalizeImageUrl } from '@/utils/image-url';
@@ -23,10 +25,15 @@ export default function BusinessProfileScreen() {
   const [businessDetail, setBusinessDetail] = useState(null);
   const [savedInfo, setSavedInfo] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [zoomImage, setZoomImage] = useState(null);
+  const prevStatusRef = useRef(null);
 
-  const fetchProfile = useCallback(async () => {
-    setIsLoading(true);
+  const fetchProfile = useCallback(async (isManualCheck = false) => {
+    if (!isManualCheck && !prevStatusRef.current) {
+      setIsLoading(true);
+    }
     try {
       const [backendData, localInfo] = await Promise.all([
         businessService.getBusinessRegistration(),
@@ -34,16 +41,77 @@ export default function BusinessProfileScreen() {
       ]);
       setBusinessDetail(backendData);
       setSavedInfo(localInfo);
+
+      const newStatus = backendData?.status || 'PENDING';
+
+      // [ROLE UPDATE STRATEGY]
+      // Nếu trạng thái là ACCEPTED:
+      // Kiểm tra xem userStorage đã có role BUSINESS chưa. Nếu chưa -> refresh token + update profile
+      if (newStatus === 'ACCEPTED') {
+        const hasBusinessRole = await userStorage.isBusiness();
+        if (!hasBusinessRole) {
+          const syncResult = await authService.syncRolesAndProfile();
+          if (syncResult?.refreshed) {
+            Alert.alert(
+              '🎉 Chúc mừng!',
+              'Hồ sơ kinh doanh của bạn đã được quản trị viên phê duyệt thành công. Quyền đối tác kinh doanh đã được kích hoạt!'
+            );
+          }
+        }
+      }
+
+      if (isManualCheck) {
+        if (newStatus === 'ACCEPTED') {
+          Alert.alert('🎉 Thành công', 'Hồ sơ kinh doanh của bạn đã được phê duyệt và quyền kinh doanh đã sẵn sàng!');
+        } else if (newStatus === 'PENDING') {
+          Alert.alert('Đang xét duyệt', 'Hồ sơ của bạn đang được ban quản trị xét duyệt. Vui lòng quay lại sau ít phút!');
+        } else if (newStatus === 'REJECTED') {
+          Alert.alert('Cần bổ sung', backendData?.rejectReason || 'Hồ sơ chưa đạt yêu cầu, vui lòng cập nhật lại.');
+        }
+      }
+
+      prevStatusRef.current = newStatus;
     } catch (error) {
       console.warn('Lỗi khi tải thông tin hồ sơ kinh doanh:', error);
+      if (isManualCheck) {
+        Alert.alert('Lỗi', 'Không thể kiểm tra trạng thái lúc này. Vui lòng thử lại sau.');
+      }
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
+      setIsCheckingStatus(false);
     }
   }, []);
 
-  useEffect(() => {
+  useFocusEffect(
+    useCallback(() => {
+      fetchProfile();
+    }, [fetchProfile])
+  );
+
+  const handlePullRefresh = () => {
+    setIsRefreshing(true);
     fetchProfile();
-  }, [fetchProfile]);
+  };
+
+  const handleManualCheckStatus = () => {
+    setIsCheckingStatus(true);
+    fetchProfile(true);
+  };
+
+  const handleEditRestaurant = () => {
+    const targetRestaurantId = businessDetail?.restaurantId || savedInfo?.restaurantId;
+    router.push({
+      pathname: '/edit-restaurant',
+      params: {
+        restaurantId: targetRestaurantId || '',
+        initialName: restaurantName,
+        initialAddress: restaurantAddress,
+        latitude: String(businessDetail?.restaurantLatitude || savedInfo?.restaurantLatitude || ''),
+        longitude: String(businessDetail?.restaurantLongitude || savedInfo?.restaurantLongitude || ''),
+      },
+    });
+  };
 
   const status = businessDetail?.status || 'PENDING';
   const isPending = status === 'PENDING';
@@ -119,7 +187,18 @@ export default function BusinessProfileScreen() {
           <ThemedText style={styles.loadingText}>Đang tải thông tin hồ sơ...</ThemedText>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handlePullRefresh}
+              colors={['#00B5B8']}
+              tintColor="#00B5B8"
+            />
+          }
+        >
           {/* 1. Banner trạng thái xét duyệt */}
           <View
             style={[
@@ -170,6 +249,12 @@ export default function BusinessProfileScreen() {
                 <ThemedText style={styles.restaurantLabel}>Tên nhà hàng</ThemedText>
                 <ThemedText style={styles.restaurantName}>{restaurantName}</ThemedText>
               </View>
+              {isAccepted && (
+                <Pressable style={styles.editButton} onPress={handleEditRestaurant}>
+                  <Ionicons name="create-outline" size={16} color="#00B5B8" />
+                  <ThemedText style={styles.editButtonText}>Sửa</ThemedText>
+                </Pressable>
+              )}
             </View>
 
             <View style={styles.addressRow}>
@@ -206,6 +291,33 @@ export default function BusinessProfileScreen() {
           </View>
 
           {/* 4. Nút hành động */}
+          {isPending && (
+            <Pressable
+              style={styles.checkStatusButton}
+              onPress={handleManualCheckStatus}
+              disabled={isCheckingStatus}
+            >
+              {isCheckingStatus ? (
+                <ActivityIndicator size="small" color="#D97706" />
+              ) : (
+                <Ionicons name="refresh-circle-outline" size={20} color="#D97706" />
+              )}
+              <ThemedText style={styles.checkStatusButtonText}>
+                {isCheckingStatus ? 'Đang kiểm tra xét duyệt...' : 'Kiểm tra trạng thái xét duyệt'}
+              </ThemedText>
+            </Pressable>
+          )}
+
+          {isAccepted && (
+            <Pressable
+              style={styles.primaryActionButton}
+              onPress={handleEditRestaurant}
+            >
+              <Ionicons name="create-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <ThemedText style={styles.primaryActionText}>CHỈNH SỬA THÔNG TIN NHÀ HÀNG</ThemedText>
+            </Pressable>
+          )}
+
           {isRejected && (
             <Pressable
               style={styles.reRegisterButton}
