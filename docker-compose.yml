@@ -42,7 +42,39 @@ services:
     volumes:
       - es_data:/usr/share/elasticsearch/data
 
+  redis:
+    image: redis:7.2-alpine
+    container_name: driver-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+
+  osrm:
+    image: osrm/osrm-backend:latest
+    container_name: osrm-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./bookingservice/osrm/data:/data
+    command: osrm-routed --algorithm mld /data/hanoi.osrm
+
+  aimatchingservice:
+    build:
+      context: ./aimatchingservice
+      dockerfile: Dockerfile
+    container_name: driverapp-aimatchingservice
+    restart: unless-stopped
+    ports:
+      - "8087:8087"
+    environment:
+      - MODEL_PATH=app/models/lgbm_acceptance_model.pkl
+
 volumes:
   minio_data:
   rabbitmq_data:
   es_data:
+  redis_data:

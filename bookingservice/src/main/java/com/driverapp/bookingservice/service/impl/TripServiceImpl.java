@@ -12,10 +12,13 @@ import com.driverapp.bookingservice.dto.response.CreateTripResponse;
 import com.driverapp.bookingservice.models.Food;
 import com.driverapp.bookingservice.models.FoodOption;
 import com.driverapp.bookingservice.models.FoodSelected;
+import com.driverapp.bookingservice.models.MatchingOffer;
 import com.driverapp.bookingservice.models.Trip;
+import com.driverapp.bookingservice.models.enums.MatchingOfferStatus;
 import com.driverapp.bookingservice.models.enums.ShippingType;
 import com.driverapp.bookingservice.models.enums.TripStatus;
 import com.driverapp.bookingservice.repository.FoodRepository;
+import com.driverapp.bookingservice.repository.MatchingOfferRepository;
 import com.driverapp.bookingservice.repository.TripRepository;
 import com.driverapp.bookingservice.service.TripService;
 import lombok.RequiredArgsConstructor;
@@ -45,27 +48,24 @@ public class TripServiceImpl implements TripService {
         private final com.driverapp.bookingservice.client.PaymentServiceClient paymentServiceClient;
         private final MongoTemplate mongoTemplate;
         private final com.driverapp.bookingservice.publisher.TripEventPublisher tripEventPublisher;
+        private final MatchingOfferRepository matchingOfferRepository;
+        private final com.driverapp.bookingservice.repository.MatchingOfferLogRepository matchingOfferLogRepository;
 
 
         @Override
         public CreateTripResponse createTrip(UUID customerId, CreateTripRequest request) {
 
                 // ── Kiểm tra điều kiện: Cuốc xe trước đó phải kết thúc hoặc bị hủy ──
+                // Cho phep tao cuoc moi neu cuoc cu khong con tim tai xe
                 tripRepository.findTopByCustomerIdOrderByCreatedAtDesc(customerId)
                                 .ifPresent(lastTrip -> {
-                                        if (lastTrip.getStatus() != TripStatus.COMPLETED
-                                                        && lastTrip.getStatus() != TripStatus.CANCELLED) {
+                                        if (lastTrip.getStatus() == TripStatus.REQUESTED
+                                                        || lastTrip.getStatus() == TripStatus.SEARCHING_DRIVER) {
                                                 throw new ResponseStatusException(
                                                                 HttpStatus.CONFLICT,
-                                                                "Bạn đang có chuyến đi chưa hoàn tất (mã: "
-                                                                                + lastTrip.getId()
-                                                                                + ", trạng thái: "
-                                                                                + lastTrip.getStatus()
-                                                                                + "). Cuốc xe trước đó phải kết thúc hoặc bị hủy trước khi đặt chuyến mới.");
+                                                                "Dang co chuyen di tim tai xe");
                                         }
                                 });
-
-                // ── Validate food nếu là FOOD_DELIVERY ──────────────────────────────
                 List<FoodSelected> foodSelectedList = null;
                 Double totalFoodPrice = null;
 
@@ -124,7 +124,7 @@ public class TripServiceImpl implements TripService {
                                 .foodSelectedsList(foodSelectedList)
                                 .totalFoodPrice(totalFoodPrice)
                                 .shippFare(shippFare)
-                                .status(TripStatus.SEARCHING_DRIVER)
+                                .status(TripStatus.REQUESTED)  // Phase 2: REQUESTED, Matching Worker sẽ chuyển sang SEARCHING_DRIVER
                                 .createdAt(LocalDateTime.now())
                                 .updatedAt(LocalDateTime.now())
                                 .build();
@@ -137,7 +137,7 @@ public class TripServiceImpl implements TripService {
                                 "Hệ thống đang tìm tài xế cho chuyến đi của bạn. Vui lòng chờ trong giây lát.",
                                 customerId));
 
-                // ── Phát sự kiện trip.created để paymentservice tự động tạo PAY_DIRECTLY ──
+                // ── Phát sự kiện trip.created (Matching Worker sẽ nhận và bắt đầu tìm tài xế) ──
                 double foodPriceVal = saved.getTotalFoodPrice() != null ? saved.getTotalFoodPrice() : 0.0;
                 java.math.BigDecimal totalAmt = java.math.BigDecimal.valueOf(saved.getShippFare() + foodPriceVal);
 
@@ -145,7 +145,7 @@ public class TripServiceImpl implements TripService {
                                 .tripId(saved.getId())
                                 .customerId(customerId.toString())
                                 .driverId(null)
-                                .tripStatus(TripStatus.SEARCHING_DRIVER.name())
+                                .tripStatus(TripStatus.REQUESTED.name())
                                 .paymentMethod("PAY_DIRECTLY")
                                 .totalAmount(totalAmt)
                                 .pickupAddress(saved.getPickUpAddress())
@@ -163,6 +163,11 @@ public class TripServiceImpl implements TripService {
                 // Kiểm tra driver có tồn tại, APPROVED và đang AVAILABLE
                 driverServiceClient.checkDriverAvailable(driverUserId);
 
+                // Kiểm tra xem lượt nhận này có phải là cuốc gối đầu (Back-to-Back) không
+                boolean isB2B = matchingOfferRepository.findByTripIdAndStatus(tripId, MatchingOfferStatus.PENDING)
+                                .map(o -> Boolean.TRUE.equals(o.getBackToBack()))
+                                .orElse(false);
+
                 // ── BƯỚC 2: Cập nhật có điều kiện (Atomic update bằng Mongo findAndModify) ──
                 Query query = new Query(Criteria.where("id").is(tripId)
                                 .and("status").is(TripStatus.SEARCHING_DRIVER.name()));
@@ -170,6 +175,7 @@ public class TripServiceImpl implements TripService {
                 Update update = new Update()
                                 .set("driverId", driverUserId) // ✅ Gán trực tiếp userId làm driverId
                                 .set("status", TripStatus.DRIVER_ASSIGNED.name())
+                                .set("backToBack", isB2B)
                                 .set("updatedAt", LocalDateTime.now());
 
                 Trip updated = mongoTemplate.findAndModify(
@@ -187,6 +193,31 @@ public class TripServiceImpl implements TripService {
                                         HttpStatus.CONFLICT,
                                         "Chuyến đi đã được tài xế khác nhận. Status hiện tại: " + existing.getStatus());
                 }
+
+                // ── Phase 2: Cập nhật MatchingOffer sau khi tài xế nhận chuyến thành công ──
+                matchingOfferRepository.findByTripIdAndStatus(tripId, MatchingOfferStatus.PENDING)
+                                .ifPresent(offer -> {
+                                        offer.setStatus(MatchingOfferStatus.ACCEPTED);
+                                        offer.setUpdatedAt(LocalDateTime.now());
+                                        matchingOfferRepository.save(offer);
+
+                                        matchingOfferLogRepository.findByOfferId(offer.getId()).ifPresent(logEntry -> {
+                                                logEntry.setIsAccepted(1);
+                                                logEntry.setResolvedAt(LocalDateTime.now());
+                                                matchingOfferLogRepository.save(logEntry);
+                                        });
+                                });
+
+                // Cancel các offer còn lại (PENDING hoặc EXPIRED chưa xử lý)
+                List<MatchingOffer> otherOffers = matchingOfferRepository
+                                .findByTripIdAndStatusIn(tripId, List.of(MatchingOfferStatus.PENDING, MatchingOfferStatus.EXPIRED));
+                otherOffers.forEach(o -> {
+                        if (!o.getStatus().equals(MatchingOfferStatus.ACCEPTED)) {
+                                o.setStatus(MatchingOfferStatus.CANCELLED);
+                                o.setUpdatedAt(LocalDateTime.now());
+                        }
+                });
+                matchingOfferRepository.saveAll(otherOffers);
 
                 double foodPrice = updated.getTotalFoodPrice() != null ? updated.getTotalFoodPrice() : 0.0;
                 java.math.BigDecimal totalAmt = java.math.BigDecimal.valueOf(updated.getShippFare() + foodPrice);
@@ -380,4 +411,57 @@ public class TripServiceImpl implements TripService {
                                 trip.getStatus() != null ? trip.getStatus().name() : null
                 );
         }
-}
+
+        @Override
+        public Trip getTripById(String tripId) {
+                return tripRepository.findById(tripId)
+                                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy chuyến đi với id: " + tripId));
+        }
+
+        @Override
+        public Trip getCurrentTrip(UUID customerId) {
+                return tripRepository.findTopByCustomerIdOrderByCreatedAtDesc(customerId)
+                                .orElse(null);
+        }
+
+        @Override
+        public java.util.Map<String, Object> simulateMatchingForDriver(UUID driverUserId, double lat, double lng, com.driverapp.bookingservice.models.enums.VehicleType vehicleType) {
+                // 1. Tạo cuốc xe mô phỏng của khách tại tọa độ của tài xế
+                Trip trip = Trip.builder()
+                                .customerId(UUID.randomUUID())
+                                .pickUpLatitude(lat)
+                                .pickUpLongitude(lng)
+                                .pickUpAddress("Điểm đón mô phỏng (Hồ Hoàn Kiếm, Hà Nội)")
+                                .destinationLatitude(21.007050)
+                                .destinationLongitude(105.843180)
+                                .destinationAddress("Đại học Bách Khoa, Hai Bà Trưng, Hà Nội")
+                                .shippingType(ShippingType.PASSENGER)
+                                .vehicleType(vehicleType != null ? vehicleType : com.driverapp.bookingservice.models.enums.VehicleType.MOTORBIKE)
+                                .shippFare(25000.0)
+                                .status(TripStatus.SEARCHING_DRIVER)
+                                .createdAt(LocalDateTime.now())
+                                .updatedAt(LocalDateTime.now())
+                                .build();
+                Trip savedTrip = tripRepository.save(trip);
+
+                // 2. Tạo lời mời MatchingOffer gán thẳng cho tài xế này
+                MatchingOffer offer = MatchingOffer.builder()
+                                .driverId(driverUserId)
+                                .tripId(savedTrip.getId())
+                                .status(MatchingOfferStatus.PENDING)
+                                .createdAt(LocalDateTime.now())
+                                .updatedAt(LocalDateTime.now())
+                                .build();
+                MatchingOffer savedOffer = matchingOfferRepository.save(offer);
+
+                return java.util.Map.of(
+                                "message", "Mô phỏng cuốc xe ghép thành công!",
+                                "tripId", savedTrip.getId(),
+                                "offerId", savedOffer.getId(),
+                                "pickUpAddress", savedTrip.getPickUpAddress(),
+                                "destinationAddress", savedTrip.getDestinationAddress(),
+                                "shippFare", savedTrip.getShippFare(),
+                                "driverId", driverUserId.toString()
+                );
+        }
+}

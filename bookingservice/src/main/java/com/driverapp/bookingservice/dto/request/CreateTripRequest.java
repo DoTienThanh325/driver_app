@@ -30,5 +30,5 @@ public record CreateTripRequest(
 
     // Chỉ có khi shippingType = FOOD_DELIVERY
     // Danh sách món ăn chọn mua (chỉ truyền khi shippingType = FOOD_DELIVERY)
-    @Valid List<FoodOrderItemRequest> foods
+    List<@Valid FoodOrderItemRequest> foods
 ) {}

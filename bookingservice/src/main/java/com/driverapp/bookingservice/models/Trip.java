@@ -47,6 +47,10 @@ public class Trip {
     private TripStatus status;
     private String cancelReason;
 
+    private Integer searchRound;
+    private Double searchRadiusKm;
+    private Boolean backToBack;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

@@ -4,5 +4,6 @@ import jakarta.validation.constraints.NotNull;
 import java.util.UUID;
 
 public record UpdateAvailabilityRequest(
+    UUID driverId,
     @NotNull String status
 ) {}

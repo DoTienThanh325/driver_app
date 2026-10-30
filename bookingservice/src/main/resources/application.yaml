@@ -25,7 +25,7 @@ spring:
         retry:
           enabled: true
           initial-interval: 2000ms
-          max-attempts: 3
+          max-retries: 3
           multiplier: 2.0
 
   security:
@@ -63,3 +63,11 @@ services:
     base-url: ${USER_SERVICE_URL:http://userservice}
   payment:
     base-url: ${PAYMENT_SERVICE_URL:http://paymentservice}
+  osrm:
+    url: ${OSRM_URL:http://localhost:5000}
+  ai-matching:
+    url: ${AI_MATCHING_URL:http://localhost:8087}
+
+matching:
+  strategy: ${MATCHING_STRATEGY:AI_MODEL}
+  shadow-logging: ${MATCHING_SHADOW_LOGGING:true}

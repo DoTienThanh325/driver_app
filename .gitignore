@@ -1,5 +1,16 @@
 # IDE settings
 .idea/
 .vscode/
-
+docs/
+*.log
 document/
+
+# Scripts & Automation
+scripts/
+
+# OSRM Data & Map Binary Files (>100MB)
+**/osrm/data/*
+!**/osrm/data/.gitkeep
+*.pbf
+*.osrm*
+*.cell_metrics

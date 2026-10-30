@@ -45,7 +45,11 @@ public class DriverAvailabilityServiceImpl implements DriverAvailabilityService 
     @Override
     @Transactional
     public void updateAvailability(Jwt jwt, UpdateAvailabilityRequest request) {
-        UUID driverUserId = jwt != null ? UUID.fromString(jwt.getSubject()) : null;
+        UUID driverUserId = jwt != null ? UUID.fromString(jwt.getSubject()) : request.driverId();
+        if (driverUserId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "driverId is required when not authenticated with JWT");
+        }
+
         AvailabilityStatus newStatus;
         try {
             newStatus = AvailabilityStatus.valueOf(request.status());
@@ -55,6 +59,7 @@ public class DriverAvailabilityServiceImpl implements DriverAvailabilityService 
 
         // Cập nhật availability trực tiếp theo driverId (userId), không cần query bảng drivers
         DriverAvailability availability = availabilityRepository.findByDriverId(driverUserId)
+                .or(() -> availabilityRepository.findByDriver_UserId(driverUserId))
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "Availability not found for driverId: " + driverUserId));

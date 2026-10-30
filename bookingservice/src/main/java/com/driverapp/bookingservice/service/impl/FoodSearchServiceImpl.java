@@ -60,9 +60,17 @@ public class FoodSearchServiceImpl implements FoodSearchService {
                 .withQuery(Query.of(q -> q.bool(boolQuery.build())))
                 .withPageable(PageRequest.of(request.getPage(), request.getSize()));
 
-        // 2. SẮP XẾP THEO KHOẢNG CÁCH (NẾU CÓ TRUYỀN TỌA ĐỘ NGƯỜI DÙNG)
+        // 2. BỘ LỌC BÁN KÍNH ĐỊA LÝ & SẮP XẾP THEO KHOẢNG CÁCH
         boolean hasUserLocation = request.getLatitude() != null && request.getLongitude() != null;
         if (hasUserLocation) {
+            double radiusKm = (request.getRadiusKm() != null && request.getRadiusKm() > 0) ? request.getRadiusKm() : 5.0;
+
+            boolQuery.filter(f -> f.geoDistance(g -> g
+                    .field("restaurantLocation")
+                    .distance(radiusKm + "km")
+                    .location(l -> l.latlon(ll -> ll.lat(request.getLatitude()).lon(request.getLongitude())))
+            ));
+
             queryBuilder.withSort(s -> s.geoDistance(g -> g
                     .field("restaurantLocation")
                     .location(l -> l.latlon(ll -> ll.lat(request.getLatitude()).lon(request.getLongitude())))

@@ -1,5 +1,6 @@
 package com.driverapp.driverservice.repository;
 
+import com.driverapp.driverservice.models.Driver;
 import com.driverapp.driverservice.models.DriverAvailability;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -14,6 +15,8 @@ public interface DriverAvailabilityRepository extends JpaRepository<DriverAvaila
     Optional<DriverAvailability> findByDriverId(@Param("driverId") UUID driverId);
 
     Optional<DriverAvailability> findByDriver_UserId(UUID userId);
+
+    Optional<DriverAvailability> findByDriver(Driver driver);
 
     void deleteByDriver_UserId(UUID userId);
 }

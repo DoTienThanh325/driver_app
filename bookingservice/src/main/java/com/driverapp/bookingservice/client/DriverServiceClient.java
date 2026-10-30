@@ -1,14 +1,17 @@
 package com.driverapp.bookingservice.client;
 
+import com.driverapp.bookingservice.dto.response.NearbyDriverDto;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.client.loadbalancer.LoadBalancerInterceptor;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -64,4 +67,23 @@ public class DriverServiceClient {
             log.warn("Không thể cập nhật availability cho driverId={}: {}", driverId, e.getMessage());
         }
     }
-}
+
+    /**
+     * Lấy danh sách tài xế lân cận từ driver-service (Redis GEO).
+     */
+    public List<NearbyDriverDto> getNearbyDrivers(double lat, double lng,
+                                                   double radiusKm, String vehicleType, int limit) {
+        try {
+            String uri = "/api/drivers/nearby?lat={lat}&lng={lng}&radiusKm={radius}&limit={limit}"
+                    + (vehicleType != null ? "&vehicleType=" + vehicleType : "");
+
+            return restClient.get()
+                    .uri(uri, lat, lng, radiusKm, limit)
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<List<NearbyDriverDto>>() {});
+        } catch (Exception e) {
+            log.error("Lỗi khi lấy danh sách tài xế gần từ driver-service: {}", e.getMessage());
+            return List.of();
+        }
+    }
+}

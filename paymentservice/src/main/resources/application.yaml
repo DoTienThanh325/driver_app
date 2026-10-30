@@ -1,5 +1,5 @@
 server:
-  port: ${BOOKING_SERVICE_PORT:8084}
+  port: ${PAYMENT_SERVICE_PORT:8084}
 
 spring:
   application:
@@ -20,7 +20,7 @@ spring:
         retry:
           enabled: true
           initial-interval: 2000ms
-          max-attempts: 3
+          max-retries: 3
           multiplier: 2.0
 
   security:
