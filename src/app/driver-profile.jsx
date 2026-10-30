@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, ScrollView, Pressable, ActivityIndicator, Modal } from 'react-native';
+import { View, ScrollView, Pressable, ActivityIndicator, Modal, RefreshControl } from 'react-native';
 import { Image } from 'expo-image';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
@@ -25,6 +25,8 @@ export default function DriverProfileScreen() {
     hasCarLicense,
     fetchProfile,
     isLoading,
+    isRefreshing,
+    isCheckingStatus,
     isSaving,
     isEditMode,
     draftImages,
@@ -43,6 +45,8 @@ export default function DriverProfileScreen() {
     handleOpenAddVehicle,
     handleCloseAddVehicle,
     handleAddVehicleSuccess,
+    handlePullRefresh,
+    handleCheckApprovalStatus,
   } = useDriverProfile();
 
   // Presigned URLs từ hệ thống hoặc fallback asset
@@ -153,11 +157,32 @@ export default function DriverProfileScreen() {
           <View style={styles.headerActions}>
             {!isEditMode ? (
               <>
-                <View style={styles.approvedBadgeHeader}>
-                  <ThemedText style={styles.approvedBadgeHeaderText}>
-                    {driverDetail?.verificationStatus === 'PENDING' ? 'Chờ duyệt' : 'Đã duyệt'}
-                  </ThemedText>
-                </View>
+                {driverDetail?.verificationStatus === 'PENDING' ? (
+                  <>
+                    <View style={styles.pendingBadgeHeader}>
+                      <ThemedText style={styles.pendingBadgeHeaderText}>Chờ duyệt</ThemedText>
+                    </View>
+                    <Pressable
+                      style={styles.checkStatusBtnHeader}
+                      onPress={handleCheckApprovalStatus}
+                      disabled={isCheckingStatus}
+                      hitSlop={6}
+                    >
+                      {isCheckingStatus ? (
+                        <ActivityIndicator size="small" color="#D97706" />
+                      ) : (
+                        <Ionicons name="refresh-outline" size={13} color="#D97706" />
+                      )}
+                      <ThemedText style={styles.checkStatusBtnHeaderText}>
+                        {isCheckingStatus ? '...' : 'Kiểm tra'}
+                      </ThemedText>
+                    </Pressable>
+                  </>
+                ) : (
+                  <View style={styles.approvedBadgeHeader}>
+                    <ThemedText style={styles.approvedBadgeHeaderText}>Đã duyệt</ThemedText>
+                  </View>
+                )}
 
                 <Pressable
                   style={styles.editToggleBtn}
@@ -194,7 +219,18 @@ export default function DriverProfileScreen() {
         }
       />
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handlePullRefresh}
+            colors={['#00B5B8']}
+            tintColor="#00B5B8"
+          />
+        }
+      >
         {/* Banner thông báo chế độ chỉnh sửa */}
         {isEditMode && (
           <View style={styles.editNoticeBanner}>

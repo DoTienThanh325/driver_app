@@ -43,10 +43,13 @@ export const authService = {
     } catch (err) {
       // Mock fallback nếu backend chưa khởi động và người dùng thử nghiệm tài khoản demo
       if (err.isNetworkError && phoneNumber === '0901234567' && password === 'driver123456') {
+        const mockOtp = '123456';
+        console.log(`[AUTH LOG] Generated mock OTP for ${phoneNumber}: ${mockOtp}`);
         return {
           challengeToken: 'mock-challenge-token-demo-999',
           expiresInSeconds: 300,
           message: 'Đã gửi mã OTP (Demo Mode)',
+          otp: mockOtp,
         };
       }
       throw err;
@@ -107,10 +110,13 @@ export const authService = {
       });
     } catch (err) {
       if (err.isNetworkError) {
+        const mockOtp = '123456';
+        console.log(`[AUTH LOG] Resend mock OTP for ${phoneNumber}: ${mockOtp}`);
         return {
           challengeToken: 'mock-challenge-token-demo-999',
           expiresInSeconds: 300,
           message: 'Mã OTP đã được gửi lại thành công (Demo Mode)',
+          otp: mockOtp,
         };
       }
       throw err;
@@ -160,6 +166,33 @@ export const authService = {
     const accessToken = await tokenStorage.getAccessToken();
     const userProfile = await userStorage.getUserProfile();
     return { accessToken, userProfile };
+  },
+
+  /**
+   * Đồng bộ lại phiên đăng nhập và quyền (Role) mới nhất từ backend:
+   * 1. Gọi tryRefreshToken() để nhận accessToken mới chứa các Claims/Roles mới nhất (DRIVER, BUSINESS...)
+   * 2. Gọi getCurrentUser() để cập nhật thông tin người dùng và roles vào AsyncStorage
+   * @returns {Promise<{success: boolean, refreshed: boolean, profile: Object|null}>}
+   */
+  syncRolesAndProfile: async () => {
+    try {
+      const refreshed = await apiClient.tryRefreshToken();
+      let profile = null;
+      try {
+        profile = await authService.getCurrentUser();
+      } catch (userErr) {
+        console.warn('Lỗi khi fetch current user sau refresh token:', userErr);
+        profile = await userStorage.getUserProfile();
+      }
+      return {
+        success: Boolean(refreshed || profile),
+        refreshed,
+        profile,
+      };
+    } catch (err) {
+      console.warn('Lỗi khi đồng bộ role và profile:', err);
+      return { success: false, refreshed: false, profile: null };
+    }
   },
 
   /**

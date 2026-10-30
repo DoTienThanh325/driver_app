@@ -1,16 +1,131 @@
 import * as Location from 'expo-location';
-import { toVietnameseAddress } from './vietnamese-address';
+import {
+  toVietnameseAddress,
+  translatePOI,
+  translateStreet,
+} from './vietnamese-address';
 
 /**
- * Định dạng chuỗi địa chỉ chi tiết theo chuẩn Việt Nam từ dữ liệu Photon
+ * Helper gọi fetch có timeout để tránh bị treo khi mạng chậm
+ */
+const fetchWithTimeout = async (url, options = {}, timeoutMs = 4500) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timer);
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+};
+
+/**
+ * Định dạng chuỗi địa chỉ chi tiết theo chuẩn Việt Nam từ kết quả OpenStreetMap Nominatim
+ */
+function formatNominatimAddress(item) {
+  if (!item) return null;
+  const addr = item.address || {};
+  const names = item.namedetails || {};
+  const parts = [];
+
+  // 1. Tên POI / Cơ sở
+  // Ưu tiên: name:vi từ namedetails -> amenity/building/shop... -> name -> item.name
+  let poiName =
+    names['name:vi'] ||
+    addr.amenity ||
+    addr.building ||
+    addr.shop ||
+    addr.tourism ||
+    addr.office ||
+    addr.leisure ||
+    names['name'] ||
+    item.name;
+
+  if (poiName) {
+    const translatedPoi = translatePOI(String(poiName).trim());
+    if (
+      translatedPoi !== addr.road &&
+      translatedPoi !== addr.suburb &&
+      translatedPoi !== addr.city
+    ) {
+      parts.push(translatedPoi);
+    }
+  }
+
+  // 2. Số nhà
+  const houseNum = addr.house_number || addr.housenumber;
+  if (houseNum) {
+    const num = String(houseNum).trim();
+    if (
+      num.toLowerCase().startsWith('km') ||
+      num.toLowerCase().startsWith('số') ||
+      num.toLowerCase().startsWith('ngõ') ||
+      num.toLowerCase().startsWith('ngách')
+    ) {
+      parts.push(num);
+    } else {
+      parts.push(`Số ${num}`);
+    }
+  }
+
+  // 3. Tên đường / phố (dịch sang tiếng Việt có dấu qua translateStreet)
+  const road = addr.road || addr.pedestrian || addr.footway || addr.street;
+  if (road) {
+    parts.push(translateStreet(String(road).trim()));
+  }
+
+  // 4. Phường / Xã
+  const ward = addr.suburb || addr.quarter || addr.neighbourhood || addr.village || addr.residential;
+  if (ward) {
+    const w = String(ward).trim();
+    if (
+      w.toLowerCase().startsWith('phường') ||
+      w.toLowerCase().startsWith('xã') ||
+      w.toLowerCase().startsWith('thị trấn')
+    ) {
+      parts.push(w);
+    } else {
+      parts.push(`Phường ${w}`);
+    }
+  }
+
+  // 5. Quận / Huyện / Thị xã
+  const district = addr.county || addr.district || addr.city_district;
+  if (district) {
+    const d = String(district).trim();
+    if (
+      d.toLowerCase().startsWith('quận') ||
+      d.toLowerCase().startsWith('huyện') ||
+      d.toLowerCase().startsWith('thị xã')
+    ) {
+      parts.push(d);
+    } else {
+      parts.push(`Quận ${d}`);
+    }
+  }
+
+  // 6. Thành phố
+  parts.push(addr.state || addr.city || 'Hà Nội');
+
+  const uniqueParts = Array.from(new Set(parts.filter(Boolean)));
+  return uniqueParts.length > 0 ? toVietnameseAddress(uniqueParts.join(', ')) : null;
+}
+
+/**
+ * Định dạng chuỗi địa chỉ chi tiết theo chuẩn Việt Nam từ dữ liệu Photon (Komoot)
  */
 function formatPhotonAddress(props) {
   if (!props) return null;
   const parts = [];
 
-  // 1. Tên địa danh / Cơ sở (vd: Học viện Công nghệ Bưu chính Viễn thông)
+  // 1. Tên địa danh / Cơ sở (vd: Hanoi University of Science and Technology -> Đại học Bách khoa Hà Nội)
   if (props.name) {
-    parts.push(props.name.trim());
+    const translated = translatePOI(props.name.trim());
+    if (translated !== props.street) {
+      parts.push(translated);
+    }
   }
 
   // 2. Số nhà / Km
@@ -28,14 +143,9 @@ function formatPhotonAddress(props) {
     }
   }
 
-  // 3. Tên đường / phố
+  // 3. Tên đường / phố (vd: Dai Co Viet -> Đường Đại Cồ Việt)
   if (props.street) {
-    const st = props.street.trim();
-    if (st.toLowerCase().startsWith('đường') || st.toLowerCase().startsWith('phố')) {
-      parts.push(st);
-    } else {
-      parts.push(`Đường ${st}`);
-    }
+    parts.push(translateStreet(props.street.trim()));
   }
 
   // 4. Phường / Xã
@@ -82,15 +192,10 @@ function formatNativeAddress(item) {
   const parts = [];
 
   if (item.name && item.name !== item.street && item.name !== item.city) {
-    parts.push(item.name.trim());
+    parts.push(translatePOI(item.name.trim()));
   }
   if (item.street) {
-    const st = item.street.trim();
-    if (st.toLowerCase().startsWith('đường') || st.toLowerCase().startsWith('phố')) {
-      parts.push(st);
-    } else {
-      parts.push(`Đường ${st}`);
-    }
+    parts.push(translateStreet(item.street.trim()));
   }
   if (item.subregion) {
     const sub = item.subregion.trim();
@@ -120,7 +225,7 @@ function formatNativeAddress(item) {
 
 /**
  * Tìm kiếm tọa độ và địa chỉ chi tiết đầy đủ (Tên cơ sở, đường, phường, quận, Hà Nội) bằng tiếng Việt chuẩn
- * @param {string} address - Chuỗi tìm kiếm (vd: "học viện công nghệ bưu chính viễn thông")
+ * @param {string} address - Chuỗi tìm kiếm (vd: "học viện công nghệ bưu chính viễn thông", "đại học bách khoa hà nội")
  * @returns {Promise<{latitude: number, longitude: number, formattedAddress: string}|null>}
  */
 export async function geocodeAddress(address) {
@@ -129,11 +234,13 @@ export async function geocodeAddress(address) {
   const query = address.trim();
   const hanoiQuery = query.toLowerCase().includes('hà nội') ? query : `${query} Hà Nội`;
 
-  // 1. Sử dụng Photon Geocoder: Hỗ trợ tìm POI / Tên trường / Tòa nhà tại Hà Nội cực kỳ chính xác và trả về đầy đủ đường, quận, huyện
+  // 1. Sử dụng Photon Geocoder: Hỗ trợ tìm POI / Tên trường / Tòa nhà tại Hà Nội cực nhanh
   try {
     const encoded = encodeURIComponent(hanoiQuery);
-    const res = await fetch(
-      `https://photon.komoot.io/api/?q=${encoded}&lat=21.028511&lon=105.854444&limit=1`
+    const res = await fetchWithTimeout(
+      `https://photon.komoot.io/api/?q=${encoded}&lat=21.028511&lon=105.854444&limit=1`,
+      {},
+      4000
     );
     const data = await res.json();
     if (data && data.features && data.features.length > 0) {
@@ -148,10 +255,40 @@ export async function geocodeAddress(address) {
       };
     }
   } catch (err) {
-    console.warn('Photon geocoding lỗi, chuyển sang native geocoding:', err);
+    console.warn('Photon geocoding lỗi, chuyển sang Nominatim search:', err);
   }
 
-  // 2. Fallback sử dụng Native Geocoder của expo-location
+  // 2. Fallback Nominatim Search với accept-language=vi
+  try {
+    const encoded = encodeURIComponent(hanoiQuery);
+    const res = await fetchWithTimeout(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encoded}&accept-language=vi&addressdetails=1&namedetails=1&limit=1`,
+      {
+        headers: {
+          'User-Agent': 'TM-DriverApp/1.0 (contact: support@tm.vn)',
+          'Accept-Language': 'vi,en;q=0.8',
+        },
+      },
+      4000
+    );
+    const data = await res.json();
+    if (Array.isArray(data) && data.length > 0) {
+      const item = data[0];
+      const lat = parseFloat(item.lat);
+      const lon = parseFloat(item.lon);
+      const formatted = formatNominatimAddress(item);
+
+      return {
+        latitude: lat,
+        longitude: lon,
+        formattedAddress: toVietnameseAddress(formatted || query),
+      };
+    }
+  } catch (err) {
+    console.warn('Nominatim search lỗi, chuyển sang native geocoding:', err);
+  }
+
+  // 3. Fallback sử dụng Native Geocoder của expo-location
   try {
     const results = await Location.geocodeAsync(`${query}, Hà Nội, Việt Nam`);
     if (results && results.length > 0) {
@@ -183,9 +320,35 @@ export async function geocodeAddress(address) {
 export async function reverseGeocodeCoords(latitude, longitude) {
   if (!latitude || !longitude) return null;
 
-  // 1. Thử Photon Reverse Geocode để lấy cấu trúc đường, phường, quận chuẩn
+  // 1. Ưu tiên số 1: Nominatim Reverse Geocode với accept-language=vi & namedetails=1
+  // Tự động phân giải tên tiếng Việt của mọi địa danh/trường học/bệnh viện/tuyến đường trong OpenStreetMap
   try {
-    const res = await fetch(`https://photon.komoot.io/reverse?lat=${latitude}&lon=${longitude}`);
+    const res = await fetchWithTimeout(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=vi&addressdetails=1&namedetails=1&zoom=18`,
+      {
+        headers: {
+          'User-Agent': 'TM-DriverApp/1.0 (contact: support@tm.vn)',
+          'Accept-Language': 'vi,en;q=0.8',
+        },
+      },
+      4000
+    );
+    const data = await res.json();
+    if (data && (data.address || data.display_name)) {
+      const formatted = formatNominatimAddress(data);
+      if (formatted) return toVietnameseAddress(formatted);
+    }
+  } catch (err) {
+    console.warn('Nominatim reverse geocoding lỗi, chuyển sang fallback Photon:', err);
+  }
+
+  // 2. Fallback số 2: Photon Reverse Geocode (Komoot)
+  try {
+    const res = await fetchWithTimeout(
+      `https://photon.komoot.io/reverse?lat=${latitude}&lon=${longitude}`,
+      {},
+      4000
+    );
     const data = await res.json();
     if (data && data.features && data.features.length > 0) {
       const formatted = formatPhotonAddress(data.features[0].properties);
@@ -195,7 +358,7 @@ export async function reverseGeocodeCoords(latitude, longitude) {
     console.warn('Photon reverse geocoding lỗi, dùng native fallback:', err);
   }
 
-  // 2. Fallback dùng Native Reverse Geocoder của expo-location
+  // 3. Fallback số 3: Native Reverse Geocoder của expo-location
   try {
     const results = await Location.reverseGeocodeAsync({ latitude, longitude });
     if (results && results.length > 0) {

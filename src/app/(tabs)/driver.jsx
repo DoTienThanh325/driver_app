@@ -14,6 +14,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { router } from 'expo-router';
 import { useDriverAvailability } from '@/hooks/use-driver-availability';
+import { authService } from '@/services/auth.service';
 import { userStorage } from '@/services/storage/user.storage';
 import { driverStyles as styles } from '@/styles/screens/driver.styles';
 
@@ -22,18 +23,39 @@ export default function DriverScreen() {
   const { isAvailable, isUpdating, toggleAvailability } = useDriverAvailability(false);
 
   useEffect(() => {
-    userStorage.getUserProfile().then((profile) => {
-      if (profile) {
-        setUserProfile(profile);
-        const hasDriverRole = profile.roles?.some(
-          (r) => String(r).toUpperCase() === 'DRIVER' || String(r).toUpperCase() === 'ROLE_DRIVER'
-        );
-        if (!hasDriverRole) {
-          Alert.alert('Thông báo', 'Tài khoản của bạn chưa được cấp quyền đối tác Tài xế.');
-          router.replace('/(tabs)');
+    let isMounted = true;
+    (async () => {
+      let profile = await userStorage.getUserProfile();
+      if (!profile) return;
+
+      let hasDriverRole = profile.roles?.some(
+        (r) => String(r).toUpperCase() === 'DRIVER' || String(r).toUpperCase() === 'ROLE_DRIVER'
+      );
+
+      // Nếu trong local cache chưa có DRIVER role, thử sync lại với backend (admin vừa cấp quyền)
+      if (!hasDriverRole) {
+        const syncRes = await authService.syncRolesAndProfile();
+        if (syncRes?.profile) {
+          profile = syncRes.profile;
+          hasDriverRole = profile.roles?.some(
+            (r) => String(r).toUpperCase() === 'DRIVER' || String(r).toUpperCase() === 'ROLE_DRIVER'
+          );
         }
       }
-    });
+
+      if (!isMounted) return;
+
+      if (!hasDriverRole) {
+        Alert.alert('Thông báo', 'Tài khoản của bạn chưa được cấp quyền đối tác Tài xế.');
+        router.replace('/(tabs)');
+      } else {
+        setUserProfile(profile);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const driverName = userProfile?.fullName || userProfile?.username || 'Thành Trung';

@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
-import { Keyboard, Alert } from 'react-native';
+import { useState, useEffect, useCallback } from 'react';
+import { Keyboard, Alert, Platform } from 'react-native';
 import { router } from 'expo-router';
+import * as Notifications from 'expo-notifications';
 import { authService } from '@/services/auth.service';
+import { notificationService } from '@/services/notification.service';
 
 export function useLogin() {
   // Trạng thái bước: 'CREDENTIALS' (Bước 1) hoặc 'OTP' (Bước 2)
@@ -21,6 +23,45 @@ export function useLogin() {
   // Trạng thái chung
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // 1. Khởi tạo quyền Notification khi mount
+  useEffect(() => {
+    notificationService.init();
+  }, []);
+
+  /**
+   * Tự động điền chuỗi OTP và gọi xác thực ngay lập tức
+   */
+  const handleAutofillOtp = useCallback((codeString) => {
+    if (!codeString) return;
+    const cleanDigits = String(codeString).replace(/\D/g, '').slice(0, 6);
+    if (!cleanDigits) return;
+
+    const digitsArray = cleanDigits.split('');
+    while (digitsArray.length < 6) digitsArray.push('');
+
+    setOtp(digitsArray);
+
+    if (cleanDigits.length === 6) {
+      handleVerifyOtp(cleanDigits);
+    }
+  }, [challengeToken]);
+
+  // 2. Lắng nghe sự kiện khi người dùng click vào Local Notification
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response?.notification?.request?.content?.data;
+      if (data?.otp) {
+        handleAutofillOtp(String(data.otp));
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [handleAutofillOtp]);
 
   // Đếm ngược gửi lại OTP
   useEffect(() => {
@@ -64,6 +105,12 @@ export function useLogin() {
       setStep('OTP');
       setCountdown(res.expiresInSeconds ? Math.min(res.expiresInSeconds, 60) : 60);
       setCanResend(false);
+
+      // [EXPO LOCAL NOTIFICATION]
+      // Nếu backend trả về OTP: Bắn thông báo Local Notification ngay lên máy
+      if (res.otp) {
+        await notificationService.sendOtpLocalNotification(res.otp);
+      }
     } catch (err) {
       setErrorMessage(err.message || 'Số điện thoại hoặc mật khẩu không chính xác');
     } finally {
@@ -122,6 +169,11 @@ export function useLogin() {
       setCountdown(60);
       setCanResend(false);
       setOtp(['', '', '', '', '', '']);
+
+      // Bắn lại Local Notification nếu backend trả về OTP mới
+      if (res.otp) {
+        await notificationService.sendOtpLocalNotification(res.otp);
+      }
     } catch (err) {
       setErrorMessage(err.message || 'Không thể gửi lại mã OTP. Vui lòng thử lại sau.');
     } finally {
@@ -164,5 +216,6 @@ export function useLogin() {
     handleResendOtp,
     handleBackToCredentials,
     fillDemoAccount,
+    handleAutofillOtp,
   };
 }

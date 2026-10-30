@@ -46,6 +46,7 @@ export default function LoginScreen() {
     handleResendOtp,
     handleBackToCredentials,
     fillDemoAccount,
+    handleAutofillOtp,
   } = useLogin();
 
   const isDark = theme.background === '#121212';
@@ -53,13 +54,21 @@ export default function LoginScreen() {
   const placeholderColor = isDark ? '#8E95A5' : '#9CA3AF';
   const borderColor = isDark ? '#2C2C2C' : '#E3E3E3';
 
-  // Xử lý chuyển ô OTP tự động khi nhập
+  // Xử lý chuyển ô OTP tự động khi nhập hoặc nhận chuỗi autofill
   const handleOtpChange = (text, index) => {
+    const cleanDigits = text.replace(/\D/g, '');
+
+    // Nếu người dùng ấn gợi ý trên bàn phím (chuỗi trả về có từ 2 chữ số trở lên)
+    if (cleanDigits.length > 1) {
+      handleAutofillOtp(cleanDigits);
+      return;
+    }
+
     const updated = [...otp];
-    updated[index] = text;
+    updated[index] = cleanDigits;
     setOtp(updated);
 
-    if (text && index < 5) {
+    if (cleanDigits && index < 5) {
       otpInputsRef.current[index + 1]?.focus();
     }
 
@@ -234,10 +243,13 @@ export default function LoginScreen() {
                             },
                           ]}
                           keyboardType="number-pad"
-                          maxLength={1}
+                          maxLength={idx === 0 ? 6 : 1}
                           value={digit}
                           onChangeText={(txt) => handleOtpChange(txt, idx)}
                           onKeyPress={(e) => handleOtpKeyPress(e, idx)}
+                          textContentType={idx === 0 ? 'oneTimeCode' : 'none'}
+                          autoComplete={idx === 0 ? 'sms-otp' : 'off'}
+                          importantForAutofill={idx === 0 ? 'yes' : 'no'}
                         />
                       ))}
                     </View>

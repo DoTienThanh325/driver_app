@@ -2,11 +2,34 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const KEY_USER_PROFILE = 'tm_user_profile';
 
+const userProfileListeners = new Set();
+const notifyUserProfileListeners = (profile) => {
+  userProfileListeners.forEach((listener) => {
+    try {
+      listener(profile);
+    } catch (err) {
+      console.warn('Lỗi khi kích hoạt listener userStorage:', err);
+    }
+  });
+};
+
 /**
  * Quản lý lưu trữ thông tin cá nhân người dùng từ auth/me
  * Sử dụng AsyncStorage cho dữ liệu profile và cấu hình ứng dụng
  */
 export const userStorage = {
+  /**
+   * Đăng ký lắng nghe sự kiện thay đổi User Profile (ví dụ: cập nhật role)
+   * @param {Function} listener
+   * @returns {Function} unsubscribe function
+   */
+  subscribe: (listener) => {
+    userProfileListeners.add(listener);
+    return () => {
+      userProfileListeners.delete(listener);
+    };
+  },
+
   /**
    * Lưu thông tin người dùng từ API auth/me
    * @param {Object} profile - { id, username, fullName, phoneNumber, roles, avatarUrl, ... }
@@ -16,6 +39,7 @@ export const userStorage = {
       if (!profile) return;
       const jsonValue = JSON.stringify(profile);
       await AsyncStorage.setItem(KEY_USER_PROFILE, jsonValue);
+      notifyUserProfileListeners(profile);
     } catch (error) {
       console.error('Lỗi khi lưu thông tin user profile vào AsyncStorage:', error);
     }
@@ -99,6 +123,7 @@ export const userStorage = {
   clearUserProfile: async () => {
     try {
       await AsyncStorage.removeItem(KEY_USER_PROFILE);
+      notifyUserProfileListeners(null);
     } catch (error) {
       console.error('Lỗi khi xóa user profile khỏi AsyncStorage:', error);
     }

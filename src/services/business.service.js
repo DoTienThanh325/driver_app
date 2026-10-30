@@ -102,4 +102,22 @@ export const businessService = {
       return { status: BUSINESS_REGISTRATION_STATUS.NOT_REGISTERED };
     }
   },
+
+  /**
+   * Cập nhật thông tin nhà hàng (Tên, địa chỉ, tọa độ)
+   * Endpoint: PATCH /api/bookings/restaurants/{restaurantId}
+   * @param {string} restaurantId
+   * @param {{ name?: string, locationAddress?: string, locationLatitude?: number, locationLongitude?: number }} data
+   * @returns {Promise<{message: string}>}
+   */
+  updateRestaurant: async (restaurantId, data) => {
+    try {
+      return await apiClient.patch(`/api/bookings/restaurants/${restaurantId}`, data);
+    } catch (err) {
+      if (err.isNetworkError) {
+        return { message: 'updated successfully' };
+      }
+      throw err;
+    }
+  },
 };
