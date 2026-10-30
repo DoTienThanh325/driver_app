@@ -2,6 +2,7 @@ package com.driverapp.paymentservice.service;
 
 import com.driverapp.paymentservice.dto.request.ClaimVoucherRequest;
 import com.driverapp.paymentservice.dto.request.CreateVoucherRequest;
+import com.driverapp.paymentservice.dto.response.UserVoucherResponse;
 import com.driverapp.paymentservice.dto.response.VoucherItemResponse;
 import com.driverapp.paymentservice.models.enums.VoucherType;
 import java.util.List;
@@ -11,7 +12,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 public interface VoucherService {
     Map<String, String> createVoucher(CreateVoucherRequest request, Jwt jwt);
 
-    /** 1. Khách hàng xem danh sách voucher của App hợp lệ (claimableCount > 0) */
+    /** 1. Khách hàng xem danh sách voucher của App hợp lệ (claimableCount > 0 và chưa nhận) */
     List<VoucherItemResponse> getAppVouchersForCustomer(VoucherType type, Jwt jwt);
 
     /** 2. Khách hàng xem danh sách voucher của Nhà hàng (số lượng do nhà hàng cung cấp) */
@@ -19,5 +20,8 @@ public interface VoucherService {
 
     /** 3. Khách hàng nhận và lưu voucher vào user_vouchers */
     Map<String, String> claimVoucher(ClaimVoucherRequest request, Jwt jwt);
+
+    /** 4. Khách hàng xem danh sách voucher đã nhận */
+    List<UserVoucherResponse> getMyVouchers(Jwt jwt);
 }
 

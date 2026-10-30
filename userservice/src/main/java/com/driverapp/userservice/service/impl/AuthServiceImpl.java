@@ -21,6 +21,7 @@ import com.driverapp.userservice.service.JwtService;
 import com.driverapp.userservice.service.OtpChallengeService;
 import com.driverapp.userservice.service.SmsSender;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
@@ -108,10 +110,18 @@ public class AuthServiceImpl implements AuthService {
                 challenge.otp()
         );
 
+        log.info("======================================================================");
+        log.info(">> [AUTH] OTP LOGIN GENERATED <<");
+        log.info(">> Phone Number : {}", user.getPhoneNumber());
+        log.info(">> OTP Code     : {}", challenge.otp());
+        log.info(">> Expires In   : {} seconds", challenge.expiresInSeconds());
+        log.info("======================================================================");
+
         return new LoginResponse(
                 challenge.challengeToken(),
                 challenge.expiresInSeconds(),
-                "Đã gửi mã OTP"
+                "Đã gửi mã OTP",
+                challenge.otp()
         );
     }
 

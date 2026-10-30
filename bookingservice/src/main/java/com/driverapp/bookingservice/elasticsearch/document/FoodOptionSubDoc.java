@@ -19,4 +19,7 @@ public class FoodOptionSubDoc {
 
     @Field(type = FieldType.Double)
     private double price;
+
+    @Field(type = FieldType.Keyword, index = false)
+    private String imageUrl;
 }

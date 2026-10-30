@@ -97,6 +97,7 @@ public class FoodSearchServiceImpl implements FoodSearchService {
                             doc.getOptions().stream().map(opt -> FoodSearchResponse.OptionItem.builder()
                                     .size(opt.getSize())
                                     .price(opt.getPrice())
+                                    .imageUrl(opt.getImageUrl())
                                     .build()).toList())
                     .build();
         }).toList();
@@ -139,7 +140,7 @@ public class FoodSearchServiceImpl implements FoodSearchService {
         List<FoodOptionSubDoc> optionSubDocs = new ArrayList<>();
         if (food.getOptions() != null) {
             for (FoodOption opt : food.getOptions()) {
-                optionSubDocs.add(new FoodOptionSubDoc(opt.getSize(), opt.getPrice()));
+                optionSubDocs.add(new FoodOptionSubDoc(opt.getSize(), opt.getPrice(), opt.getImageUrl()));
             }
         }
 

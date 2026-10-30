@@ -3,6 +3,7 @@ package com.driverapp.paymentservice.service.impl;
 import com.driverapp.paymentservice.client.BookingServiceClient;
 import com.driverapp.paymentservice.dto.request.ClaimVoucherRequest;
 import com.driverapp.paymentservice.dto.request.CreateVoucherRequest;
+import com.driverapp.paymentservice.dto.response.UserVoucherResponse;
 import com.driverapp.paymentservice.dto.response.VoucherItemResponse;
 import com.driverapp.paymentservice.models.UserVoucher;
 import com.driverapp.paymentservice.models.Voucher;
@@ -19,7 +20,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -101,6 +104,14 @@ public class VoucherServiceImpl implements VoucherService {
     public List<VoucherItemResponse> getAppVouchersForCustomer(VoucherType type, Jwt jwt) {
         UUID customerId = UUID.fromString(jwt.getSubject());
 
+        // Lấy danh sách voucherId mà người dùng này ĐÃ NHẬN từ trước
+        Set<String> claimedVoucherIds = userVoucherRepository.findByUserId(customerId)
+                .map(UserVoucher::getVouchers)
+                .orElse(Collections.emptyList())
+                .stream()
+                .map(UserVoucherItem::getVoucherId)
+                .collect(Collectors.toSet());
+
         // Lấy số chuyến đi đã hoàn thành của Customer từ bookingservice (không cần JWT)
         long completedTrips = bookingServiceClient.getCustomerCompletedTripsCount(customerId);
 
@@ -113,6 +124,11 @@ public class VoucherServiceImpl implements VoucherService {
         List<VoucherItemResponse> validVouchers = new ArrayList<>();
 
         for (Voucher voucher : appVouchers) {
+            // Nếu người dùng đã nhận voucher này rồi -> Bỏ qua, không hiển thị ở tab Mới
+            if (claimedVoucherIds.contains(voucher.getId())) {
+                continue;
+            }
+
             int claimableCount = 0;
             boolean hasMinValue = voucher.getMinValue() > 0;
 
@@ -214,6 +230,41 @@ public class VoucherServiceImpl implements VoucherService {
 
         // 5. Trả về thông báo thành công
         return Map.of("message", "Lưu voucher cho người dùng thành công");
+    }
+
+    @Override
+    public List<UserVoucherResponse> getMyVouchers(Jwt jwt) {
+        UUID userId = UUID.fromString(jwt.getSubject());
+        LocalDateTime now = LocalDateTime.now();
+
+        UserVoucher userVoucher = userVoucherRepository.findByUserId(userId).orElse(null);
+        if (userVoucher == null || userVoucher.getVouchers() == null || userVoucher.getVouchers().isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        Map<String, Integer> quantityMap = userVoucher.getVouchers().stream()
+                .collect(Collectors.toMap(
+                        UserVoucherItem::getVoucherId,
+                        UserVoucherItem::getNumberOfVouchers,
+                        Integer::sum
+                ));
+
+        List<Voucher> vouchers = voucherRepository.findAllById(quantityMap.keySet());
+
+        return vouchers.stream()
+                .filter(v -> v.getExpiredAt() == null || v.getExpiredAt().isAfter(now))
+                .map(v -> UserVoucherResponse.builder()
+                        .id(v.getId())
+                        .discount(v.getDiscount())
+                        .maxDiscount(v.getMaxDiscount())
+                        .minValue(v.getMinValue())
+                        .type(v.getType())
+                        .providerType(v.getProviderType())
+                        .restaurantId(v.getRestaurantId())
+                        .expiredAt(v.getExpiredAt())
+                        .quantity(quantityMap.getOrDefault(v.getId(), 1))
+                        .build())
+                .toList();
     }
 
     private VoucherItemResponse toResponse(Voucher v, int claimableCount) {

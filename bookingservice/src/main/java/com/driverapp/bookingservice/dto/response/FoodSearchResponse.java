@@ -21,5 +21,6 @@ public class FoodSearchResponse {
     public static class OptionItem {
         private String size;
         private double price;
+        private String imageUrl;
     }
 }
