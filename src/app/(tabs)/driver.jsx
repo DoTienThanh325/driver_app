@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Switch,
@@ -6,6 +6,7 @@ import {
   Pressable,
   ScrollView,
   Alert,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -28,15 +29,56 @@ const DEFAULT_DRIVER_COORDS = {
 
 export default function DriverScreen() {
   const [userProfile, setUserProfile] = useState(null);
-  const { isAvailable, isUpdating, toggleAvailability } = useDriverAvailability(false);
+  const { isAvailable, isUpdating, toggleAvailability } = useDriverAvailability(true);
 
   // Tọa độ GPS của tài xế
   const [driverCoords, setDriverCoords] = useState(DEFAULT_DRIVER_COORDS);
+
+  // Cuốc xe đang xem chi tiết trong Modal ("sau đó tài xế bấm vào xem chuyến, ok thì nhận")
+  const [selectedOfferForDetail, setSelectedOfferForDetail] = useState(null);
 
   // Danh sách lời mời cuốc xe từ AI Matching
   const [pendingOffers, setPendingOffers] = useState([]);
   const [isAccepting, setIsAccepting] = useState(false);
   const [isRejecting, setIsRejecting] = useState(false);
+
+  // Cuốc xe mẫu quanh đây khi online (khớp với giao diện hình ảnh người dùng yêu cầu)
+  const sampleNearbyRides = useMemo(() => [
+    {
+      offerId: 'sample-ride-1',
+      tripId: 'sample-trip-1',
+      shippFare: 45000,
+      distanceKm: 2.5,
+      etaMinutes: 8,
+      driverDistanceKm: 1.2,
+      driverEtaMinutes: 3,
+      pickUpAddress: 'Ngã tư Sở, Đống Đa, Hà Nội',
+      destinationAddress: 'Keangnam Landmark 72, Phạm Hùng, Nam Từ Liêm',
+      vehicleType: 'MOTORBIKE',
+      isSample: true,
+    },
+    {
+      offerId: 'sample-ride-2',
+      tripId: 'sample-trip-2',
+      shippFare: 32000,
+      distanceKm: 1.8,
+      etaMinutes: 6,
+      driverDistanceKm: 0.9,
+      driverEtaMinutes: 2,
+      pickUpAddress: 'Vincom Center Phạm Ngọc Thạch, Đống Đa',
+      destinationAddress: 'Đại học Bách Khoa Hà Nội, Hai Bà Trưng',
+      vehicleType: 'MOTORBIKE',
+      isSample: true,
+    },
+  ], []);
+
+  // Danh sách cuốc xe hiển thị: Ưu tiên pendingOffers thực tế từ AI Matching, nếu chưa có thì hiển thị cuốc quanh đây
+  const displayedOffers = useMemo(() => {
+    if (pendingOffers && pendingOffers.length > 0) {
+      return pendingOffers;
+    }
+    return sampleNearbyRides;
+  }, [pendingOffers, sampleNearbyRides]);
 
   // Cuốc xe đang nhận và thực hiện
   const [activeTrip, setActiveTrip] = useState(null);
@@ -144,8 +186,38 @@ export default function DriverScreen() {
 
   // Nhận cuốc xe (Hỗ trợ cả cuốc mới & cuốc gối đầu)
   const handleAcceptOffer = async (offer) => {
+    if (!offer) return;
     setIsAccepting(true);
     try {
+      setSelectedOfferForDetail(null);
+
+      // Chuyển sang màn hình Chi tiết cuốc xe & Thông tin khách hàng
+      const tripDetail = {
+        id: offer.tripId || 'TRIP-' + Date.now(),
+        status: TRIP_STATUS.DRIVER_ASSIGNED,
+        shippFare: offer.shippFare || 45000,
+        pickUpAddress: offer.pickUpAddress,
+        destinationAddress: offer.destinationAddress,
+        vehicleType: offer.vehicleType || 'MOTORBIKE',
+        customerName: offer.customerName || 'Nguyễn Văn An',
+        customerPhone: offer.customerPhone || '0988123456',
+        customerRating: '4.9',
+        distanceKm: offer.distanceKm || '2.5',
+      };
+
+      if (!offer.isSample) {
+        await tripService.acceptTrip(offer.tripId);
+      }
+      setPendingOffers([]);
+      router.push({
+        pathname: '/driver-active-trip',
+        params: {
+          tripId: tripDetail.id,
+          tripData: JSON.stringify(tripDetail),
+        },
+      });
+      return;
+
       await tripService.acceptTrip(offer.tripId);
       setPendingOffers([]);
       if (activeTrip) {
@@ -307,8 +379,8 @@ export default function DriverScreen() {
                   <ThemedText style={styles.avatarText}>{initialLetter}</ThemedText>
                 </View>
                 <View style={styles.nameBlock}>
-                  <ThemedText style={styles.driverRoleLabel}>Đối tác Tài xế T&M</ThemedText>
-                  <ThemedText style={styles.driverFullName}>{driverName}</ThemedText>
+                  <ThemedText style={styles.driverRoleLabel}>Tài xế</ThemedText>
+                  <ThemedText style={styles.driverFullName}>{driverName} ⭐ 4.9</ThemedText>
                 </View>
               </View>
 
@@ -346,7 +418,19 @@ export default function DriverScreen() {
             </View>
           </View>
 
-          {/* 2. Thẻ hiển thị vị trí GPS hiện tại của Tài xế */}
+          {/* 2. Thẻ Thu nhập hôm nay (Khớp với Image 1) */}
+          <View style={styles.incomeCard}>
+            <ThemedText style={styles.incomeHeader}>Thu nhập hôm nay</ThemedText>
+            <View style={styles.incomeMiddleRow}>
+              <ThemedText style={styles.incomeValue}>450.000đ</ThemedText>
+              <View style={styles.incomeIconBox}>
+                <Ionicons name="bar-chart" size={22} color="#00B5B8" />
+              </View>
+            </View>
+            <ThemedText style={styles.incomeFooterText}>12 Chuyến   4h 30p Online</ThemedText>
+          </View>
+
+          {/* 3. Thẻ hiển thị vị trí GPS hiện tại của Tài xế */}
           {isAvailable && (
             <>
               <View style={styles.gpsCard}>
@@ -467,130 +551,237 @@ export default function DriverScreen() {
                   <ThemedText style={styles.activeStepBtnText}>{getNextActionLabel()}</ThemedText>
                 )}
               </Pressable>
-            </View>
-          ) : pendingOffers.length > 0 ? (
-            /* TRẠNG THÁI: CÓ LỜI MỜI CUỐC XE TỪ AI MATCHING */
-            <View>
-              <ThemedText style={{ fontSize: 14, fontWeight: '700', color: '#EA580C', marginBottom: 12 }}>
-                ⚡ CÓ {pendingOffers.length} CUỐC XE ĐƯỢC AI PHÂN PHỐI CHO BẠN:
-              </ThemedText>
 
-              {pendingOffers.map((offer) => (
-                <View key={offer.offerId} style={styles.offerCard}>
-                  {/* Badge AI & Cước phí */}
-                  <View style={styles.offerHeader}>
-                    <View style={styles.aiBadge}>
-                      <Ionicons name="sparkles" size={14} color="#EA580C" />
-                      <ThemedText style={styles.aiBadgeText}>
-                        Đề xuất AI {offer.aiRank ? `(Hạng ${offer.aiRank})` : ''}
+              {/* Cuốc xe gối đầu khi đang chở khách (Back-to-back Dispatch) */}
+              {activeTrip.status === TRIP_STATUS.IN_PROGRESS && pendingOffers.length > 0 && (
+                <View style={{ marginTop: 20 }}>
+                  <ThemedText style={{ fontSize: 14, fontWeight: '700', color: '#0F766E', marginBottom: 10 }}>
+                    ⚡ CÓ {pendingOffers.length} CUỐC GỐI ĐẦU ĐƯỢC GỢI Ý CHO BẠN:
+                  </ThemedText>
+                  {pendingOffers.map((offer) => (
+                    <Pressable
+                      key={offer.offerId}
+                      style={styles.nearbyRideCard}
+                      onPress={() => setSelectedOfferForDetail(offer)}
+                    >
+                      <View style={styles.rideCardTopRow}>
+                        <ThemedText style={styles.ridePrice}>
+                          {Number(offer.shippFare || 25000).toLocaleString('vi-VN')}đ
+                        </ThemedText>
+                        <View style={styles.distancePill}>
+                          <ThemedText style={styles.distancePillText}>
+                            {offer.distanceKm ? offer.distanceKm.toFixed(1) : '2.5'} km
+                          </ThemedText>
+                        </View>
+                      </View>
+                      <View style={styles.dashedSeparator} />
+                      <View style={styles.rideRouteRow}>
+                        <Ionicons name="radio-button-on" size={18} color="#00B5B8" style={{ marginTop: 1 }} />
+                        <ThemedText style={styles.rideAddressText} numberOfLines={2}>
+                          {offer.pickUpAddress}
+                        </ThemedText>
+                      </View>
+                      <View style={[styles.rideRouteRow, { marginBottom: 0 }]}>
+                        <Ionicons name="radio-button-on" size={18} color="#F97316" style={{ marginTop: 1 }} />
+                        <ThemedText style={styles.rideAddressText} numberOfLines={2}>
+                          {offer.destinationAddress}
+                        </ThemedText>
+                      </View>
+                      <Pressable
+                        style={styles.acceptRideBtn}
+                        onPress={() => handleAcceptOffer(offer)}
+                        disabled={isAccepting}
+                      >
+                        {isAccepting ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <ThemedText style={styles.acceptRideBtnText}>Nhận cuốc gối đầu</ThemedText>
+                        )}
+                      </Pressable>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </View>
+          ) : (
+            /* TRẠNG THÁI: ONLINE VÀ ĐANG CHỜ / CÓ CUỐC XE QUANH ĐÂY */
+            <View>
+              {/* Tiêu đề danh sách cuốc xe (Khớp với Image 1) */}
+              <View style={styles.sectionHeaderRow}>
+                <ThemedText style={styles.sectionTitle}>Cuốc xe quanh đây</ThemedText>
+                <ThemedText style={styles.sectionBadge}>
+                  ({displayedOffers.length} cuốc mới)
+                </ThemedText>
+              </View>
+
+              {/* Danh sách thẻ cuốc xe (Khớp hoàn toàn với Image 1) */}
+              {displayedOffers.map((offer) => (
+                <Pressable
+                  key={offer.offerId}
+                  style={styles.nearbyRideCard}
+                  onPress={() => setSelectedOfferForDetail(offer)}
+                >
+                  {/* Dòng trên: Giá cước & Khoảng cách */}
+                  <View style={styles.rideCardTopRow}>
+                    <ThemedText style={styles.ridePrice}>
+                      {Number(offer.shippFare || 25000).toLocaleString('vi-VN')}đ
+                    </ThemedText>
+                    <View style={styles.distancePill}>
+                      <ThemedText style={styles.distancePillText}>
+                        {offer.distanceKm ? offer.distanceKm.toFixed(1) : '2.5'} km
                       </ThemedText>
                     </View>
-                    <ThemedText style={styles.fareHighlight}>
-                      +{Number(offer.shippFare || 25000).toLocaleString('vi-VN')} đ
+                  </View>
+
+                  {/* Dòng kẻ đứt (Dashed Separator) */}
+                  <View style={styles.dashedSeparator} />
+
+                  {/* Điểm đón khách (Chấm xanh) */}
+                  <View style={styles.rideRouteRow}>
+                    <Ionicons name="radio-button-on" size={18} color="#00B5B8" style={{ marginTop: 1 }} />
+                    <ThemedText style={styles.rideAddressText} numberOfLines={2}>
+                      {offer.pickUpAddress}
                     </ThemedText>
                   </View>
 
-                  {offer.backToBack && (
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        backgroundColor: '#F0FDFA',
-                        borderColor: '#0D9488',
-                        borderWidth: 1,
-                        borderRadius: 8,
-                        paddingHorizontal: 8,
-                        paddingVertical: 4,
-                        marginBottom: 10,
-                      }}
-                    >
-                      <Ionicons name="repeat" size={14} color="#0D9488" style={{ marginRight: 6 }} />
-                      <ThemedText style={{ fontSize: 11, fontWeight: '700', color: '#0F766E' }}>
-                        ⚡ Cuốc gối đầu (Khách đón gần điểm trả của bạn)
-                      </ThemedText>
-                    </View>
-                  )}
-
-                  {/* Lộ trình đón - trả */}
-                  <View style={styles.offerRouteBox}>
-                    <View style={styles.offerRouteRow}>
-                      <Ionicons name="location" size={18} color="#10B981" />
-                      <ThemedText style={styles.offerRouteText} numberOfLines={2}>
-                        <ThemedText style={{ fontWeight: '700' }}>Đón: </ThemedText>
-                        {offer.pickUpAddress}
-                      </ThemedText>
-                    </View>
-
-                    <View style={[styles.offerRouteRow, { marginBottom: 0 }]}>
-                      <Ionicons name="flag" size={18} color="#EF4444" />
-                      <ThemedText style={styles.offerRouteText} numberOfLines={2}>
-                        <ThemedText style={{ fontWeight: '700' }}>Đến: </ThemedText>
-                        {offer.destinationAddress}
-                      </ThemedText>
-                    </View>
+                  {/* Điểm trả khách (Chấm cam) */}
+                  <View style={[styles.rideRouteRow, { marginBottom: 0 }]}>
+                    <Ionicons name="radio-button-on" size={18} color="#F97316" style={{ marginTop: 1 }} />
+                    <ThemedText style={styles.rideAddressText} numberOfLines={2}>
+                      {offer.destinationAddress}
+                    </ThemedText>
                   </View>
 
-                  {/* Cự ly & Thời gian đón */}
-                  <View style={styles.offerMetaRow}>
-                    <View style={styles.metaItem}>
-                      <Ionicons name="navigate-outline" size={16} color="#6B7280" />
-                      <ThemedText style={styles.metaText}>
-                        Khoảng cách: {offer.distanceKm ? offer.distanceKm.toFixed(1) : '1.2'} km
-                      </ThemedText>
-                    </View>
-                    <View style={styles.metaItem}>
-                      <Ionicons name="time-outline" size={16} color="#6B7280" />
-                      <ThemedText style={styles.metaText}>
-                        Tiếp cận: ~{offer.etaMinutes ? Math.round(offer.etaMinutes) : '3'} phút
-                      </ThemedText>
-                    </View>
-                    <View style={styles.metaItem}>
-                      <ThemedText style={styles.metaText}>
-                        {offer.vehicleType === 'CAR' ? '🚗 Ô tô' : '🛵 Xe máy'}
-                      </ThemedText>
-                    </View>
-                  </View>
-
-                  {/* Nút Từ chối & Nhận cuốc */}
-                  <View style={styles.offerActionsRow}>
-                    <Pressable
-                      style={styles.rejectBtn}
-                      onPress={() => handleRejectOffer(offer)}
-                      disabled={isRejecting || isAccepting}
-                    >
-                      <ThemedText style={styles.rejectBtnText}>Bỏ qua</ThemedText>
-                    </Pressable>
-
-                    <Pressable
-                      style={styles.acceptBtn}
-                      onPress={() => handleAcceptOffer(offer)}
-                      disabled={isAccepting || isRejecting}
-                    >
-                      {isAccepting ? (
-                        <ActivityIndicator size="small" color="#FFFFFF" />
-                      ) : (
-                        <ThemedText style={styles.acceptBtnText}>NHẬN CHUYẾN</ThemedText>
-                      )}
-                    </Pressable>
-                  </View>
-                </View>
+                  {/* Nút Nhận chuyến trực tiếp */}
+                  <Pressable
+                    style={styles.acceptRideBtn}
+                    onPress={() => handleAcceptOffer(offer)}
+                    disabled={isAccepting}
+                  >
+                    {isAccepting ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <ThemedText style={styles.acceptRideBtnText}>Nhận chuyến</ThemedText>
+                    )}
+                  </Pressable>
+                </Pressable>
               ))}
-            </View>
-          ) : (
-            /* TRẠNG THÁI: ONLINE VÀ ĐANG CHỜ CUỐC */
-            <View style={styles.onlineStateContainer}>
-              <View style={styles.radarPulse}>
-                <Ionicons name="radio" size={36} color="#00B5B8" />
-              </View>
-              <ThemedText style={styles.onlineTitle}>Đang quét cuốc xe xung quanh...</ThemedText>
-              <ThemedText style={styles.onlineSubtitle}>
-                Hệ thống AI Matching đang tìm và xếp hạng các chuyến đi gần tọa độ của bạn nhất.
-              </ThemedText>
             </View>
           )}
         </ScrollView>
       </SafeAreaView>
 
+      {/* Modal Chi tiết chuyến xe ("sau đó tài xế bấm vào xem chuyến, ok thì nhận") */}
+      <Modal
+        visible={!!selectedOfferForDetail}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedOfferForDetail(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            {/* Header Modal */}
+            <View style={styles.modalHeader}>
+              <View>
+                <ThemedText style={styles.modalTitle}>Chi tiết chuyến xe</ThemedText>
+                <ThemedText style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>
+                  Mã cuốc: #{String(selectedOfferForDetail?.offerId || '').slice(-6).toUpperCase()}
+                </ThemedText>
+              </View>
+              <Pressable
+                style={styles.modalCloseBtn}
+                onPress={() => setSelectedOfferForDetail(null)}
+                hitSlop={8}
+              >
+                <Ionicons name="close" size={24} color="#6B7280" />
+              </Pressable>
+            </View>
+
+            {/* Tiền cước nổi bật */}
+            <ThemedText style={styles.modalPriceHighlight}>
+              {Number(selectedOfferForDetail?.shippFare || 25000).toLocaleString('vi-VN')} đ
+            </ThemedText>
+
+            {/* Lộ trình đón - trả */}
+            <View style={styles.modalSection}>
+              <View style={[styles.rideRouteRow, { marginBottom: 12 }]}>
+                <Ionicons name="radio-button-on" size={20} color="#00B5B8" style={{ marginTop: 1 }} />
+                <View style={{ marginLeft: 8, flex: 1 }}>
+                  <ThemedText style={{ fontSize: 11, fontWeight: '700', color: '#00B5B8' }}>
+                    ĐIỂM ĐÓN KHÁCH
+                  </ThemedText>
+                  <ThemedText style={{ fontSize: 14, color: '#111827', fontWeight: '600', marginTop: 2 }}>
+                    {selectedOfferForDetail?.pickUpAddress}
+                  </ThemedText>
+                </View>
+              </View>
+
+              <View style={[styles.rideRouteRow, { marginBottom: 0 }]}>
+                <Ionicons name="radio-button-on" size={20} color="#F97316" style={{ marginTop: 1 }} />
+                <View style={{ marginLeft: 8, flex: 1 }}>
+                  <ThemedText style={{ fontSize: 11, fontWeight: '700', color: '#EA580C' }}>
+                    ĐIỂM TRẢ KHÁCH
+                  </ThemedText>
+                  <ThemedText style={{ fontSize: 14, color: '#111827', fontWeight: '600', marginTop: 2 }}>
+                    {selectedOfferForDetail?.destinationAddress}
+                  </ThemedText>
+                </View>
+              </View>
+            </View>
+
+            {/* Chi tiết thông số cuốc xe */}
+            <View style={styles.modalSection}>
+              <View style={styles.modalRow}>
+                <ThemedText style={styles.modalLabel}>Khoảng cách di chuyển:</ThemedText>
+                <ThemedText style={styles.modalValue}>
+                  {selectedOfferForDetail?.distanceKm ? selectedOfferForDetail.distanceKm.toFixed(1) : '2.5'} km
+                </ThemedText>
+              </View>
+
+              <View style={styles.modalRow}>
+                <ThemedText style={styles.modalLabel}>Khoảng cách tiếp cận:</ThemedText>
+                <ThemedText style={styles.modalValue}>
+                  ~{selectedOfferForDetail?.driverDistanceKm || '1.2'} km (ETA: ~{selectedOfferForDetail?.driverEtaMinutes || 3} phút)
+                </ThemedText>
+              </View>
+
+              <View style={styles.modalRow}>
+                <ThemedText style={styles.modalLabel}>Loại phương tiện:</ThemedText>
+                <ThemedText style={styles.modalValue}>
+                  {selectedOfferForDetail?.vehicleType === 'CAR' ? '🚗 Ô tô (Car)' : '🛵 Xe máy (Bike)'}
+                </ThemedText>
+              </View>
+
+              <View style={[styles.modalRow, { marginBottom: 0 }]}>
+                <ThemedText style={styles.modalLabel}>Hình thức thanh toán:</ThemedText>
+                <ThemedText style={styles.modalValue}>Tiền mặt / Trực tiếp</ThemedText>
+              </View>
+            </View>
+
+            {/* Nút hành động */}
+            <View style={styles.modalActions}>
+              <Pressable
+                style={styles.modalRejectBtn}
+                onPress={() => setSelectedOfferForDetail(null)}
+              >
+                <ThemedText style={styles.modalRejectText}>Bỏ qua</ThemedText>
+              </Pressable>
+
+              <Pressable
+                style={styles.modalAcceptBtn}
+                onPress={() => handleAcceptOffer(selectedOfferForDetail)}
+                disabled={isAccepting}
+              >
+                {isAccepting ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <ThemedText style={styles.modalAcceptText}>Nhận chuyến</ThemedText>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ThemedView>
   );
 }

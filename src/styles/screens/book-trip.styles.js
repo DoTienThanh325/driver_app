@@ -171,11 +171,80 @@ export const bookTripStyles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 4,
   },
+  fareBreakdownBox: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  fareBadgeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  farePeakBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  farePeakBadgeRegular: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+  },
+  farePeakBadgePeak: {
+    backgroundColor: '#FFF7ED',
+    borderColor: '#FED7AA',
+  },
+  farePeakTextRegular: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#15803D',
+    marginLeft: 4,
+  },
+  farePeakTextPeak: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#C2410C',
+    marginLeft: 4,
+  },
+  peakToggleBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#E6F8F8',
+    borderRadius: 8,
+  },
+  peakToggleText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#00B5B8',
+  },
+  fareBreakdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  fareBreakdownLabel: {
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  fareBreakdownValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#111827',
+  },
   fareRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 14,
+    paddingTop: 4,
   },
   fareLabel: {
     fontSize: 14,
@@ -410,4 +479,92 @@ export const bookTripStyles = StyleSheet.create({
     flex: 1,
     lineHeight: 16,
   },
+
+  // Tiến trình từng bước (Step Indicators)
+  stepIndicatorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 16,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  stepItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  stepBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+  },
+  stepBadgeActive: {
+    backgroundColor: '#00B5B8',
+  },
+  stepBadgeCompleted: {
+    backgroundColor: '#10B981',
+  },
+  stepBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6B7280',
+  },
+  stepBadgeTextActive: {
+    color: '#FFFFFF',
+  },
+  stepTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#9CA3AF',
+  },
+  stepTitleActive: {
+    color: '#111827',
+    fontWeight: '700',
+  },
+  stepDivider: {
+    flex: 1,
+    height: 2,
+    backgroundColor: '#E5E7EB',
+    marginHorizontal: 8,
+  },
+  stepDividerActive: {
+    backgroundColor: '#00B5B8',
+  },
+
+  // Nút xác nhận từng bước
+  confirmStepBtn: {
+    backgroundColor: '#00B5B8',
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 14,
+  },
+  confirmStepBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  reselectBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+  },
+  reselectBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#00B5B8',
+  },
+
 });

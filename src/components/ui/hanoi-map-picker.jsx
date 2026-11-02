@@ -23,7 +23,7 @@ const HANOI_CENTER = {
 };
 
 export const HanoiMapPicker = forwardRef(function HanoiMapPicker(
-  { onLocationChange, onAddressResolved, initialCoords, currentAddress },
+  { onLocationChange, onAddressResolved, initialCoords, currentAddress, modalOnly = false },
   ref
 ) {
   const inlineWebviewRef = useRef(null);
@@ -124,6 +124,8 @@ export const HanoiMapPicker = forwardRef(function HanoiMapPicker(
 
   // Expose các phương thức ra component cha qua ref
   useImperativeHandle(ref, () => ({
+    openModal: () => setIsFullscreen(true),
+    closeModal: () => setIsFullscreen(false),
     flyTo,
     zoomIn,
     zoomOut,
@@ -337,6 +339,112 @@ export const HanoiMapPicker = forwardRef(function HanoiMapPicker(
     }
     setIsFullscreen(false);
   };
+
+  if (modalOnly) {
+    return (
+      <Modal
+        visible={isFullscreen}
+        animationType="slide"
+        onRequestClose={() => setIsFullscreen(false)}
+      >
+        <SafeAreaView style={styles.fullscreenModalContainer}>
+          <View style={styles.fullscreenHeader}>
+            <Pressable
+              style={styles.fullscreenBackButton}
+              onPress={() => setIsFullscreen(false)}
+            >
+              <Ionicons name="close" size={22} color="#111827" />
+            </Pressable>
+
+            <View style={styles.fullscreenSearchWrapper}>
+              <Ionicons name="search" size={17} color="#00B5B8" style={{ marginLeft: 10 }} />
+              <TextInput
+                style={styles.fullscreenSearchInput}
+                placeholder="Tìm địa chỉ (VD: học viện bưu chính viễn thông)..."
+                placeholderTextColor="#9CA3AF"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                onSubmitEditing={() => handleSearchInModal(searchQuery)}
+                returnKeyType="search"
+              />
+              {isSearchingModal ? (
+                <ActivityIndicator size="small" color="#00B5B8" style={{ marginRight: 8 }} />
+              ) : searchQuery.length > 0 ? (
+                <Pressable
+                  onPress={() => setSearchQuery('')}
+                  hitSlop={8}
+                  style={{ marginRight: 6 }}
+                >
+                  <Ionicons name="close-circle" size={17} color="#9CA3AF" />
+                </Pressable>
+              ) : null}
+              <Pressable
+                style={styles.fullscreenSearchBtn}
+                onPress={() => handleSearchInModal(searchQuery)}
+                disabled={isSearchingModal}
+              >
+                <ThemedText style={styles.fullscreenSearchBtnText}>Tìm</ThemedText>
+              </Pressable>
+            </View>
+
+            <Pressable
+              style={styles.fullscreenGpsButton}
+              onPress={handleGetGPSLocation}
+              disabled={isLocatingGPS}
+            >
+              {isLocatingGPS ? (
+                <ActivityIndicator size="small" color="#00B5B8" />
+              ) : (
+                <Ionicons name="locate-outline" size={20} color="#00B5B8" />
+              )}
+            </Pressable>
+          </View>
+
+          <View style={styles.fullscreenAddressBanner}>
+            <Ionicons name="location" size={16} color="#00B5B8" style={{ marginTop: 2 }} />
+            <ThemedText style={styles.fullscreenAddressText} numberOfLines={2}>
+              {liveAddress || currentAddress || 'Kéo ghim hoặc nhập tìm kiếm để chọn vị trí'}
+            </ThemedText>
+          </View>
+
+          <View style={styles.fullscreenMapWrapper}>
+            <WebView
+              ref={modalWebviewRef}
+              originWhitelist={['*']}
+              source={{
+                html: getHtmlContent(currentCoords.latitude, currentCoords.longitude),
+              }}
+              onMessage={handleMessage}
+              scrollEnabled={false}
+              javaScriptEnabled={true}
+              domStorageEnabled={true}
+              mixedContentMode="always"
+              style={styles.webview}
+            />
+
+            <View style={styles.fullscreenZoomControls}>
+              <Pressable style={styles.controlButton} onPress={zoomIn}>
+                <Ionicons name="add-outline" size={22} color="#111827" />
+              </Pressable>
+              <Pressable style={styles.controlButton} onPress={zoomOut}>
+                <Ionicons name="remove-outline" size={22} color="#111827" />
+              </Pressable>
+            </View>
+          </View>
+
+          <View style={styles.fullscreenFooter}>
+            <Pressable
+              style={styles.fullscreenConfirmButton}
+              onPress={handleConfirmFullscreen}
+            >
+              <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+              <ThemedText style={styles.fullscreenConfirmText}>XÁC NHẬN VỊ TRÍ NÀY</ThemedText>
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      </Modal>
+    );
+  }
 
   return (
     <View style={styles.container}>

@@ -40,6 +40,7 @@ export default function RootLayout() {
           <Stack.Screen name="register" options={{ title: 'Đăng ký', headerShown: false }} />
           <Stack.Screen name="driver-register" options={{ title: 'Đăng ký Tài xế', headerShown: false }} />
           <Stack.Screen name="driver-profile" options={{ title: 'Hồ sơ Tài xế', headerShown: false }} />
+          <Stack.Screen name="driver-active-trip" options={{ title: 'Chuyến xe đang chạy', headerShown: false }} />
         </Stack>
       </ThemeProvider>
     </GestureHandlerRootView>

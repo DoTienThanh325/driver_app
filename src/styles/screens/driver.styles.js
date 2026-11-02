@@ -75,9 +75,12 @@ export const driverStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
+    backgroundColor: '#E6F8F8',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#B2EBF2',
+    marginTop: 6,
   },
   switchInfo: {
     flex: 1,
@@ -91,7 +94,8 @@ export const driverStyles = StyleSheet.create({
   },
   switchSubtitle: {
     fontSize: 12,
-    color: '#6B7280',
+    color: '#00B5B8',
+    fontWeight: '600',
   },
 
   // Thẻ giả lập vị trí GPS của tài xế (tiện test matching)
@@ -362,5 +366,226 @@ export const driverStyles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '800',
+  },
+
+  // THẺ THU NHẬP HÔM NAY (MATCH IMAGE 1)
+  incomeCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 16,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  incomeHeader: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  incomeMiddleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  incomeValue: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  incomeIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#E0F7F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  incomeFooterText: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+
+  // TIÊU ĐỀ DANH SÁCH CUỐC XE QUANH ĐÂY (MATCH IMAGE 1)
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    marginTop: 2,
+    paddingHorizontal: 2,
+  },
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  sectionBadge: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#00B5B8',
+  },
+
+  // THẺ CUỐC XE QUANH ĐÂY (MATCH IMAGE 1)
+  nearbyRideCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 16,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+  },
+  rideCardTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  ridePrice: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#00B5B8',
+  },
+  distancePill: {
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  distancePillText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  dashedSeparator: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    borderStyle: 'dashed',
+    marginVertical: 14,
+  },
+  rideRouteRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+  },
+  rideAddressText: {
+    fontSize: 14,
+    color: '#374151',
+    marginLeft: 8,
+    flex: 1,
+    lineHeight: 20,
+    fontWeight: '500',
+  },
+  acceptRideBtn: {
+    backgroundColor: '#00B5B8',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 14,
+  },
+  acceptRideBtnText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+
+  // MODAL XEM CHI TIẾT CUỐC XE ("sau đó tài xế bấm vào xem chuyến, ok thì nhận")
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 36,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  modalCloseBtn: {
+    padding: 4,
+  },
+  modalPriceHighlight: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#00B5B8',
+    marginBottom: 14,
+    textAlign: 'center',
+  },
+  modalSection: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 14,
+  },
+  modalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  modalLabel: {
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  modalValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 10,
+  },
+  modalRejectBtn: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalRejectText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#6B7280',
+  },
+  modalAcceptBtn: {
+    flex: 2,
+    backgroundColor: '#00B5B8',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalAcceptText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });
