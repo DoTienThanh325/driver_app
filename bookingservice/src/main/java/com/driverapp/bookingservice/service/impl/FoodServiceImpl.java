@@ -1,29 +1,37 @@
 package com.driverapp.bookingservice.service.impl;
 
+import com.driverapp.bookingservice.client.PaymentServiceClient;
 import com.driverapp.bookingservice.dto.request.CreateFoodRequest;
 import com.driverapp.bookingservice.dto.request.FoodOptionRequest;
 import com.driverapp.bookingservice.dto.request.UpdateFoodRequest;
+import com.driverapp.bookingservice.dto.response.FoodDetailResponse;
+import com.driverapp.bookingservice.dto.response.FoodListResponse;
 import com.driverapp.bookingservice.models.Business;
 import com.driverapp.bookingservice.models.Food;
 import com.driverapp.bookingservice.models.FoodOption;
+import com.driverapp.bookingservice.models.Restaurant;
 import com.driverapp.bookingservice.models.enums.BusinessRegistrationStatus;
 import com.driverapp.bookingservice.repository.BusinessRepository;
 import com.driverapp.bookingservice.repository.FoodRepository;
+import com.driverapp.bookingservice.repository.RestaurantRepository;
 import com.driverapp.bookingservice.service.FoodSearchService;
 import com.driverapp.bookingservice.service.FoodService;
 import com.driverapp.bookingservice.storage.FoodImageStorage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -31,9 +39,11 @@ import java.util.UUID;
 public class FoodServiceImpl implements FoodService {
 
     private final FoodRepository foodRepository;
+    private final RestaurantRepository restaurantRepository;
     private final BusinessRepository businessRepository;
     private final FoodSearchService foodSearchService;
     private final FoodImageStorage foodImageStorage;
+    private final PaymentServiceClient paymentServiceClient;
 
     // ------------------------------------------------------------------ CREATE
     @Override
@@ -243,5 +253,149 @@ public class FoodServiceImpl implements FoodService {
             opt.setPrice(dto.price());
             return opt;
         }).toList();
+    }
+
+    // ------------------------------------------------------------------ GET ALL FOODS
+    @Override
+    public Page<FoodListResponse> getAllFoods(String restaurantId, Pageable pageable) {
+        Page<Food> foodPage = (restaurantId != null && !restaurantId.isBlank())
+                ? foodRepository.findByRestaurantId(restaurantId, pageable)
+                : foodRepository.findAll(pageable);
+
+        if (foodPage.isEmpty()) {
+            return Page.empty(pageable);
+        }
+
+        // Tối ưu N+1: Lấy toàn bộ restaurantId của trang hiện tại và query 1 lần
+        Set<String> restaurantIds = foodPage.getContent().stream()
+                .map(Food::getRestaurantId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        Map<String, Restaurant> restaurantMap = restaurantRepository.findAllById(restaurantIds)
+                .stream()
+                .collect(Collectors.toMap(Restaurant::getId, Function.identity(), (k1, k2) -> k1));
+
+        List<FoodListResponse> content = foodPage.getContent().stream().map(food -> {
+            Restaurant res = restaurantMap.get(food.getRestaurantId());
+            String restaurantName = res != null ? res.getName() : null;
+
+            double minPrice = 0.0;
+            double maxPrice = 0.0;
+            String thumbnailUrl = null;
+
+            if (food.getOptions() != null && !food.getOptions().isEmpty()) {
+                minPrice = food.getOptions().stream().mapToDouble(FoodOption::getPrice).min().orElse(0.0);
+                maxPrice = food.getOptions().stream().mapToDouble(FoodOption::getPrice).max().orElse(0.0);
+                thumbnailUrl = food.getOptions().get(0).getImageUrl();
+            }
+
+            List<FoodListResponse.OptionItem> optionItems = food.getOptions() == null ? Collections.emptyList() :
+                    food.getOptions().stream().map(opt -> FoodListResponse.OptionItem.builder()
+                            .size(opt.getSize())
+                            .price(opt.getPrice())
+                            .imageUrl(opt.getImageUrl())
+                            .build()
+                    ).toList();
+
+            return FoodListResponse.builder()
+                    .id(food.getId())
+                    .name(food.getName())
+                    .restaurantId(food.getRestaurantId())
+                    .restaurantName(restaurantName)
+                    .minPrice(minPrice)
+                    .maxPrice(maxPrice)
+                    .averageRating(food.getAverageRating() != null ? food.getAverageRating() : 5.0)
+                    .totalReviews(food.getTotalReviews() != null ? food.getTotalReviews() : 0)
+                    .thumbnailUrl(thumbnailUrl)
+                    .options(optionItems)
+                    .createdAt(food.getCreatedAt())
+                    .build();
+        }).toList();
+
+        return new PageImpl<>(content, pageable, foodPage.getTotalElements());
+    }
+
+    // ------------------------------------------------------------------ GET FOOD DETAIL
+    @Override
+    public FoodDetailResponse getFoodDetail(String id, Double userLat, Double userLng) {
+        Food food = foodRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy món ăn với ID: " + id));
+
+        Restaurant restaurant = null;
+        if (food.getRestaurantId() != null) {
+            restaurant = restaurantRepository.findById(food.getRestaurantId()).orElse(null);
+        }
+
+        Double distanceKm = null;
+        if (restaurant != null && userLat != null && userLng != null
+                && restaurant.getLocationLatitude() != 0.0 && restaurant.getLocationLongitude() != 0.0) {
+            distanceKm = calculateDistance(userLat, userLng, restaurant.getLocationLatitude(), restaurant.getLocationLongitude());
+            distanceKm = Math.round(distanceKm * 100.0) / 100.0;
+        }
+
+        // Lấy voucher nhà hàng từ paymentservice
+        List<FoodDetailResponse.VoucherInfo> voucherInfos = Collections.emptyList();
+        if (restaurant != null && restaurant.getId() != null) {
+            List<PaymentServiceClient.RestaurantVoucherDto> vouchers = paymentServiceClient.getRestaurantVouchers(restaurant.getId());
+            if (vouchers != null && !vouchers.isEmpty()) {
+                voucherInfos = vouchers.stream().map(v -> FoodDetailResponse.VoucherInfo.builder()
+                        .id(v.getId())
+                        .discount(v.getDiscount())
+                        .maxDiscount(v.getMaxDiscount())
+                        .minValue(v.getMinValue())
+                        .type(v.getType())
+                        .expiredAt(v.getExpiredAt())
+                        .build()
+                ).toList();
+            }
+        }
+
+        List<FoodDetailResponse.OptionItem> optionItems = food.getOptions() == null ? Collections.emptyList() :
+                food.getOptions().stream().map(opt -> FoodDetailResponse.OptionItem.builder()
+                        .size(opt.getSize())
+                        .price(opt.getPrice())
+                        .imageUrl(opt.getImageUrl())
+                        .build()
+                ).toList();
+
+        FoodDetailResponse.FoodInfo foodInfo = FoodDetailResponse.FoodInfo.builder()
+                .id(food.getId())
+                .name(food.getName())
+                .averageRating(food.getAverageRating() != null ? food.getAverageRating() : 5.0)
+                .totalReviews(food.getTotalReviews() != null ? food.getTotalReviews() : 0)
+                .options(optionItems)
+                .createdAt(food.getCreatedAt())
+                .build();
+
+        FoodDetailResponse.RestaurantInfo restaurantInfo = null;
+        if (restaurant != null) {
+            restaurantInfo = FoodDetailResponse.RestaurantInfo.builder()
+                    .id(restaurant.getId())
+                    .name(restaurant.getName())
+                    .locationAddress(restaurant.getLocationAddress())
+                    .locationLatitude(restaurant.getLocationLatitude())
+                    .locationLongitude(restaurant.getLocationLongitude())
+                    .rating(restaurant.getRating() != null ? restaurant.getRating() : 5.0)
+                    .distanceKm(distanceKm)
+                    .build();
+        }
+
+        return FoodDetailResponse.builder()
+                .food(foodInfo)
+                .restaurant(restaurantInfo)
+                .vouchers(voucherInfos)
+                .build();
+    }
+
+    private double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+        final int R = 6371;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
     }
 }

@@ -2,11 +2,18 @@ package com.driverapp.bookingservice.controller;
 
 import com.driverapp.bookingservice.dto.request.CreateFoodRequest;
 import com.driverapp.bookingservice.dto.request.UpdateFoodRequest;
+import com.driverapp.bookingservice.dto.response.FoodDetailResponse;
+import com.driverapp.bookingservice.dto.response.FoodListResponse;
 import com.driverapp.bookingservice.service.FoodService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
@@ -22,6 +29,26 @@ import java.util.UUID;
 public class FoodController {
 
     private final FoodService foodService;
+
+    @GetMapping
+    public ResponseEntity<Page<FoodListResponse>> getAllFoods(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String restaurantId,
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDirection) {
+        Sort.Direction direction = "asc".equalsIgnoreCase(sortDirection) ? Sort.Direction.ASC : Sort.Direction.DESC;
+        Pageable pageable = PageRequest.of(page, Math.min(size, 50), Sort.by(direction, sortBy));
+        return ResponseEntity.ok(foodService.getAllFoods(restaurantId, pageable));
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<FoodDetailResponse> getFoodDetail(
+            @PathVariable String id,
+            @RequestParam(required = false) Double userLat,
+            @RequestParam(required = false) Double userLng) {
+        return ResponseEntity.ok(foodService.getFoodDetail(id, userLat, userLng));
+    }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)

@@ -8,15 +8,18 @@
     "options": [
       {
         "size": "Đùi gà",
-        "price": 45000.0
+        "price": 45000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1598515214211-89d3c73ae83b?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Cánh gà",
-        "price": 40000.0
+        "price": 40000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1562967914-608f82629710?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Gà góc tư",
-        "price": 55000.0
+        "price": 55000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1626082927389-6cd097cdc6ec?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -35,11 +38,13 @@
     "options": [
       {
         "size": "Dĩa thường",
-        "price": 40000.0
+        "price": 40000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1555126634-323283e090fa?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Dĩa đặc biệt",
-        "price": 55000.0
+        "price": 55000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -58,11 +63,13 @@
     "options": [
       {
         "size": "Phần thường",
-        "price": 42000.0
+        "price": 42000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Thêm sườn",
-        "price": 60000.0
+        "price": 60000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1529193591184-b1d58069ecdd?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -81,11 +88,13 @@
     "options": [
       {
         "size": "Thường",
-        "price": 50000.0
+        "price": 50000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1668236543090-82eba5ee5976?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Đặc biệt",
-        "price": 65000.0
+        "price": 65000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1623341214825-9f4f963727da?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -104,11 +113,13 @@
     "options": [
       {
         "size": "Nửa con",
-        "price": 120000.0
+        "price": 120000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1598103442097-8b74394b95c6?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Nguyên con",
-        "price": 220000.0
+        "price": 220000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1606728035253-49e8a23146de?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -127,7 +138,8 @@
     "options": [
       {
         "size": "Tiêu chuẩn",
-        "price": 45000.0
+        "price": 45000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -146,11 +158,13 @@
     "options": [
       {
         "size": "Size M (9 inch)",
-        "price": 180000.0
+        "price": 180000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Size L (12 inch)",
-        "price": 260000.0
+        "price": 260000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -169,11 +183,13 @@
     "options": [
       {
         "size": "Size M (9 inch)",
-        "price": 195000.0
+        "price": 195000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1574071318508-1cdbab80d002?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Size L (12 inch)",
-        "price": 280000.0
+        "price": 280000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1593560708920-61dd98c46a4e?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -192,11 +208,13 @@
     "options": [
       {
         "size": "Size M",
-        "price": 165000.0
+        "price": 165000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1628840042765-356cda07504e?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Size L",
-        "price": 240000.0
+        "price": 240000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1534308983496-4fabb1a015ee?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -215,11 +233,13 @@
     "options": [
       {
         "size": "Size M",
-        "price": 38000.0
+        "price": 38000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1558857563-b371033873b8?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Size L",
-        "price": 48000.0
+        "price": 48000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1572490122747-3968b75cc699?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -238,11 +258,13 @@
     "options": [
       {
         "size": "Size M",
-        "price": 42000.0
+        "price": 42000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Size L",
-        "price": 52000.0
+        "price": 52000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -261,11 +283,13 @@
     "options": [
       {
         "size": "Size M",
-        "price": 45000.0
+        "price": 45000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1546173159-315724a31696?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Size L",
-        "price": 55000.0
+        "price": 55000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1534353473418-4cfa6c56fd38?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -284,11 +308,13 @@
     "options": [
       {
         "size": "Size M",
-        "price": 48000.0
+        "price": 48000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1536256263959-770b48d82b0a?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Size L",
-        "price": 58000.0
+        "price": 58000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -307,11 +333,13 @@
     "options": [
       {
         "size": "Tô vừa",
-        "price": 45000.0
+        "price": 45000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Tô lớn đầy đủ",
-        "price": 60000.0
+        "price": 60000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -330,11 +358,13 @@
     "options": [
       {
         "size": "Tô vừa",
-        "price": 50000.0
+        "price": 50000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1594998893017-36147cbcae05?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Tô lớn",
-        "price": 65000.0
+        "price": 65000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -353,11 +383,13 @@
     "options": [
       {
         "size": "Bát vừa",
-        "price": 55000.0
+        "price": 55000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Bát đặc biệt",
-        "price": 70000.0
+        "price": 70000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1503764654157-72d979d9af2f?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -376,11 +408,13 @@
     "options": [
       {
         "size": "Bát vừa",
-        "price": 50000.0
+        "price": 50000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1617093727343-374698b1b08d?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Bát đùi chặt",
-        "price": 65000.0
+        "price": 65000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -399,11 +433,13 @@
     "options": [
       {
         "size": "Nồi 2-3 người",
-        "price": 199000.0
+        "price": 199000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1547496502-affa22d38842?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Nồi 4-5 người",
-        "price": 299000.0
+        "price": 299000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1569058242253-92a9c755a0ec?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -422,11 +458,13 @@
     "options": [
       {
         "size": "Nồi vừa",
-        "price": 220000.0
+        "price": 220000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1553163147-622ab57be1c7?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Nồi lớn",
-        "price": 320000.0
+        "price": 320000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -445,11 +483,13 @@
     "options": [
       {
         "size": "Ổ vừa",
-        "price": 25000.0
+        "price": 25000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1626074353765-517a681e40be?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Ổ đặc biệt",
-        "price": 35000.0
+        "price": 35000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1600891964599-f61ba0e24092?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -468,11 +508,13 @@
     "options": [
       {
         "size": "Ổ thường",
-        "price": 28000.0
+        "price": 28000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1626074353765-517a681e40be?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Ổ thêm thịt",
-        "price": 38000.0
+        "price": 38000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -491,11 +533,13 @@
     "options": [
       {
         "size": "Suất vừa",
-        "price": 45000.0
+        "price": 45000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1559847844-5315695dadae?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Suất đặc biệt thêm chả",
-        "price": 60000.0
+        "price": 60000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1541544741938-0af808871cc0?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -514,7 +558,8 @@
     "options": [
       {
         "size": "Tô tiêu chuẩn",
-        "price": 45000.0
+        "price": 45000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {
@@ -533,11 +578,13 @@
     "options": [
       {
         "size": "Combo mini (1-2 người)",
-        "price": 250000.0
+        "price": 250000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1565680018434-b513d5e5fd47?auto=format&fit=crop&w=600&q=80"
       },
       {
         "size": "Combo đại dương (3-4 người)",
-        "price": 450000.0
+        "price": 450000.0,
+        "imageUrl": "https://images.unsplash.com/photo-1559847844-5315695dadae?auto=format&fit=crop&w=600&q=80"
       }
     ],
     "createdAt": {

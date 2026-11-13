@@ -1,5 +1,6 @@
 package com.driverapp.bookingservice.client;
 
+import com.driverapp.bookingservice.dto.response.UserInfoResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.client.loadbalancer.LoadBalancerInterceptor;
@@ -58,6 +59,21 @@ public class UserServiceClient {
             log.info("Thu hồi role {} thành công cho userId={}", roleCode, userId);
         } catch (Exception e) {
             log.warn("Không thể thu hồi role {} cho userId={}: {}", roleCode, userId, e.getMessage());
+        }
+    }
+
+    /**
+     * Lấy thông tin cơ bản của user (username, phoneNumber) từ User Service.
+     */
+    public UserInfoResponse getUserInfo(UUID userId) {
+        try {
+            return restClient.get()
+                    .uri("/api/users/{userId}", userId)
+                    .retrieve()
+                    .body(UserInfoResponse.class);
+        } catch (Exception e) {
+            log.warn("Không thể lấy thông tin user cho userId={}: {}", userId, e.getMessage());
+            return new UserInfoResponse(userId, "N/A", "N/A");
         }
     }
 }

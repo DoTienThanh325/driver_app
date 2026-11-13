@@ -2,6 +2,7 @@ package com.driverapp.paymentservice.service;
 
 import com.driverapp.paymentservice.dto.request.CreateDriverPaymentInfoRequest;
 import com.driverapp.paymentservice.dto.request.SwitchToPayBeforeRequest;
+import com.driverapp.paymentservice.dto.response.DriverPaymentInfoResponse;
 import com.driverapp.paymentservice.dto.response.TripPaymentResponse;
 import java.util.Map;
 import java.util.UUID;
@@ -24,8 +25,14 @@ public interface TripPaymentService {
     /** 5. Driver xác nhận đã nhận tiền chuyển khoản (PAY_BEFORE) - API có sẵn */
     Map<String, String> confirmPayment(String tripPaymentId, Jwt jwt);
 
-    /** 6. Driver đăng ký / cập nhật STK ngân hàng nhận tiền - API có sẵn */
+    /** 6. Driver đăng ký STK ngân hàng nhận tiền */
     Map<String, String> registerDriverPaymentInfo(CreateDriverPaymentInfoRequest request, Jwt jwt);
+
+    /** 6b. Lấy thông tin STK ngân hàng của tài xế */
+    DriverPaymentInfoResponse getDriverPaymentInfo(Jwt jwt);
+
+    /** 6c. Driver cập nhật (PATCH) STK ngân hàng nhận tiền */
+    Map<String, String> updateDriverPaymentInfo(CreateDriverPaymentInfoRequest request, Jwt jwt);
 
     /** 7. Tự động chốt thanh toán trực tiếp khi chuyến đi hoàn thành */
     Map<String, String> completePayDirectlyTripPayment(String tripId);
