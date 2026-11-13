@@ -6,21 +6,26 @@ import { userStorage } from '@/services/storage/user.storage';
 
 export default function TabLayout() {
   const [isDriver, setIsDriver] = useState(false);
+  const [isBusiness, setIsBusiness] = useState(false);
 
-  const checkDriverRole = useCallback(async () => {
-    const hasRole = await userStorage.isDriver();
-    setIsDriver(hasRole);
+  const checkRoles = useCallback(async () => {
+    const [hasDriverRole, hasBusinessRole] = await Promise.all([
+      userStorage.isDriver(),
+      userStorage.isBusiness(),
+    ]);
+    setIsDriver(hasDriverRole);
+    setIsBusiness(hasBusinessRole);
   }, []);
 
   useEffect(() => {
-    checkDriverRole();
+    checkRoles();
     const unsubscribe = userStorage.subscribe?.(() => {
-      checkDriverRole();
+      checkRoles();
     });
     return () => {
       unsubscribe?.();
     };
-  }, [checkDriverRole]);
+  }, [checkRoles]);
 
   return (
     <Tabs
@@ -92,7 +97,23 @@ export default function TabLayout() {
         }}
       />
 
-      {/* 4. Tab Ưu đãi */}
+      {/* 4. Tab Nhà hàng (Chỉ hiển thị khi có quyền BUSINESS) */}
+      <Tabs.Screen
+        name="restaurant"
+        options={{
+          href: isBusiness ? '/restaurant' : null,
+          title: 'Nhà hàng',
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name={focused ? 'restaurant' : 'restaurant-outline'}
+              size={size || 24}
+              color={color}
+            />
+          ),
+        }}
+      />
+
+      {/* 5. Tab Ưu đãi */}
       <Tabs.Screen
         name="promotions"
         options={{

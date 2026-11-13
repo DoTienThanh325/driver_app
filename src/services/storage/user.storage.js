@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { offlineCacheStorage } from './offline-cache.storage';
 
 const KEY_USER_PROFILE = 'tm_user_profile';
 
@@ -123,6 +124,7 @@ export const userStorage = {
   clearUserProfile: async () => {
     try {
       await AsyncStorage.removeItem(KEY_USER_PROFILE);
+      await offlineCacheStorage.clearAllCache();
       notifyUserProfileListeners(null);
     } catch (error) {
       console.error('Lỗi khi xóa user profile khỏi AsyncStorage:', error);

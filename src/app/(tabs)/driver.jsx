@@ -113,7 +113,27 @@ export default function DriverScreen() {
             </View>
           </View>
 
-          {/* 2. Trạng thái cuốc xe (Khi Tắt / Khi Bật) */}
+          {/* 2. Mục Các cuốc xe đã thực hiện */}
+          <Pressable
+            style={styles.historyButtonCard}
+            onPress={() => router.push('/driver-trips')}
+            android_ripple={{ color: '#E5E7EB' }}
+          >
+            <View style={styles.historyCardLeft}>
+              <View style={styles.historyIconBox}>
+                <Ionicons name="car-sport" size={24} color="#00B5B8" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <ThemedText style={styles.historyTitle}>Các cuốc xe đã thực hiện</ThemedText>
+                <ThemedText style={styles.historySubtitle}>
+                  Xem lịch sử cuốc xe & đánh giá từ khách hàng
+                </ThemedText>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+          </Pressable>
+
+          {/* 3. Trạng thái cuốc xe (Khi Tắt / Khi Bật) */}
           {!isAvailable ? (
             <View style={styles.offlineStateContainer}>
               <View style={styles.exclamationCircle}>

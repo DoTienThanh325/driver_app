@@ -8,6 +8,7 @@ import { ThemedView } from '@/components/themed-view';
 import { authService } from '@/services/auth.service';
 import { businessService } from '@/services/business.service';
 import { driverService } from '@/services/driver.service';
+import { paymentService } from '@/services/payment.service';
 import { userStorage } from '@/services/storage/user.storage';
 import { accountStyles as styles } from '@/styles/screens/account.styles';
 
@@ -17,6 +18,7 @@ export default function AccountScreen() {
   const [driverRegStatus, setDriverRegStatus] = useState('NOT_REGISTERED'); // NOT_REGISTERED | PENDING | REJECTED | APPROVED
   const [isBusiness, setIsBusiness] = useState(false);
   const [businessRegStatus, setBusinessRegStatus] = useState('NOT_REGISTERED'); // NOT_REGISTERED | PENDING | REJECTED | ACCEPTED
+  const [driverBankInfo, setDriverBankInfo] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const loadUserData = useCallback(async () => {
@@ -51,6 +53,18 @@ export default function AccountScreen() {
     setDriverRegStatus(driverStatus);
     setBusinessRegStatus(businessStatus);
 
+    // Tải thông tin tài khoản ngân hàng nếu là tài xế
+    if (hasDriverRole) {
+      try {
+        const bankData = await paymentService.getDriverPaymentInfo();
+        setDriverBankInfo(bankData?.bankAccountNumber ? bankData : null);
+      } catch {
+        setDriverBankInfo(null);
+      }
+    } else {
+      setDriverBankInfo(null);
+    }
+
     // [Chiến lược cập nhật Role]
     // Nếu hồ sơ tài xế đã APPROVED nhưng chưa có role DRIVER,
     // hoặc hồ sơ kinh doanh đã ACCEPTED nhưng chưa có role BUSINESS:
@@ -66,6 +80,15 @@ export default function AccountScreen() {
         const updatedBusiness = await userStorage.isBusiness();
         setIsDriver(updatedDriver);
         setIsBusiness(updatedBusiness);
+
+        if (updatedDriver) {
+          try {
+            const bData = await paymentService.getDriverPaymentInfo();
+            setDriverBankInfo(bData?.bankAccountNumber ? bData : null);
+          } catch {
+            setDriverBankInfo(null);
+          }
+        }
       }
     }
   }, []);
@@ -116,6 +139,10 @@ export default function AccountScreen() {
     router.push('/business-register');
   };
 
+  const handleBankLinkPress = () => {
+    router.push('/bank-link');
+  };
+
   const initialLetter = (profile?.fullName || profile?.username || 'T').charAt(0).toUpperCase();
 
   // Ánh xạ role của người dùng theo yêu cầu
@@ -142,9 +169,10 @@ export default function AccountScreen() {
 
   const hasDriverProfile = isDriver || (driverRegStatus && driverRegStatus !== 'NOT_REGISTERED');
   const hasBusinessProfile = isBusiness || (businessRegStatus && businessRegStatus !== 'NOT_REGISTERED');
+  const hasLinkedBank = Boolean(driverBankInfo?.bankAccountNumber);
 
-  const hasProfileItems = hasDriverProfile || hasBusinessProfile;
-  const hasExtensionItems = !hasDriverProfile || !hasBusinessProfile;
+  const hasProfileItems = hasDriverProfile || hasBusinessProfile || (isDriver && hasLinkedBank);
+  const hasExtensionItems = !hasDriverProfile || !hasBusinessProfile || (isDriver && !hasLinkedBank);
 
   return (
     <ThemedView style={styles.container}>
@@ -257,6 +285,25 @@ export default function AccountScreen() {
                   <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
                 </Pressable>
               )}
+              {/* Ngân hàng liên kết (Hiển thị ở mục Hồ sơ khi DRIVER ĐÃ liên kết tài khoản ngân hàng) */}
+              {isDriver && hasLinkedBank && (
+                <Pressable style={styles.itemRow} onPress={handleBankLinkPress}>
+                  <View style={styles.itemLeft}>
+                    <View style={styles.iconBoxGreen}>
+                      <Ionicons name="card-outline" size={22} color="#10B981" />
+                    </View>
+                    <View style={styles.itemTextContainer}>
+                      <View style={styles.itemTitleRow}>
+                        <ThemedText style={styles.itemTitle}>Ngân hàng liên kết</ThemedText>
+                        <View style={styles.statusBadgeApproved}>
+                          <ThemedText style={styles.statusTextApproved}>Đã liên kết</ThemedText>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+                </Pressable>
+              )}
             </View>
           </View>
         )}
@@ -266,6 +313,24 @@ export default function AccountScreen() {
           <View style={styles.section}>
             <ThemedText style={styles.sectionTitle}>Mở rộng</ThemedText>
             <View style={styles.card}>
+              {/* Liên kết ngân hàng (Chỉ hiển thị ở Mở rộng khi DRIVER CHƯA liên kết tài khoản ngân hàng) */}
+              {isDriver && !hasLinkedBank && (
+                <Pressable style={styles.itemRow} onPress={handleBankLinkPress}>
+                  <View style={styles.itemLeft}>
+                    <View style={styles.iconBoxGreen}>
+                      <Ionicons name="card-outline" size={22} color="#10B981" />
+                    </View>
+                    <View style={styles.itemTextContainer}>
+                      <ThemedText style={styles.itemTitle}>Liên kết ngân hàng</ThemedText>
+                      <ThemedText style={styles.itemSubtitle}>
+                        Nhận thu nhập các chuyến xe qua chuyển khoản
+                      </ThemedText>
+                    </View>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+                </Pressable>
+              )}
+
               {/* Chỉ hiển thị Đăng ký Tài xế khi hoàn toàn CHƯA nộp hồ sơ */}
               {!hasDriverProfile && (
                 <Pressable style={styles.itemRow} onPress={handleDriverRegisterPress}>

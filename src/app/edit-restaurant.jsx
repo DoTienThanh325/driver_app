@@ -16,6 +16,8 @@ import { SubHeader } from '@/components/ui/sub-header';
 import { HanoiMapPicker } from '@/components/ui/hanoi-map-picker';
 import { businessService } from '@/services/business.service';
 import { userStorage } from '@/services/storage/user.storage';
+import { offlineCacheStorage } from '@/services/storage/offline-cache.storage';
+import { offlineSyncService, SYNC_TASK_TYPE } from '@/services/offline-sync.service';
 import { geocodeAddress } from '@/utils/geocoding';
 import { businessRegisterStyles as styles } from '@/styles/screens/business-register.styles';
 
@@ -148,8 +150,8 @@ export default function EditRestaurantScreen() {
 
     if (!restaurantId) {
       Alert.alert(
-        'Lỗi',
-        'Không tìm thấy mã nhà hàng (restaurantId) để thực hiện cập nhật. Vui lòng thử lại sau.'
+        'Thông báo',
+        'Chưa tải được thông tin cửa hàng. Bạn vui lòng quay lại trang trước và mở lại nhé.'
       );
       return;
     }
@@ -164,33 +166,67 @@ export default function EditRestaurantScreen() {
         locationLongitude: locationCoords.longitude,
       };
 
-      await businessService.updateRestaurant(restaurantId, payload);
+      let isOfflineSaved = false;
+      try {
+        await businessService.updateRestaurant(restaurantId, payload);
+        await offlineSyncService.removeTask(SYNC_TASK_TYPE.BUSINESS_INFO_UPDATE);
+      } catch (callErr) {
+        console.warn('Lỗi kết nối khi cập nhật nhà hàng, lưu vào hàng đợi đồng bộ:', callErr?.message);
+        await offlineSyncService.enqueueTask(SYNC_TASK_TYPE.BUSINESS_INFO_UPDATE, {
+          restaurantId,
+          data: payload,
+        });
+        isOfflineSaved = true;
+      }
 
-      // Cập nhật lại cache cục bộ
+      // Cập nhật lại cache cục bộ (Optimistic update)
       const currentLocal = await userStorage.getBusinessInfo();
-      await userStorage.saveBusinessInfo({
+      const updatedLocal = {
         ...currentLocal,
         restaurantId,
         restaurantName: trimmedName,
         restaurantAddress: trimmedAddress,
         restaurantLatitude: locationCoords.latitude,
         restaurantLongitude: locationCoords.longitude,
+      };
+      await userStorage.saveBusinessInfo(updatedLocal);
+
+      const currentCachedBiz = (await offlineCacheStorage.getBusinessProfile()) || {};
+      await offlineCacheStorage.saveBusinessProfile({
+        ...currentCachedBiz,
+        restaurantName: trimmedName,
+        restaurantAddress: trimmedAddress,
+        restaurantLatitude: locationCoords.latitude,
+        restaurantLongitude: locationCoords.longitude,
       });
 
-      Alert.alert(
-        'Thành công',
-        'Thông tin nhà hàng đã được cập nhật thành công.',
-        [
-          {
-            text: 'OK',
-            onPress: () => router.back(),
-          },
-        ]
-      );
+      if (isOfflineSaved) {
+        Alert.alert(
+          'Đã cập nhật thông tin quán',
+          'Thông tin mới đã được ghi nhận. Ứng dụng sẽ tự động cập nhật lên hệ thống ngay khi có kết nối mạng.',
+          [
+            {
+              text: 'OK',
+              onPress: () => router.back(),
+            },
+          ]
+        );
+      } else {
+        Alert.alert(
+          'Thành công',
+          'Thông tin nhà hàng đã được cập nhật thành công.',
+          [
+            {
+              text: 'OK',
+              onPress: () => router.back(),
+            },
+          ]
+        );
+      }
     } catch (error) {
       Alert.alert(
-        'Lỗi cập nhật',
-        error?.message || 'Có lỗi xảy ra khi cập nhật thông tin nhà hàng. Vui lòng thử lại.'
+        'Chưa thể lưu thông tin',
+        error?.message || 'Đường truyền bị gián đoạn. Bạn vui lòng kiểm tra kết nối mạng và thử lại.'
       );
     } finally {
       setIsSubmitting(false);

@@ -68,13 +68,23 @@ export default function VoucherDetailScreen() {
 
     try {
       setIsSubmitting(true);
-      await voucherService.claimVoucher(voucher.id, 1);
-      Alert.alert('Thành công', 'Đã nhận ưu đãi vào ví của bạn!', [
-        {
-          text: 'Đóng',
-          onPress: () => router.back(),
-        },
-      ]);
+      const quantityToClaim = Number(
+        voucher.numberOfVouchersPerCus ||
+        voucher.numberOfVouchers ||
+        voucher.quantity ||
+        1
+      );
+      await voucherService.claimVoucher(voucher.id, quantityToClaim);
+      Alert.alert(
+        'Thành công',
+        `Đã nhận ${quantityToClaim > 1 ? `${quantityToClaim} ` : ''}ưu đãi vào ví của bạn!`,
+        [
+          {
+            text: 'Đóng',
+            onPress: () => router.back(),
+          },
+        ]
+      );
     } catch (err) {
       Alert.alert('Lỗi nhận ưu đãi', err.message || 'Không thể nhận voucher lúc này.');
     } finally {

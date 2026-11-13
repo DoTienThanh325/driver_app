@@ -18,6 +18,8 @@ import { ZoomableImageModal } from '@/components/ui/zoomable-image-modal';
 import { authService } from '@/services/auth.service';
 import { businessService } from '@/services/business.service';
 import { userStorage } from '@/services/storage/user.storage';
+import { offlineCacheStorage } from '@/services/storage/offline-cache.storage';
+import { offlineSyncService, SYNC_TASK_TYPE } from '@/services/offline-sync.service';
 import { normalizeImageUrl } from '@/utils/image-url';
 import { businessProfileStyles as styles } from '@/styles/screens/business-profile.styles';
 
@@ -28,10 +30,27 @@ export default function BusinessProfileScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [zoomImage, setZoomImage] = useState(null);
+  const [hasPendingSync, setHasPendingSync] = useState(false);
   const prevStatusRef = useRef(null);
 
   const fetchProfile = useCallback(async (isManualCheck = false) => {
-    if (!isManualCheck && !prevStatusRef.current) {
+    // 1. Đọc ngay từ cache để hiển thị tức thì
+    if (!isManualCheck && !businessDetail) {
+      const [cachedBiz, localInfo] = await Promise.all([
+        offlineCacheStorage.getBusinessProfile(),
+        userStorage.getBusinessInfo(),
+      ]);
+      if (cachedBiz) {
+        setBusinessDetail(cachedBiz);
+        setIsLoading(false);
+      }
+      if (localInfo) setSavedInfo(localInfo);
+    }
+
+    const pending = await offlineSyncService.hasPendingTask(SYNC_TASK_TYPE.BUSINESS_INFO_UPDATE);
+    setHasPendingSync(pending);
+
+    if (!isManualCheck && !prevStatusRef.current && !businessDetail) {
       setIsLoading(true);
     }
     try {
@@ -39,8 +58,11 @@ export default function BusinessProfileScreen() {
         businessService.getBusinessRegistration(),
         userStorage.getBusinessInfo(),
       ]);
-      setBusinessDetail(backendData);
-      setSavedInfo(localInfo);
+      if (backendData) {
+        setBusinessDetail(backendData);
+        await offlineCacheStorage.saveBusinessProfile(backendData);
+      }
+      if (localInfo) setSavedInfo(localInfo);
 
       const newStatus = backendData?.status || 'PENDING';
 
@@ -74,7 +96,10 @@ export default function BusinessProfileScreen() {
     } catch (error) {
       console.warn('Lỗi khi tải thông tin hồ sơ kinh doanh:', error);
       if (isManualCheck) {
-        Alert.alert('Lỗi', 'Không thể kiểm tra trạng thái lúc này. Vui lòng thử lại sau.');
+        Alert.alert(
+          'Chưa có kết nối',
+          'Không thể làm mới kết quả xét duyệt lúc này do mất mạng. Vui lòng kiểm tra lại kết nối Internet.'
+        );
       }
     } finally {
       setIsLoading(false);
@@ -89,9 +114,16 @@ export default function BusinessProfileScreen() {
     }, [fetchProfile])
   );
 
-  const handlePullRefresh = () => {
+  const handlePullRefresh = async () => {
     setIsRefreshing(true);
-    fetchProfile();
+    try {
+      await offlineSyncService.processSyncQueue();
+      const pending = await offlineSyncService.hasPendingTask(SYNC_TASK_TYPE.BUSINESS_INFO_UPDATE);
+      setHasPendingSync(pending);
+    } catch (e) {
+      console.warn('Lỗi sync queue khi pull refresh business profile:', e);
+    }
+    await fetchProfile();
   };
 
   const handleManualCheckStatus = () => {
@@ -154,6 +186,7 @@ export default function BusinessProfileScreen() {
               source={{ uri: displayUri }}
               style={styles.documentImage}
               contentFit="cover"
+              cachePolicy="memory-disk"
               transition={200}
               onError={(e) => console.warn('Lỗi hiển thị ảnh minh chứng:', displayUri, e?.error)}
             />
@@ -199,6 +232,27 @@ export default function BusinessProfileScreen() {
             />
           }
         >
+          {/* Banner thông báo trạng thái đồng bộ ngoại tuyến */}
+          {hasPendingSync && (
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: '#EFF6FF',
+              paddingHorizontal: 14,
+              paddingVertical: 10,
+              borderRadius: 10,
+              marginBottom: 12,
+              borderLeftWidth: 4,
+              borderLeftColor: '#3B82F6',
+              gap: 8,
+            }}>
+              <Ionicons name="cloud-offline-outline" size={18} color="#2563EB" />
+              <ThemedText style={{ fontSize: 13, color: '#1E40AF', flex: 1, fontWeight: '500' }}>
+                Thông tin mới đang chờ cập nhật lên hệ thống khi có kết nối mạng ổn định.
+              </ThemedText>
+            </View>
+          )}
+
           {/* 1. Banner trạng thái xét duyệt */}
           <View
             style={[

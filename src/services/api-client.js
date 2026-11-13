@@ -1,20 +1,61 @@
+import { getGatewayUrl } from '../constants/api';
 import { tokenStorage } from './storage/token.storage';
 
 /**
  * API Client kết nối qua API Gateway
- * Tự động đính kèm Token và hỗ trợ cấu hình qua biến môi trường EXPO_PUBLIC_API_URL
+ * Tự động nhận diện IP máy chủ chạy Expo Metro qua Constants (để điện thoại thật truy cập được qua Wi-Fi)
+ * hoặc qua biến môi trường EXPO_PUBLIC_API_URL nếu được thiết lập.
  */
-const RAW_GATEWAY_URL = process.env.EXPO_PUBLIC_API_URL;
-const GATEWAY_URL = RAW_GATEWAY_URL.replace(/\/+$/, '');
-
 const getFullUrl = (endpoint) => {
+  const baseUrl = getGatewayUrl();
   const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  return `${GATEWAY_URL}${normalizedEndpoint}`;
+  return `${baseUrl}${normalizedEndpoint}`;
 };
+
+/**
+ * Chuyển đổi mã HTTP status hoặc lỗi kỹ thuật thành thông điệp tiếng Việt thân thiện, dễ hiểu.
+ */
+export function getFriendlyErrorMessage(status, serverMessage) {
+  if (serverMessage && typeof serverMessage === 'string') {
+    const lower = serverMessage.toLowerCase();
+    if (lower.includes('network request failed') || lower.includes('failed to fetch')) {
+      return 'Kết nối mạng không ổn định. Vui lòng kiểm tra Wi-Fi hoặc 4G/5G và thử lại.';
+    }
+    // Nếu thông báo từ máy chủ đã là tiếng Việt rõ ràng, giữ lại
+    if (/[\u00C0-\u1EF9]/.test(serverMessage)) {
+      return serverMessage;
+    }
+  }
+
+  switch (status) {
+    case 400:
+      return 'Dữ liệu gửi lên chưa hợp lệ hoặc thiếu thông tin cần thiết. Vui lòng kiểm tra lại.';
+    case 401:
+      return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.';
+    case 403:
+      return 'Bạn không có quyền thực hiện thao tác này trên hệ thống.';
+    case 404:
+      return 'Không tìm thấy thông tin yêu cầu. Có thể nội dung đã bị gỡ bỏ.';
+    case 409:
+      return 'Thông tin đã tồn tại hoặc đang có xung đột với dữ liệu hiện tại.';
+    case 413:
+      return 'Kích thước tệp hoặc ảnh quá lớn. Vui lòng chọn tệp nhỏ hơn.';
+    case 500:
+      return 'Hệ thống đang gặp sự cố xử lý. Vui lòng thử lại sau ít phút.';
+    case 502:
+    case 503:
+    case 504:
+      return 'Dịch vụ máy chủ tạm thời gián đoạn. Vui lòng thử lại sau ít phút.';
+    default:
+      return serverMessage || 'Đã có sự cố xảy ra. Vui lòng thử lại.';
+  }
+}
 
 let isRefreshing = false;
 
 export const apiClient = {
+  getGatewayUrl,
+  getFriendlyErrorMessage,
   /**
    * Gọi API POST
    */
@@ -158,6 +199,56 @@ export const apiClient = {
         error.message?.includes('Failed to fetch')
       ) {
         const netErr = new Error('Không thể kết nối tới hệ thống. Vui lòng kiểm tra kết nối mạng và thử lại.');
+        netErr.isNetworkError = true;
+        throw netErr;
+      }
+      throw error;
+    }
+  },
+
+  /**
+   * Gọi API DELETE
+   */
+  delete: async (endpoint, token = null, isRetry = false) => {
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+
+    const authToken = token || (await tokenStorage.getAccessToken());
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+
+    const fullUrl = getFullUrl(endpoint);
+
+    try {
+      const response = await fetch(fullUrl, {
+        method: 'DELETE',
+        headers,
+      });
+
+      if (response.status === 401 && !isRetry) {
+        const refreshed = await apiClient.tryRefreshToken();
+        if (refreshed) {
+          return apiClient.delete(endpoint, null, true);
+        }
+      }
+
+      if (response.status === 204) {
+        return { success: true };
+      }
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(getFriendlyErrorMessage(response.status, data.message || data.detail));
+      }
+      return data;
+    } catch (error) {
+      if (
+        error.message?.includes('Network request failed') ||
+        error.message?.includes('Failed to fetch')
+      ) {
+        const netErr = new Error('Kết nối mạng không ổn định. Vui lòng kiểm tra Wi-Fi hoặc 4G/5G và thử lại.');
         netErr.isNetworkError = true;
         throw netErr;
       }
