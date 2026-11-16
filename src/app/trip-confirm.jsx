@@ -33,11 +33,24 @@ export default function TripConfirmScreen() {
   const [preferredPayMethod, setPreferredPayMethod] = useState('PAY_DIRECTLY'); // 'PAY_DIRECTLY' (Tiền mặt) | 'PAY_BEFORE' (VietQR)
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Parse tọa độ lộ trình từ params nếu đã được tải trước từ book-trip
+  const initialRouteCoords = useMemo(() => {
+    if (params.routeCoords) {
+      try {
+        const parsed = typeof params.routeCoords === 'string' ? JSON.parse(params.routeCoords) : params.routeCoords;
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {}
+    }
+    return [];
+  }, [params.routeCoords]);
+
   // Trạng thái lộ trình thực tế từ OSRM
   const [actualDistanceKm, setActualDistanceKm] = useState(initialDistanceKm);
-  const [actualDurationMin, setActualDurationMin] = useState(null);
-  const [routeCoordinates, setRouteCoordinates] = useState([]); // Mảng [[lat, lon], ...]
-  const [isLoadingRoute, setIsLoadingRoute] = useState(true);
+  const [actualDurationMin, setActualDurationMin] = useState(
+    params.durationMin ? Number(params.durationMin) : null
+  );
+  const [routeCoordinates, setRouteCoordinates] = useState(initialRouteCoords);
+  const [isLoadingRoute, setIsLoadingRoute] = useState(initialRouteCoords.length === 0);
 
   // Tính giờ cao điểm
   const isPeakHour = useMemo(() => {
@@ -65,6 +78,12 @@ export default function TripConfirmScreen() {
   useEffect(() => {
     let isMounted = true;
     async function fetchActualRoute() {
+      // Nếu đã có sẵn tọa độ tuyến đường từ params (prefetch ở book-trip), không cần gọi lại OSRM
+      if (initialRouteCoords.length > 0) {
+        setIsLoadingRoute(false);
+        return;
+      }
+
       setIsLoadingRoute(true);
       try {
         // Gọi OSRM public service có fallback
@@ -257,6 +276,21 @@ export default function TripConfirmScreen() {
         await paymentService.savePreferredPaymentMethod(newTripId, preferredPayMethod);
       }
 
+      const createdTripData = {
+        id: newTripId,
+        pickUpLatitude: pickUpLat,
+        pickUpLongitude: pickUpLon,
+        pickUpAddress: pickUpAddress.trim(),
+        destinationLatitude: destLat,
+        destinationLongitude: destLon,
+        destinationAddress: destinationAddress.trim(),
+        shippingType: 'PASSENGER',
+        vehicleType,
+        shippFare: selectedFare,
+        status: 'REQUESTED',
+        distanceKm: actualDistanceKm,
+      };
+
       Alert.alert(
         'Đặt chuyến thành công 🎉',
         `Hệ thống đang điều phối tài xế gần bạn nhất!\nLộ trình thực tế: ${actualDistanceKm} km\nCước phí: ${Number(selectedFare).toLocaleString('vi-VN')} đ\nThanh toán: ${preferredPayMethod === 'PAY_BEFORE' ? 'Chuyển khoản VietQR' : 'Tiền mặt'}`,
@@ -266,7 +300,12 @@ export default function TripConfirmScreen() {
             onPress: () =>
               router.replace({
                 pathname: '/book-trip',
-                params: { tripId: newTripId, preferredPayMethod },
+                params: {
+                  tripId: newTripId,
+                  preferredPayMethod,
+                  tripData: JSON.stringify(createdTripData),
+                  routeCoords: JSON.stringify(routeCoordinates),
+                },
               }),
           },
         ]
@@ -284,7 +323,7 @@ export default function TripConfirmScreen() {
       {/* 1. NỬA 2/3 TRÊN: HIỂN THỊ BẢN ĐỒ & CUNG ĐƯỜNG THỰC TẾ */}
       <View style={styles.mapContainer}>
         <WebView
-          key={`webview-route-${routeCoordinates.length}`}
+          key="trip-confirm-webview-route"
           originWhitelist={['*']}
           source={{ html: mapHtml }}
           style={styles.mapWebView}

@@ -195,14 +195,30 @@ export default function BookTripScreen() {
   const [shippingType] = useState(SHIPPING_TYPE.PASSENGER);
 
   // Trạng thái chuyến đi & Polling
-  const [activeTrip, setActiveTrip] = useState(null);
+  const [activeTrip, setActiveTrip] = useState(() => {
+    if (params.tripData) {
+      try {
+        const parsed = typeof params.tripData === 'string' ? JSON.parse(params.tripData) : params.tripData;
+        if (parsed?.id) return parsed;
+      } catch (e) {}
+    }
+    return null;
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
 
   // Bộ đếm giây tìm kiếm cho UX (Expanding Ring Search)
   const [searchSeconds, setSearchSeconds] = useState(0);
   const [driverProfile, setDriverProfile] = useState(null);
-  const [trackingRouteCoords, setTrackingRouteCoords] = useState([]);
+  const [trackingRouteCoords, setTrackingRouteCoords] = useState(() => {
+    if (params.routeCoords) {
+      try {
+        const parsed = typeof params.routeCoords === 'string' ? JSON.parse(params.routeCoords) : params.routeCoords;
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {}
+    }
+    return [];
+  });
   const [tripPayment, setTripPayment] = useState(null);
   const [selectedPayMethod, setSelectedPayMethod] = useState(
     params.preferredPayMethod || PAYMENT_METHOD.PAY_DIRECTLY
@@ -261,25 +277,68 @@ export default function BookTripScreen() {
     );
   }, [pickUpCoords, destinationCoords]);
 
+  // Lộ trình & khoảng cách thực tế từ OSRM được tải trước trong nền
+  const [precalculatedRouteCoords, setPrecalculatedRouteCoords] = useState([]);
+  const [precalculatedDistanceKm, setPrecalculatedDistanceKm] = useState(null);
+  const [precalculatedDurationMin, setPrecalculatedDurationMin] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchPrefetchRoute = async () => {
+      if (!pickUpCoords?.latitude || !pickUpCoords?.longitude || !destinationCoords?.latitude || !destinationCoords?.longitude) {
+        return;
+      }
+      try {
+        const url = `https://router.project-osrm.org/route/v1/driving/${pickUpCoords.longitude},${pickUpCoords.latitude};${destinationCoords.longitude},${destinationCoords.latitude}?overview=full&geometries=geojson`;
+        const res = await fetch(url, {
+          headers: { 'User-Agent': 'DriverApp-Client/1.0', Accept: 'application/json' },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.routes?.[0]) {
+            const primaryRoute = data.routes[0];
+            const distKm = Math.max(0.5, Math.round((primaryRoute.distance / 1000) * 10) / 10);
+            const durationMin = Math.round(primaryRoute.duration / 60);
+            const leafletCoords = primaryRoute.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+            if (isMounted) {
+              setPrecalculatedDistanceKm(distKm);
+              setPrecalculatedDurationMin(durationMin);
+              setPrecalculatedRouteCoords(leafletCoords);
+            }
+          }
+        }
+      } catch (err) {
+        // Fallback silently
+      }
+    };
+
+    fetchPrefetchRoute();
+    return () => { isMounted = false; };
+  }, [pickUpCoords.latitude, pickUpCoords.longitude, destinationCoords.latitude, destinationCoords.longitude]);
+
+  const displayDistanceKm = precalculatedDistanceKm || distanceKm;
+
   // Tính cước xe máy bậc thang
   const motorbikeFare = useMemo(() => {
-    if (distanceKm <= BIKE_BASE_KM) {
+    const dist = displayDistanceKm;
+    if (dist <= BIKE_BASE_KM) {
       return BIKE_BASE_PRICE;
     }
-    const extraKm = distanceKm - BIKE_BASE_KM;
+    const extraKm = dist - BIKE_BASE_KM;
     const raw = BIKE_BASE_PRICE + extraKm * BIKE_PER_KM;
     return Math.round(raw / 1000) * 1000;
-  }, [distanceKm, BIKE_BASE_PRICE, BIKE_PER_KM]);
+  }, [displayDistanceKm, BIKE_BASE_PRICE, BIKE_PER_KM]);
 
   // Tính cước ô tô bậc thang
   const carFare = useMemo(() => {
-    if (distanceKm <= CAR_BASE_KM) {
+    const dist = displayDistanceKm;
+    if (dist <= CAR_BASE_KM) {
       return CAR_BASE_PRICE;
     }
-    const extraKm = distanceKm - CAR_BASE_KM;
+    const extraKm = dist - CAR_BASE_KM;
     const raw = CAR_BASE_PRICE + extraKm * CAR_PER_KM;
     return Math.round(raw / 1000) * 1000;
-  }, [distanceKm, CAR_BASE_PRICE, CAR_PER_KM]);
+  }, [displayDistanceKm, CAR_BASE_PRICE, CAR_PER_KM]);
 
   // Cước phí tương ứng với phương tiện được chọn
   const activeVehicleType = selectedVehicle || vehicleType;
@@ -298,7 +357,11 @@ export default function BookTripScreen() {
         TRIP_STATUS.IN_PROGRESS,
       ].includes(trip.status)
     ) {
-      setActiveTrip(trip);
+      setActiveTrip((prev) => ({
+        ...prev,
+        ...trip,
+        distanceKm: trip.distanceKm || prev?.distanceKm,
+      }));
     }
   }, []);
 
@@ -468,6 +531,9 @@ export default function BookTripScreen() {
   useEffect(() => {
     let isMounted = true;
     if (!activeTrip) return;
+
+    // Nếu đã có sẵn tọa độ tuyến đường (truyền từ màn hình xác nhận hoặc prefetch), không cần tải lại
+    if (trackingRouteCoords && trackingRouteCoords.length > 0) return;
 
     const pLat = activeTrip.pickUpLatitude;
     const pLon = activeTrip.pickUpLongitude;
@@ -695,8 +761,16 @@ export default function BookTripScreen() {
 
       const res = await tripService.createTrip(payload);
       if (res?.tripId) {
-        const createdTrip = await tripService.getTripById(res.tripId);
-        setActiveTrip(createdTrip || { id: res.tripId, status: TRIP_STATUS.REQUESTED, ...payload });
+        const newTrip = {
+          id: res.tripId,
+          status: TRIP_STATUS.REQUESTED,
+          ...payload,
+          distanceKm: displayDistanceKm,
+        };
+        setActiveTrip(newTrip);
+        if (precalculatedRouteCoords?.length > 0) {
+          setTrackingRouteCoords(precalculatedRouteCoords);
+        }
       } else {
         Alert.alert('Thành công', 'Đã gửi yêu cầu đặt chuyến tới hệ sinh thái!');
       }
@@ -845,7 +919,14 @@ export default function BookTripScreen() {
           onBack={() => router.back()}
         />
 
-        {activeTrip ? (
+        {params.tripId && !activeTrip ? (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIndicator size="large" color="#00B5B8" />
+            <ThemedText style={{ marginTop: 12, fontSize: 15, color: '#4B5563', fontWeight: '500' }}>
+              Đang tải thông tin chuyến đi...
+            </ThemedText>
+          </View>
+        ) : activeTrip ? (
           /* ========================================================= */
           /* GIAO DIỆN THEO DÕI: 1/2 TRÊN BẢN ĐỒ & 1/2 DƯỚI THÔNG TIN */
           /* ========================================================= */
@@ -853,6 +934,7 @@ export default function BookTripScreen() {
             {/* NỬA TRÊN (1/2): BẢN ĐỒ HIỂN THỊ TÀI XẾ & KHÁCH & LỘ TRÌNH */}
             <View style={styles.trackingSplitMapBox}>
               <WebView
+                key="tracking-split-map-webview"
                 source={{ html: trackingMapHtml }}
                 style={styles.trackingSplitMapWebView}
                 scrollEnabled={false}
@@ -1358,7 +1440,7 @@ export default function BookTripScreen() {
 
                     <View style={styles.fareBreakdownRow}>
                       <ThemedText style={styles.fareBreakdownLabel}>Khoảng cách lộ trình:</ThemedText>
-                      <ThemedText style={styles.fareBreakdownValue}>{distanceKm} km</ThemedText>
+                      <ThemedText style={styles.fareBreakdownValue}>{displayDistanceKm} km</ThemedText>
                     </View>
 
                     <View style={[styles.fareBreakdownRow, { marginBottom: 0 }]}>
@@ -1412,7 +1494,9 @@ export default function BookTripScreen() {
                   pickUpLon: pickUpCoords.longitude,
                   destLat: destinationCoords.latitude,
                   destLon: destinationCoords.longitude,
-                  distanceKm: distanceKm || 2.5,
+                  distanceKm: displayDistanceKm || 2.5,
+                  durationMin: precalculatedDurationMin || null,
+                  routeCoords: precalculatedRouteCoords?.length > 0 ? JSON.stringify(precalculatedRouteCoords) : null,
                 },
               });
             }}

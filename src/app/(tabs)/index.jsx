@@ -51,7 +51,14 @@ export default function HomeScreen() {
   const initialLetter = displayName.charAt(0).toUpperCase();
 
   const handleBookingTransit = () => {
-    router.push('/book-trip');
+    if (activeTrip) {
+      router.push({
+        pathname: '/book-trip',
+        params: { tripId: activeTrip.id, tripData: JSON.stringify(activeTrip) },
+      });
+    } else {
+      router.push('/book-trip');
+    }
   };
 
   const handleBookingMeal = () => {
@@ -100,7 +107,12 @@ export default function HomeScreen() {
                 alignItems: 'center',
                 justifyContent: 'space-between',
               }}
-              onPress={() => router.push('/book-trip')}
+              onPress={() =>
+                router.push({
+                  pathname: '/book-trip',
+                  params: { tripId: activeTrip.id, tripData: JSON.stringify(activeTrip) },
+                })
+              }
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
                 <View
@@ -178,7 +190,12 @@ export default function HomeScreen() {
             {/* Banner Transit */}
             <Pressable
               style={styles.promotionCardTeal}
-              onPress={() => router.push('/book-trip')}
+              onPress={() =>
+                router.push({
+                  pathname: '/book-trip',
+                  params: { tripId: activeTrip.id, tripData: JSON.stringify(activeTrip) },
+                })
+              }
             >
               <ThemedText style={styles.promoTitle}>Giảm 50% chuyến xe đầu tiên</ThemedText>
               <ThemedText style={styles.promoSubtitle}>Áp dụng cho dịch vụ T&M Transit</ThemedText>
