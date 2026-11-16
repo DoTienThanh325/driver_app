@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   View,
   Switch,
@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
+import * as Location from 'expo-location';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -20,9 +21,10 @@ import { authService } from '@/services/auth.service';
 import { userStorage } from '@/services/storage/user.storage';
 import { tripService, TRIP_STATUS } from '@/services/trip.service';
 import { paymentService } from '@/services/payment.service';
+import { reverseGeocodeCoords } from '@/utils/geocoding';
 import { driverStyles as styles } from '@/styles/screens/driver.styles';
 
-// Vị trí mặc định tài xế quanh trung tâm Hà Nội để dễ dàng bắt matching
+// Vị trí mặc định tài xế quanh trung tâm Hà Nội để dễ dàng bắt matching nếu chưa có GPS
 const DEFAULT_DRIVER_COORDS = {
   latitude: 21.028511,
   longitude: 105.854444,
@@ -35,6 +37,57 @@ export default function DriverScreen() {
 
   // Tọa độ GPS của tài xế
   const [driverCoords, setDriverCoords] = useState(DEFAULT_DRIVER_COORDS);
+  const [isLocating, setIsLocating] = useState(false);
+  const driverCoordsRef = useRef(DEFAULT_DRIVER_COORDS);
+  driverCoordsRef.current = driverCoords;
+
+  // Hàm tự động lấy vị trí GPS thực tế hiện tại của tài xế và gửi ngay lên Redis
+  const fetchCurrentDriverLocation = useCallback(async (sendUpdate = true) => {
+    try {
+      setIsLocating(true);
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        console.warn('Quyền truy cập vị trí GPS bị từ chối');
+        return null;
+      }
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      if (position?.coords) {
+        const { latitude, longitude, heading, speed } = position.coords;
+        let addressName = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+        try {
+          const addr = await reverseGeocodeCoords(latitude, longitude);
+          if (addr) addressName = addr;
+        } catch {
+          // Bỏ qua lỗi reverse geocode nếu có
+        }
+        const updatedCoords = {
+          latitude,
+          longitude,
+          name: addressName,
+          heading: heading || 0,
+          speed: speed || 0,
+        };
+        setDriverCoords(updatedCoords);
+        if (sendUpdate) {
+          // Cập nhật ngay tọa độ lên Redis qua endpoint POST /api/drivers/location
+          tripService.updateLocation(latitude, longitude, heading || 0, speed || 0);
+        }
+        return updatedCoords;
+      }
+    } catch (err) {
+      console.warn('Lỗi lấy vị trí GPS thực tế tài xế:', err?.message);
+    } finally {
+      setIsLocating(false);
+    }
+    return null;
+  }, []);
+
+  // Tự động lấy vị trí thực tế của tài xế ngay khi vào màn hình
+  useEffect(() => {
+    fetchCurrentDriverLocation(true);
+  }, [fetchCurrentDriverLocation]);
 
   // Cuốc xe đang xem chi tiết trong Modal ("sau đó tài xế bấm vào xem chuyến, ok thì nhận")
   const [selectedOfferForDetail, setSelectedOfferForDetail] = useState(null);
@@ -181,19 +234,71 @@ export default function DriverScreen() {
     };
   }, []);
 
-  // Gửi vị trí GPS định kỳ khi tài xế đang online (mỗi 6 giây)
+  // Theo dõi vị trí GPS và cập nhật liên tục lên Redis khi tài xế đang online
   useEffect(() => {
+    let watcher = null;
+    let heartbeatInterval = null;
+    let isMounted = true;
+
     if (!isAvailable) return;
 
-    // Gửi ngay 1 lần khi bật
-    tripService.updateLocation(driverCoords.latitude, driverCoords.longitude);
+    // 1. Cập nhật ngay vị trí GPS hiện tại lên Redis
+    fetchCurrentDriverLocation(true);
 
-    const locInterval = setInterval(() => {
-      tripService.updateLocation(driverCoords.latitude, driverCoords.longitude);
-    }, 6000);
+    // 2. Lắng nghe thay đổi GPS di chuyển thời gian thực từ phần cứng thiết bị
+    async function startContinuousTracking() {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
 
-    return () => clearInterval(locInterval);
-  }, [isAvailable, driverCoords.latitude, driverCoords.longitude]);
+        watcher = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            distanceInterval: 10, // Cập nhật khi di chuyển từ 10 mét
+            timeInterval: 4000,    // Hoặc mỗi 4 giây
+          },
+          (loc) => {
+            if (!isMounted || !loc?.coords) return;
+            const { latitude, longitude, heading, speed } = loc.coords;
+
+            setDriverCoords((prev) => ({
+              ...prev,
+              latitude,
+              longitude,
+              heading: heading || 0,
+              speed: speed || 0,
+            }));
+
+            // Cập nhật tọa độ thời gian thực lên Redis (POST /api/drivers/location)
+            tripService.updateLocation(latitude, longitude, heading || 0, speed || 0);
+          }
+        );
+      } catch (err) {
+        console.warn('Lỗi watchPositionAsync của tài xế:', err);
+      }
+    }
+
+    startContinuousTracking();
+
+    // 3. Heartbeat định kỳ mỗi 5s để đảm bảo duy trì vị trí trong Redis ngay cả khi xe đỗ yên một chỗ
+    heartbeatInterval = setInterval(() => {
+      const current = driverCoordsRef.current;
+      if (current?.latitude && current?.longitude) {
+        tripService.updateLocation(
+          current.latitude,
+          current.longitude,
+          current.heading || 0,
+          current.speed || 0
+        );
+      }
+    }, 5000);
+
+    return () => {
+      isMounted = false;
+      if (watcher) watcher.remove();
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
+    };
+  }, [isAvailable, fetchCurrentDriverLocation]);
 
   // Quét cuốc xe mới từ AI Matching khi tài xế đang online
   // Cho phép quét khi chưa có cuốc HOẶC khi đang chở khách (IN_PROGRESS) để nhận cuốc gối đầu
@@ -380,12 +485,16 @@ export default function DriverScreen() {
     ]);
   };
 
-  // Đổi tọa độ GPS giả lập của tài xế qua danh sách các khu vực trung tâm
+  // Đổi tọa độ GPS hoặc lấy lại vị trí thực tế của tài xế
   const handleChangeDriverLocation = () => {
     Alert.alert(
-      'Chọn vị trí tài xế (Giả lập GPS)',
-      'Chọn khu vực bạn muốn đỗ xe để nhận cuốc xe gần đó:',
+      'Vị trí GPS của Tài xế',
+      'Chọn vị trí thực tế của bạn hoặc chọn khu vực giả lập để thử nghiệm nhận chuyến:',
       [
+        {
+          text: '🎯 Lấy vị trí GPS thực tế hiện tại',
+          onPress: () => fetchCurrentDriverLocation(true),
+        },
         {
           text: '📍 Hồ Hoàn Kiếm (Trung tâm)',
           onPress: () => {
@@ -543,13 +652,29 @@ export default function DriverScreen() {
                   <View style={{ flex: 1 }}>
                     <ThemedText style={styles.gpsTitle}>VỊ TRÍ GPS CỦA TÀI XẾ</ThemedText>
                     <ThemedText style={styles.gpsValue} numberOfLines={1}>
-                      {driverCoords.name || `${driverCoords.latitude.toFixed(4)}, ${driverCoords.longitude.toFixed(4)}`}
+                      {isLocating
+                        ? 'Đang định vị GPS...'
+                        : driverCoords.name || `${driverCoords.latitude.toFixed(4)}, ${driverCoords.longitude.toFixed(4)}`}
                     </ThemedText>
                   </View>
                 </View>
-                <Pressable style={styles.gpsChangeBtn} onPress={handleChangeDriverLocation}>
-                  <ThemedText style={styles.gpsChangeText}>Đổi vị trí</ThemedText>
-                </Pressable>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Pressable
+                    style={[styles.gpsChangeBtn, { paddingHorizontal: 10 }]}
+                    onPress={() => fetchCurrentDriverLocation(true)}
+                    disabled={isLocating}
+                    hitSlop={6}
+                  >
+                    {isLocating ? (
+                      <ActivityIndicator size="small" color="#00B5B8" />
+                    ) : (
+                      <Ionicons name="locate" size={16} color="#00B5B8" />
+                    )}
+                  </Pressable>
+                  <Pressable style={styles.gpsChangeBtn} onPress={handleChangeDriverLocation}>
+                    <ThemedText style={styles.gpsChangeText}>Đổi vị trí</ThemedText>
+                  </Pressable>
+                </View>
               </View>
 
               {!activeTrip && (

@@ -67,6 +67,8 @@ export default function DriverActiveTripScreen() {
     latitude: trip.pickUpLatitude ? trip.pickUpLatitude + 0.005 : 21.0335,
     longitude: trip.pickUpLongitude ? trip.pickUpLongitude - 0.004 : 105.8504,
   });
+  const driverLocationRef = useRef(driverLocation);
+  driverLocationRef.current = driverLocation;
 
   // Tuyến đường thực tế & khoảng cách từ OSRM
   const [routeCoordinates, setRouteCoordinates] = useState([]);
@@ -74,9 +76,10 @@ export default function DriverActiveTripScreen() {
   const [navDurationMin, setNavDurationMin] = useState(null);
   const [isLoadingRoute, setIsLoadingRoute] = useState(true);
 
-  // Theo dõi GPS thực tế của tài xế theo thời gian thực
+  // Theo dõi GPS thực tế của tài xế theo thời gian thực và cập nhật Redis liên tục
   useEffect(() => {
     let watcher = null;
+    let heartbeatInterval = null;
     let isMounted = true;
 
     async function startDriverTracking() {
@@ -85,24 +88,30 @@ export default function DriverActiveTripScreen() {
         if (status === 'granted') {
           const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
           if (isMounted && loc?.coords) {
+            const { latitude, longitude, heading, speed } = loc.coords;
             setDriverLocation({
-              latitude: loc.coords.latitude,
-              longitude: loc.coords.longitude,
+              latitude,
+              longitude,
             });
+            // Cập nhật vị trí ngay lập tức vào Redis
+            tripService.updateLocation(latitude, longitude, heading || 0, speed || 0);
           }
 
           watcher = await Location.watchPositionAsync(
             {
               accuracy: Location.Accuracy.High,
-              distanceInterval: 15, // Cập nhật sau mỗi 15 mét
+              distanceInterval: 10, // Cập nhật sau mỗi 10 mét
               timeInterval: 4000,    // Hoặc mỗi 4 giây
             },
             (updatedLoc) => {
               if (isMounted && updatedLoc?.coords) {
+                const { latitude, longitude, heading, speed } = updatedLoc.coords;
                 setDriverLocation({
-                  latitude: updatedLoc.coords.latitude,
-                  longitude: updatedLoc.coords.longitude,
+                  latitude,
+                  longitude,
                 });
+                // Cập nhật tọa độ thời gian thực lên Redis
+                tripService.updateLocation(latitude, longitude, heading || 0, speed || 0);
               }
             }
           );
@@ -114,9 +123,18 @@ export default function DriverActiveTripScreen() {
 
     startDriverTracking();
 
+    // Heartbeat định kỳ mỗi 5s duy trì vị trí tài xế trong Redis trong suốt chuyến xe
+    heartbeatInterval = setInterval(() => {
+      const cur = driverLocationRef.current;
+      if (cur?.latitude && cur?.longitude) {
+        tripService.updateLocation(cur.latitude, cur.longitude);
+      }
+    }, 5000);
+
     return () => {
       isMounted = false;
       if (watcher) watcher.remove();
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
     };
   }, []);
 
