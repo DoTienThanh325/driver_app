@@ -7,6 +7,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as SplashScreen from 'expo-splash-screen';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { offlineSyncService } from '@/services/offline-sync.service';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { NotificationProvider } from '@/providers/notification-provider';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -32,29 +34,34 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <StatusBar style="auto" />
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            animation: 'none',
-          }}
-        >
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="login" options={{ title: 'Đăng nhập', headerShown: false }} />
-          <Stack.Screen name="register" options={{ title: 'Đăng ký', headerShown: false }} />
-          <Stack.Screen name="driver-register" options={{ title: 'Đăng ký Tài xế', headerShown: false }} />
-          <Stack.Screen name="driver-profile" options={{ title: 'Hồ sơ Tài xế', headerShown: false }} />
-          <Stack.Screen name="business-profile" options={{ title: 'Hồ sơ Nhà hàng', headerShown: false }} />
-          <Stack.Screen name="edit-restaurant" options={{ title: 'Chỉnh sửa Nhà hàng', headerShown: false }} />
-          <Stack.Screen name="bank-link" options={{ title: 'Liên kết ngân hàng', headerShown: false }} />
-          <Stack.Screen name="food-search" options={{ title: 'Tìm kiếm món ăn', headerShown: false }} />
-          <Stack.Screen name="food-detail" options={{ title: 'Chi tiết món ăn', headerShown: false }} />
-          <Stack.Screen name="edit-food" options={{ title: 'Chỉnh sửa món ăn', headerShown: false }} />
-          <Stack.Screen name="driver-trips" options={{ title: 'Lịch sử cuốc xe', headerShown: false }} />
-          <Stack.Screen name="driver-trip-detail" options={{ title: 'Chi tiết cuốc xe', headerShown: false }} />
-        </Stack>
-      </ThemeProvider>
+      <SafeAreaProvider>
+        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <NotificationProvider>
+            <StatusBar style="auto" />
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                animation: 'none',
+              }}
+            >
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="notifications" options={{ title: 'Thông báo' }} />
+              <Stack.Screen name="login" options={{ title: 'Đăng nhập', headerShown: false }} />
+              <Stack.Screen name="register" options={{ title: 'Đăng ký', headerShown: false }} />
+              <Stack.Screen name="driver-register" options={{ title: 'Đăng ký Tài xế', headerShown: false }} />
+              <Stack.Screen name="driver-profile" options={{ title: 'Hồ sơ Tài xế', headerShown: false }} />
+              <Stack.Screen name="business-profile" options={{ title: 'Hồ sơ Nhà hàng', headerShown: false }} />
+              <Stack.Screen name="edit-restaurant" options={{ title: 'Chỉnh sửa Nhà hàng', headerShown: false }} />
+              <Stack.Screen name="bank-link" options={{ title: 'Liên kết ngân hàng', headerShown: false }} />
+              <Stack.Screen name="food-search" options={{ title: 'Tìm kiếm món ăn', headerShown: false }} />
+              <Stack.Screen name="food-detail" options={{ title: 'Chi tiết món ăn', headerShown: false }} />
+              <Stack.Screen name="edit-food" options={{ title: 'Chỉnh sửa món ăn', headerShown: false }} />
+              <Stack.Screen name="driver-trips" options={{ title: 'Lịch sử cuốc xe', headerShown: false }} />
+              <Stack.Screen name="driver-trip-detail" options={{ title: 'Chi tiết cuốc xe', headerShown: false }} />
+            </Stack>
+          </NotificationProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

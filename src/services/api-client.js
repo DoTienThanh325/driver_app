@@ -1,5 +1,6 @@
 import { getGatewayUrl } from '../constants/api';
 import { tokenStorage } from './storage/token.storage';
+import { createSessionRefresher } from './refresh-session';
 
 /**
  * API Client kết nối qua API Gateway
@@ -51,7 +52,14 @@ export function getFriendlyErrorMessage(status, serverMessage) {
   }
 }
 
-let isRefreshing = false;
+const refreshSession = createSessionRefresher({
+  tokenStorage,
+  request: (refreshToken) => fetch(getFullUrl('/api/auth/refresh'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken }),
+  }),
+});
 
 export const apiClient = {
   getGatewayUrl,
@@ -338,39 +346,5 @@ export const apiClient = {
   /**
    * Cơ chế Silent Refresh: Tự động dùng Refresh Token lấy cặp Token mới
    */
-  tryRefreshToken: async () => {
-    if (isRefreshing) return false;
-
-    try {
-      isRefreshing = true;
-      const refreshToken = await tokenStorage.getRefreshToken();
-      if (!refreshToken) return false;
-
-      const refreshUrl = getFullUrl('/api/auth/refresh');
-      const response = await fetch(refreshUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ refreshToken }),
-      });
-
-      if (!response.ok) {
-        // Refresh token cũng hết hạn -> Xóa tokens
-        await tokenStorage.clearTokens();
-        return false;
-      }
-
-      const tokenData = await response.json();
-      if (tokenData.accessToken) {
-        await tokenStorage.saveTokens(tokenData.accessToken, tokenData.refreshToken || refreshToken);
-        return true;
-      }
-      return false;
-    } catch {
-      return false;
-    } finally {
-      isRefreshing = false;
-    }
-  },
+  tryRefreshToken: refreshSession,
 };

@@ -17,6 +17,7 @@ import { useDriverAvailability } from '@/hooks/use-driver-availability';
 import { authService } from '@/services/auth.service';
 import { userStorage } from '@/services/storage/user.storage';
 import { driverStyles as styles } from '@/styles/screens/driver.styles';
+import { NotificationBell } from '@/components/notifications/notification-bell';
 
 export default function DriverScreen() {
   const [userProfile, setUserProfile] = useState(null);
@@ -79,13 +80,7 @@ export default function DriverScreen() {
                 </View>
               </View>
 
-              <Pressable
-                style={styles.bellButton}
-                onPress={() => Alert.alert('Thông báo', 'Không có thông báo tài xế mới.')}
-                hitSlop={8}
-              >
-                <Ionicons name="notifications-outline" size={22} color="#111827" />
-              </Pressable>
+              <NotificationBell style={styles.bellButton} />
             </View>
 
             {/* Công tắc nhận chuyến: Bật: AVAILABLE | Tắt: OFFLINE */}
