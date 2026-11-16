@@ -6,10 +6,12 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
+  Modal,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useLocalSearchParams } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -18,8 +20,9 @@ import { Image } from 'react-native';
 import { driverService } from '@/services/driver.service';
 import { paymentService, PAYMENT_METHOD, PAYMENT_STATUS } from '@/services/payment.service';
 import { SubHeader } from '@/components/ui/sub-header';
+import * as Location from 'expo-location';
 import { HanoiMapPicker } from '@/components/ui/hanoi-map-picker';
-import { geocodeAddress } from '@/utils/geocoding';
+import { geocodeAddress, reverseGeocodeCoords } from '@/utils/geocoding';
 import {
   tripService,
   TRIP_STATUS,
@@ -195,11 +198,12 @@ export default function BookTripScreen() {
   const [shippingType] = useState(SHIPPING_TYPE.PASSENGER);
 
   // Trạng thái chuyến đi & Polling
+  const dismissedTripIdRef = useRef(null);
   const [activeTrip, setActiveTrip] = useState(() => {
     if (params.tripData) {
       try {
         const parsed = typeof params.tripData === 'string' ? JSON.parse(params.tripData) : params.tripData;
-        if (parsed?.id) return parsed;
+        if (parsed?.id && ![TRIP_STATUS.COMPLETED, TRIP_STATUS.CANCELLED].includes(parsed.status)) return parsed;
       } catch (e) {}
     }
     return null;
@@ -225,17 +229,230 @@ export default function BookTripScreen() {
   );
   const [qrLoadError, setQrLoadError] = useState(false);
   const [isLoadingPayment, setIsLoadingPayment] = useState(false);
+  const [showQrModal, setShowQrModal] = useState(false);
+
+  // Tổng hợp thông tin tài khoản ngân hàng và mã VietQR thanh toán cho tài xế
+  const driverQrInfo = useMemo(() => {
+    const bankBin =
+      tripPayment?.qrPayment?.bankBin ||
+      activeTrip?.driverBankBin ||
+      '970422'; // MBBank (Ngân hàng Quân Đội)
+
+    const bankName =
+      tripPayment?.qrPayment?.bankName ||
+      activeTrip?.driverBankName ||
+      'MBBank (Ngân hàng Quân Đội)';
+
+    const bankAccountNumber =
+      tripPayment?.qrPayment?.bankAccountNumber ||
+      activeTrip?.driverBankAccountNumber ||
+      driverProfile?.phoneNumber ||
+      activeTrip?.driverPhone ||
+      '0911000001';
+
+    const driverName =
+      driverProfile?.username ||
+      activeTrip?.driverName ||
+      'Tài xế đối tác T&M';
+
+    const bankAccountName =
+      tripPayment?.qrPayment?.bankAccountName ||
+      activeTrip?.driverBankAccountName ||
+      driverName.toUpperCase();
+
+    const amount =
+      tripPayment?.qrPayment?.amount ||
+      tripPayment?.finalAmount ||
+      activeTrip?.finalAmount ||
+      activeTrip?.shippFare ||
+      shippFare ||
+      24000;
+
+    const currentTripId = activeTrip?.id || params.tripId || 'TRIP';
+    const transferContent =
+      tripPayment?.qrPayment?.transferContent ||
+      `THANH TOAN CHUYEN DI ${currentTripId}`;
+
+    const qrUrl =
+      tripPayment?.qrPayment?.qrDataURL ||
+      `https://img.vietqr.io/image/${bankBin}-${bankAccountNumber}-compact2.png?amount=${Math.round(
+        amount
+      )}&addInfo=${encodeURIComponent(transferContent)}&accountName=${encodeURIComponent(
+        bankAccountName
+      )}`;
+
+    return {
+      bankBin,
+      bankName,
+      bankAccountNumber,
+      bankAccountName,
+      driverName,
+      amount,
+      transferContent,
+      qrUrl,
+    };
+  }, [tripPayment, activeTrip, driverProfile, shippFare, params.tripId]);
+
+  // Hàm sao chép thông tin chuyển khoản vào bộ nhớ tạm
+  const copyToClipboard = async (text, label) => {
+    try {
+      if (Clipboard?.setStringAsync) {
+        await Clipboard.setStringAsync(String(text));
+      }
+      Alert.alert('Đã sao chép', `Đã sao chép ${label} vào bộ nhớ tạm:\n${text}`);
+    } catch {
+      Alert.alert('Đã sao chép', `Đã sao chép ${label}: ${text}`);
+    }
+  };
+
+  // Lựa chọn 1: Đặt chuyến mới (Đặt tiếp) - Quay trở lại màn hình đặt xe ban đầu sạch sẽ
+  const handleBookNewTrip = () => {
+    if (activeTrip?.id) {
+      dismissedTripIdRef.current = String(activeTrip.id);
+    }
+    setActiveTrip(null);
+    setTripPayment(null);
+    setDriverProfile(null);
+    setTrackingRouteCoords([]);
+    setSearchSeconds(0);
+    setIsSubmitting(false);
+    setIsCancelling(false);
+    setBookingStep(1);
+    setSelectedVehicle(null);
+    hasUserEditedPickupRef.current = false;
+
+    // Thay thế route hiện tại bằng /book-trip sạch, xóa bỏ mọi query params (tripId, tripData...)
+    router.replace('/book-trip');
+  };
+
+  // Lựa chọn 2: Về giao diện chính (Trang chủ) - Xóa sạch stack và trở về Tabs
+  const handleGoHome = () => {
+    setActiveTrip(null);
+    setTripPayment(null);
+    setDriverProfile(null);
+    setTrackingRouteCoords([]);
+    setIsSubmitting(false);
+    setIsCancelling(false);
+
+    router.replace('/(tabs)');
+  };
 
   // Quản lý quy trình từng bước: 1: Điểm đón/đến -> 2: Chọn xe -> 3: Xem giá & Đặt
   const [bookingStep, setBookingStep] = useState(1); // 1 | 2 | 3
   const [selectedVehicle, setSelectedVehicle] = useState(null); // Chỉ khi chọn xe ở bước 2 mới set
 
-  // Điều khiển Map Picker Modal
+  // Điều khiển Map Picker Modal & Tự động lấy vị trí hiện tại
   const [pickerTarget, setPickerTarget] = useState(null);
   const mapPickerRef = useRef(null);
+  const [isLocatingUser, setIsLocatingUser] = useState(false);
+  const hasUserEditedPickupRef = useRef(false);
+
+  // Tự động xin quyền GPS và lấy vị trí hiện tại của khách hàng làm Điểm đón khi vào màn hình hoặc khi đặt chuyến mới
+  useEffect(() => {
+    let isMounted = true;
+
+    async function detectUserLocation() {
+      // Nếu đang có chuyến đi hoạt động, không ghi đè
+      if (activeTrip) return;
+
+      try {
+        setIsLocatingUser(true);
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          return;
+        }
+
+        const location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+
+        if (!isMounted || hasUserEditedPickupRef.current) return;
+
+        const { latitude, longitude } = location.coords;
+        setPickUpCoords({ latitude, longitude });
+
+        // Phân giải tọa độ sang tên địa chỉ chi tiết theo tiếng Việt chuẩn
+        const address = await reverseGeocodeCoords(latitude, longitude);
+        if (isMounted && address && !hasUserEditedPickupRef.current) {
+          setPickUpAddress(address);
+        }
+      } catch (err) {
+        console.warn('Lỗi tự động lấy vị trí GPS khách hàng:', err);
+      } finally {
+        if (isMounted) {
+          setIsLocatingUser(false);
+        }
+      }
+    }
+
+    detectUserLocation();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeTrip?.id]);
+
+  // Đồng bộ thông tin chuyến đi khi params thay đổi (ví dụ: chuyển từ trip-confirm về)
+  useEffect(() => {
+    let isMounted = true;
+
+    if (params.tripData) {
+      try {
+        const parsed = typeof params.tripData === 'string' ? JSON.parse(params.tripData) : params.tripData;
+        if (parsed?.id) {
+          if (dismissedTripIdRef.current && String(parsed.id) === dismissedTripIdRef.current) {
+            return;
+          }
+          if (![TRIP_STATUS.COMPLETED, TRIP_STATUS.CANCELLED].includes(parsed.status)) {
+            setActiveTrip(parsed);
+            return;
+          }
+        }
+      } catch (e) {}
+    }
+
+    if (params.tripId && !activeTrip) {
+      if (dismissedTripIdRef.current && String(params.tripId) === dismissedTripIdRef.current) {
+        return;
+      }
+      tripService.getTripById(params.tripId)
+        .then((res) => {
+          if (isMounted && res?.id) {
+            if (dismissedTripIdRef.current && String(res.id) === dismissedTripIdRef.current) {
+              return;
+            }
+            if ([
+              TRIP_STATUS.REQUESTED,
+              TRIP_STATUS.SEARCHING_DRIVER,
+              TRIP_STATUS.DRIVER_ASSIGNED,
+              TRIP_STATUS.DRIVER_ARRIVING,
+              TRIP_STATUS.IN_PROGRESS,
+            ].includes(res.status)) {
+              setActiveTrip(res);
+            }
+          }
+        })
+        .catch(() => {});
+    }
+
+    return () => { isMounted = false; };
+  }, [params.tripId, params.tripData, activeTrip]);
+
+  // Đồng bộ tọa độ lộ trình từ params nếu có
+  useEffect(() => {
+    if (params.routeCoords) {
+      try {
+        const parsed = typeof params.routeCoords === 'string' ? JSON.parse(params.routeCoords) : params.routeCoords;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setTrackingRouteCoords(parsed);
+        }
+      } catch (e) {}
+    }
+  }, [params.routeCoords]);
 
   // Cập nhật tọa độ & giá cước ngay lập tức khi người dùng nhập tay Điểm đón
   const handlePickUpAddressChange = (text) => {
+    hasUserEditedPickupRef.current = true;
     setPickUpAddress(text);
     if (!text || text.trim().length < 2) return;
     const found = findCoordsByText(text);
@@ -446,30 +663,45 @@ export default function BookTripScreen() {
     triggerAutoSwitch();
   }, [activeTrip?.id, activeTrip?.driverId, activeTrip?.status, params.preferredPayMethod, tripPayment?.method]);
 
-  // Tải chi tiết thông tin thanh toán chuyến đi từ Payment Service
+  // Tải chi tiết thông tin thanh toán chuyến đi từ Payment Service và kiểm tra trạng thái xác nhận
   useEffect(() => {
     let isMounted = true;
-    if (activeTrip?.id) {
-      paymentService.getTripPayment(activeTrip.id)
-        .then(async (res) => {
-          if (isMounted && res) {
-            setTripPayment(res);
-            const preferred =
-              params.preferredPayMethod ||
-              (await paymentService.getPreferredPaymentMethod(activeTrip.id));
-            if (preferred === PAYMENT_METHOD.PAY_BEFORE) {
-              setSelectedPayMethod(PAYMENT_METHOD.PAY_BEFORE);
-            } else if (res.method) {
-              setSelectedPayMethod(res.method);
-            }
-          }
-        })
-        .catch(() => {});
-    } else {
+    if (!activeTrip?.id) {
       setTripPayment(null);
+      return;
     }
-    return () => { isMounted = false; };
-  }, [activeTrip?.id, activeTrip?.status]);
+
+    const checkPayment = async () => {
+      try {
+        const res = await paymentService.getTripPayment(activeTrip.id);
+        if (isMounted && res) {
+          setTripPayment(res);
+          const preferred =
+            params.preferredPayMethod ||
+            (await paymentService.getPreferredPaymentMethod(activeTrip.id));
+          if (preferred === PAYMENT_METHOD.PAY_BEFORE) {
+            setSelectedPayMethod(PAYMENT_METHOD.PAY_BEFORE);
+          } else if (res.method) {
+            setSelectedPayMethod(res.method);
+          }
+        }
+      } catch (err) {}
+    };
+
+    checkPayment();
+
+    // Polling định kỳ nếu chưa hoàn tất thanh toán để cập nhật khi tài xế xác nhận nhận tiền
+    const interval = setInterval(() => {
+      if (tripPayment?.status !== 'COMPLETED') {
+        checkPayment();
+      }
+    }, 4000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [activeTrip?.id, activeTrip?.status, tripPayment?.status]);
 
   // Xử lý khi khách hàng chọn phương thức thanh toán (Tiền mặt hoặc Chuyển khoản VietQR)
   const handleSelectPayMethod = async (method) => {
@@ -838,6 +1070,7 @@ export default function BookTripScreen() {
     const finalLng = Number(lon);
 
     if (pickerTarget === 'pickup') {
+      hasUserEditedPickupRef.current = true;
       setPickUpCoords({ latitude: finalLat, longitude: finalLng });
     } else if (pickerTarget === 'destination') {
       setDestinationCoords({ latitude: finalLat, longitude: finalLng });
@@ -846,6 +1079,7 @@ export default function BookTripScreen() {
 
   const handleAddressResolved = (address) => {
     if (pickerTarget === 'pickup') {
+      hasUserEditedPickupRef.current = true;
       setPickUpAddress(address);
     } else if (pickerTarget === 'destination') {
       setDestinationAddress(address);
@@ -916,7 +1150,17 @@ export default function BookTripScreen() {
       <SafeAreaView style={{ flex: 1 }}>
         <SubHeader
           title={activeTrip ? 'Theo dõi chuyến đi' : 'Đặt chuyến xe T&M'}
-          onBack={() => router.back()}
+          onBack={() => {
+            if (activeTrip?.status === TRIP_STATUS.COMPLETED ||
+                activeTrip?.status === TRIP_STATUS.CANCELLED ||
+                activeTrip?.status === TRIP_STATUS.NO_DRIVER_FOUND) {
+              handleGoHome();
+            } else if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/(tabs)');
+            }
+          }}
         />
 
         {params.tripId && !activeTrip ? (
@@ -1068,6 +1312,48 @@ export default function BookTripScreen() {
                   </View>
                 </View>
 
+                {/* Thanh trạng thái thanh toán & Xem mã QR trong suốt chuyến đi */}
+                {(activeTrip.status === TRIP_STATUS.DRIVER_ASSIGNED ||
+                  activeTrip.status === TRIP_STATUS.DRIVER_ARRIVING ||
+                  activeTrip.status === TRIP_STATUS.IN_PROGRESS) && (
+                  <View style={styles.inTripPayBar}>
+                    <View style={{ flex: 1, marginRight: 10 }}>
+                      <ThemedText style={{ fontSize: 11, color: '#0369A1', fontWeight: '600' }}>
+                        PHƯƠNG THỨC THANH TOÁN
+                      </ThemedText>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                        <Ionicons
+                          name={selectedPayMethod === PAYMENT_METHOD.PAY_BEFORE ? 'qr-code' : 'cash'}
+                          size={16}
+                          color={selectedPayMethod === PAYMENT_METHOD.PAY_BEFORE ? '#0284C7' : '#059669'}
+                        />
+                        <ThemedText style={{ fontSize: 13, fontWeight: '700', color: '#0F172A', marginLeft: 4 }}>
+                          {selectedPayMethod === PAYMENT_METHOD.PAY_BEFORE ? 'VietQR Napas 24/7' : 'Tiền mặt trực tiếp'}
+                        </ThemedText>
+                      </View>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                      {selectedPayMethod === PAYMENT_METHOD.PAY_BEFORE ? (
+                        <Pressable
+                          style={styles.inTripPayBtn}
+                          onPress={() => setShowQrModal(true)}
+                        >
+                          <Ionicons name="qr-code-outline" size={16} color="#FFFFFF" />
+                          <ThemedText style={styles.inTripPayBtnText}>Xem mã QR</ThemedText>
+                        </Pressable>
+                      ) : (
+                        <Pressable
+                          style={[styles.inTripPayBtn, { backgroundColor: '#0284C7' }]}
+                          onPress={() => handleSelectPayMethod(PAYMENT_METHOD.PAY_BEFORE)}
+                        >
+                          <Ionicons name="qr-code-outline" size={16} color="#FFFFFF" />
+                          <ThemedText style={styles.inTripPayBtnText}>Đổi sang VietQR</ThemedText>
+                        </Pressable>
+                      )}
+                    </View>
+                  </View>
+                )}
+
                 {/* Nút hành động */}
                 {isSearching || activeTrip.status === TRIP_STATUS.DRIVER_ASSIGNED ? (
                   <Pressable
@@ -1138,50 +1424,55 @@ export default function BookTripScreen() {
                         </View>
                       </View>
 
-                      {/* Nội dung thanh toán chi tiết */}
-                      {selectedPayMethod === PAYMENT_METHOD.PAY_DIRECTLY ? (
-                        <View style={styles.paymentStatusNotice}>
-                          <Ionicons name="information-circle" size={18} color="#065F46" />
-                          <ThemedText style={styles.paymentStatusNoticeText}>
-                            {tripPayment?.status === 'COMPLETED'
-                              ? `Đã thanh toán ${Number(activeTrip.shippFare || shippFare).toLocaleString('vi-VN')} đ tiền mặt cho tài xế.`
-                              : `Vui lòng thanh toán trực tiếp ${Number(activeTrip.shippFare || shippFare).toLocaleString('vi-VN')} đ tiền mặt cho tài xế.`}
-                          </ThemedText>
-                        </View>
-                      ) : (
-                        <View style={[styles.paymentStatusNotice, { backgroundColor: '#F0F9FF', borderColor: '#BAE6FD', borderWidth: 1, padding: 14, borderRadius: 14 }]}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                            <Ionicons name="scan-outline" size={24} color="#0284C7" style={{ marginRight: 8 }} />
-                            <ThemedText style={{ fontSize: 14, fontWeight: '800', color: '#0369A1' }}>
-                              {tripPayment?.status === 'COMPLETED'
-                                ? 'Đã hoàn tất chuyển khoản VietQR'
-                                : 'Quét mã trên điện thoại tài xế'}
-                            </ThemedText>
-                          </View>
-                          <ThemedText style={{ fontSize: 13, color: '#1E293B', lineHeight: 20 }}>
-                            {tripPayment?.status === 'COMPLETED'
-                              ? `Tài xế đã xác nhận nhận được ${Number(activeTrip.shippFare || shippFare).toLocaleString('vi-VN')} đ chuyển khoản thành công.`
-                              : `Tài xế đang hiển thị mã VietQR trên màn hình. Bạn hãy mở ứng dụng Ngân hàng (hoặc Ví điện tử) để quét mã và chuyển ${Number(activeTrip.shippFare || shippFare).toLocaleString('vi-VN')} đ trực tiếp cho tài xế.`}
-                          </ThemedText>
-                        </View>
-                      )}
+                      {/* Thông báo thanh toán hoàn tất gọn gàng (Đã bỏ khối Phóng to / QR rườm rà) */}
+                      <View style={styles.paymentStatusNotice}>
+                        <Ionicons name="checkmark-circle" size={20} color="#059669" />
+                        <ThemedText style={styles.paymentStatusNoticeText}>
+                          {selectedPayMethod === PAYMENT_METHOD.PAY_BEFORE
+                            ? `Đã hoàn tất thanh toán ${Number(activeTrip.shippFare || shippFare).toLocaleString('vi-VN')} đ qua Chuyển khoản VietQR.`
+                            : `Đã hoàn tất thanh toán ${Number(activeTrip.shippFare || shippFare).toLocaleString('vi-VN')} đ tiền mặt cho tài xế.`}
+                        </ThemedText>
+                      </View>
                     </View>
 
-                    <Pressable
-                      style={[styles.bookButton, { width: '100%' }]}
-                      onPress={() => setActiveTrip(null)}
-                    >
-                      <ThemedText style={styles.bookButtonText}>HOÀN TẤT & ĐẶT CHUYẾN MỚI</ThemedText>
-                    </Pressable>
+                    {/* 2 LỰA CHỌN SAU KHI HOÀN THÀNH CHUYẾN: 1. ĐẶT TIẾP, 2. VỀ GIAO DIỆN CHÍNH */}
+                    <View style={styles.completedActionsContainer}>
+                      <Pressable
+                        style={[styles.bookButton, styles.primaryCompletedBtn]}
+                        onPress={handleBookNewTrip}
+                      >
+                        <Ionicons name="refresh-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                        <ThemedText style={styles.bookButtonText}>ĐẶT CHUYẾN MỚI (ĐẶT TIẾP)</ThemedText>
+                      </Pressable>
+
+                      <Pressable
+                        style={styles.secondaryCompletedBtn}
+                        onPress={handleGoHome}
+                      >
+                        <Ionicons name="home-outline" size={18} color="#00B5B8" style={{ marginRight: 6 }} />
+                        <ThemedText style={styles.secondaryCompletedBtnText}>VỀ GIAO DIỆN CHÍNH</ThemedText>
+                      </Pressable>
+                    </View>
                   </>
 
                 ) : activeTrip.status === TRIP_STATUS.CANCELLED || activeTrip.status === TRIP_STATUS.NO_DRIVER_FOUND ? (
-                  <Pressable
-                    style={[styles.bookButton, { width: '100%' }]}
-                    onPress={() => setActiveTrip(null)}
-                  >
-                    <ThemedText style={styles.bookButtonText}>ĐẶT LẠI CHUYẾN XE</ThemedText>
-                  </Pressable>
+                  <View style={styles.completedActionsContainer}>
+                    <Pressable
+                      style={[styles.bookButton, styles.primaryCompletedBtn]}
+                      onPress={handleBookNewTrip}
+                    >
+                      <Ionicons name="refresh-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                      <ThemedText style={styles.bookButtonText}>ĐẶT LẠI CHUYẾN XE</ThemedText>
+                    </Pressable>
+
+                    <Pressable
+                      style={styles.secondaryCompletedBtn}
+                      onPress={handleGoHome}
+                    >
+                      <Ionicons name="home-outline" size={18} color="#00B5B8" style={{ marginRight: 6 }} />
+                      <ThemedText style={styles.secondaryCompletedBtnText}>VỀ GIAO DIỆN CHÍNH</ThemedText>
+                    </Pressable>
+                  </View>
                 ) : null}
               </ScrollView>
             </View>
@@ -1228,9 +1519,42 @@ export default function BookTripScreen() {
                         editable={bookingStep === 1}
                       />
                       {bookingStep === 1 && (
-                        <Pressable style={styles.mapSelectBtn} onPress={() => openMapFor('pickup')}>
-                          <Ionicons name="map-outline" size={20} color="#00B5B8" />
-                        </Pressable>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <Pressable
+                            style={[styles.mapSelectBtn, { marginRight: 4 }]}
+                            onPress={async () => {
+                              try {
+                                setIsLocatingUser(true);
+                                const { status } = await Location.requestForegroundPermissionsAsync();
+                                if (status === 'granted') {
+                                  const loc = await Location.getCurrentPositionAsync({
+                                    accuracy: Location.Accuracy.Balanced,
+                                  });
+                                  const { latitude, longitude } = loc.coords;
+                                  setPickUpCoords({ latitude, longitude });
+                                  const addr = await reverseGeocodeCoords(latitude, longitude);
+                                  if (addr) setPickUpAddress(addr);
+                                } else {
+                                  Alert.alert('Quyền vị trí', 'Vui lòng cấp quyền truy cập vị trí trong cài đặt thiết bị.');
+                                }
+                              } catch (e) {
+                                Alert.alert('Lỗi GPS', 'Không thể lấy vị trí hiện tại của thiết bị.');
+                              } finally {
+                                setIsLocatingUser(false);
+                              }
+                            }}
+                            hitSlop={6}
+                          >
+                            {isLocatingUser ? (
+                              <ActivityIndicator size="small" color="#00B5B8" />
+                            ) : (
+                              <Ionicons name="locate" size={20} color="#00B5B8" />
+                            )}
+                          </Pressable>
+                          <Pressable style={styles.mapSelectBtn} onPress={() => openMapFor('pickup')}>
+                            <Ionicons name="map-outline" size={20} color="#00B5B8" />
+                          </Pressable>
+                        </View>
                       )}
                     </View>
                   </View>
@@ -1516,6 +1840,102 @@ export default function BookTripScreen() {
         initialCoords={pickerTarget === 'pickup' ? pickUpCoords : destinationCoords}
         currentAddress={pickerTarget === 'pickup' ? pickUpAddress : destinationAddress}
       />
+
+      {/* Modal hiển thị mã VietQR tài xế khi khách nhấn xem trong suốt chuyến đi */}
+      <Modal
+        visible={showQrModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowQrModal(false)}
+      >
+        <View style={styles.qrModalOverlay}>
+          <View style={styles.qrModalCard}>
+            <Pressable
+              style={styles.qrModalCloseBtn}
+              onPress={() => setShowQrModal(false)}
+            >
+              <Ionicons name="close" size={20} color="#64748B" />
+            </Pressable>
+
+            <ThemedText style={{ fontSize: 17, fontWeight: '800', color: '#0F172A', marginBottom: 2 }}>
+              Thanh toán VietQR 24/7
+            </ThemedText>
+            <ThemedText style={{ fontSize: 12, color: '#64748B', marginBottom: 12, textAlign: 'center' }}>
+              Quét mã để chuyển khoản trực tiếp cho tài xế {driverQrInfo.driverName}
+            </ThemedText>
+
+            <Image
+              source={{ uri: driverQrInfo.qrUrl }}
+              style={styles.qrImage}
+              resizeMode="contain"
+            />
+
+            {/* Bảng thông tin tài khoản */}
+            <View style={styles.bankDetailTable}>
+              <View style={styles.bankDetailRow}>
+                <ThemedText style={styles.bankDetailLabel}>Ngân hàng</ThemedText>
+                <ThemedText style={styles.bankDetailValue}>{driverQrInfo.bankName}</ThemedText>
+              </View>
+              <View style={styles.bankDetailRow}>
+                <ThemedText style={styles.bankDetailLabel}>Số tài khoản</ThemedText>
+                <View style={styles.bankDetailValueRow}>
+                  <ThemedText style={[styles.bankDetailValue, { color: '#0284C7' }]}>{driverQrInfo.bankAccountNumber}</ThemedText>
+                  <Pressable
+                    style={styles.copyBadgeBtn}
+                    onPress={() => copyToClipboard(driverQrInfo.bankAccountNumber, 'Số tài khoản')}
+                  >
+                    <Ionicons name="copy-outline" size={12} color="#0284C7" />
+                    <ThemedText style={styles.copyBadgeText}>Copy</ThemedText>
+                  </Pressable>
+                </View>
+              </View>
+              <View style={styles.bankDetailRow}>
+                <ThemedText style={styles.bankDetailLabel}>Chủ tài khoản</ThemedText>
+                <ThemedText style={styles.bankDetailValue}>{driverQrInfo.bankAccountName}</ThemedText>
+              </View>
+              <View style={styles.bankDetailRow}>
+                <ThemedText style={styles.bankDetailLabel}>Số tiền</ThemedText>
+                <View style={styles.bankDetailValueRow}>
+                  <ThemedText style={[styles.bankDetailValue, { color: '#EF4444', fontWeight: '800' }]}>
+                    {Number(driverQrInfo.amount).toLocaleString('vi-VN')} đ
+                  </ThemedText>
+                  <Pressable
+                    style={styles.copyBadgeBtn}
+                    onPress={() => copyToClipboard(driverQrInfo.amount, 'Số tiền')}
+                  >
+                    <Ionicons name="copy-outline" size={12} color="#0284C7" />
+                    <ThemedText style={styles.copyBadgeText}>Copy</ThemedText>
+                  </Pressable>
+                </View>
+              </View>
+              <View style={[styles.bankDetailRow, styles.bankDetailContentRow, { borderBottomWidth: 0 }]}>
+                <View style={styles.bankDetailContentHeader}>
+                  <ThemedText style={styles.bankDetailLabel}>Nội dung chuyển khoản</ThemedText>
+                  <Pressable
+                    style={styles.copyBadgeBtn}
+                    onPress={() => copyToClipboard(driverQrInfo.transferContent, 'Nội dung chuyển khoản')}
+                  >
+                    <Ionicons name="copy-outline" size={12} color="#0284C7" />
+                    <ThemedText style={styles.copyBadgeText}>Copy</ThemedText>
+                  </Pressable>
+                </View>
+                <View style={styles.transferContentBox}>
+                  <ThemedText style={styles.transferContentText} selectable={true}>
+                    {driverQrInfo.transferContent}
+                  </ThemedText>
+                </View>
+              </View>
+            </View>
+
+            <Pressable
+              style={[styles.bookButton, { width: '100%', marginTop: 16, paddingVertical: 12 }]}
+              onPress={() => setShowQrModal(false)}
+            >
+              <ThemedText style={styles.bookButtonText}>ĐÃ HIỂU & ĐÓNG</ThemedText>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       
     </ThemedView>
