@@ -43,7 +43,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class MatchingServiceImpl implements MatchingService {
 
-    private static final int OFFER_TIMEOUT_SECONDS = 12;
+    public static final int OFFER_TIMEOUT_SECONDS = 25; // 25 giây cho tài xế xem và nhận cuốc
     private static final double[] SEARCH_ROUNDS_RADIUS = {3.0, 5.0, 8.0};
     private static final int MAX_SEARCH_ROUNDS = 3;
     private static final int RETRY_DELAY_SECONDS = 5;
@@ -378,7 +378,7 @@ public class MatchingServiceImpl implements MatchingService {
                 notifMsg,
                 candidate.getDriverId()));
 
-        // Hẹn giờ timeout 12s qua RabbitMQ Delay Queue
+        // Hẹn giờ timeout 25s qua RabbitMQ Delay Queue
         matchingEventPublisher.scheduleOfferTimeout(tripId, savedOffer.getId(), targetRank);
 
         // Ghi log phục vụ Machine Learning Phase 3 (Shadow Logging)
@@ -430,7 +430,7 @@ public class MatchingServiceImpl implements MatchingService {
         Update update = new Update().set("status", MatchingOfferStatus.EXPIRED).set("updatedAt", LocalDateTime.now());
         mongoTemplate.findAndModify(query, update, FindAndModifyOptions.options().returnNew(true), MatchingOffer.class);
 
-        // Cập nhật nhãn isAccepted = 0 cho bản ghi log (Quá hạn 12s)
+        // Cập nhật nhãn isAccepted = 0 cho bản ghi log (Quá hạn 25s)
         if (shadowLogging) {
             try {
                 matchingOfferLogRepository.findByOfferId(offerId).ifPresent(logEntry -> {
@@ -443,7 +443,7 @@ public class MatchingServiceImpl implements MatchingService {
             }
         }
 
-        log.info("[Matching] Offer #{} cho Trip {} đã hết hạn 12s. Chuyển sang tài xế kế tiếp.", rank, tripId);
+        log.info("[Matching] Offer #{} cho Trip {} đã hết hạn 25s. Chuyển sang tài xế kế tiếp.", rank, tripId);
 
         MatchingSession session = matchingSessionRepository.findById(tripId).orElse(null);
         if (session != null) {
