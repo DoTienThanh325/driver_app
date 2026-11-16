@@ -68,4 +68,14 @@ public class MatchingRabbitMQConfig {
                 .to(matchingDirectExchange)
                 .with(MATCHING_OFFER_TIMEOUT_ROUTING_KEY);
     }
+    @Bean
+    public Declarables matchingRoundTopology() {
+        var exchange = new DirectExchange("matching.round.exchange", true, false);
+        var work = QueueBuilder.durable("matching.round.queue").build();
+        var delay = QueueBuilder.durable("matching.round.delay.queue")
+                .ttl(5000).deadLetterExchange("matching.round.exchange").deadLetterRoutingKey("round").build();
+        return new Declarables(exchange, work, delay,
+                BindingBuilder.bind(work).to(exchange).with("round"),
+                BindingBuilder.bind(delay).to(exchange).with("delay"));
+    }
 }

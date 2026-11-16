@@ -20,7 +20,7 @@ spring:
         retry:
           enabled: true
           initial-interval: 2000ms
-          max-retries: 3
+          max-retries: ${RABBIT_LISTENER_MAX_RETRIES:3}
           multiplier: 2.0
 
   security:
@@ -41,3 +41,27 @@ services:
   booking:
     base-url: ${BOOKING_SERVICE_URL:http://bookingservice}
 
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+resilience:
+  http:
+    enabled: ${HTTP_RESILIENCE_ENABLED:true}
+    clients:
+      booking:
+        total: ${BOOKING_TOTAL_TIMEOUT:1500ms}
+        connect: ${BOOKING_CONNECT_TIMEOUT:300ms}
+        read: ${BOOKING_READ_TIMEOUT:1s}
+        slow: ${BOOKING_SLOW_THRESHOLD:800ms}
+        pool-wait: ${HTTP_POOL_WAIT:200ms}
+        concurrency: ${BOOKING_CONCURRENCY:50}
+        minimum-calls: ${CB_MINIMUM_CALLS:20}
+        window: ${CB_WINDOW:50}
+        open-wait: ${CB_OPEN_WAIT:15s}

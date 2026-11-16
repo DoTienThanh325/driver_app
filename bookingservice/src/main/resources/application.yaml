@@ -7,8 +7,8 @@ spring:
 
   elasticsearch:
     uris: ${ELASTICSEARCH_URIS:http://localhost:9200}
-    connection-timeout: 3s
-    socket-timeout: 10s
+    connection-timeout: ${ES_CONNECT_TIMEOUT:500ms}
+    socket-timeout: ${ES_SOCKET_TIMEOUT:1500ms}
 
   mongodb:
     uri: ${MONGODB_URI:mongodb://localhost:27017/driverapp_booking_db}
@@ -16,6 +16,9 @@ spring:
       uuid: standard
 
   rabbitmq:
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    connection-timeout: 2s
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME:guest}
@@ -25,7 +28,7 @@ spring:
         retry:
           enabled: true
           initial-interval: 2000ms
-          max-retries: 3
+          max-retries: ${RABBIT_LISTENER_MAX_RETRIES:3}
           multiplier: 2.0
 
   security:
@@ -71,3 +74,87 @@ services:
 matching:
   strategy: ${MATCHING_STRATEGY:AI_MODEL}
   shadow-logging: ${MATCHING_SHADOW_LOGGING:true}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+resilience:
+  http:
+    enabled: ${HTTP_RESILIENCE_ENABLED:true}
+    clients:
+      driver:
+        total: ${DRIVER_TOTAL_TIMEOUT:1500ms}
+        connect: ${DRIVER_CONNECT_TIMEOUT:300ms}
+        read: ${DRIVER_READ_TIMEOUT:1s}
+        slow: ${DRIVER_SLOW_THRESHOLD:800ms}
+        pool-wait: ${HTTP_POOL_WAIT:200ms}
+        concurrency: ${DRIVER_CONCURRENCY:50}
+        minimum-calls: ${CB_MINIMUM_CALLS:20}
+        window: ${CB_WINDOW:50}
+        open-wait: ${CB_OPEN_WAIT:15s}
+      user:
+        total: ${USER_TOTAL_TIMEOUT:1500ms}
+        connect: ${USER_CONNECT_TIMEOUT:300ms}
+        read: ${USER_READ_TIMEOUT:1s}
+        slow: ${USER_SLOW_THRESHOLD:800ms}
+        pool-wait: ${HTTP_POOL_WAIT:200ms}
+        concurrency: ${USER_CONCURRENCY:50}
+        minimum-calls: ${CB_MINIMUM_CALLS:20}
+        window: ${CB_WINDOW:50}
+        open-wait: ${CB_OPEN_WAIT:15s}
+      payment:
+        total: ${PAYMENT_TOTAL_TIMEOUT:1500ms}
+        connect: ${PAYMENT_CONNECT_TIMEOUT:300ms}
+        read: ${PAYMENT_READ_TIMEOUT:1s}
+        slow: ${PAYMENT_SLOW_THRESHOLD:800ms}
+        pool-wait: ${HTTP_POOL_WAIT:200ms}
+        concurrency: ${PAYMENT_CONCURRENCY:50}
+        minimum-calls: ${CB_MINIMUM_CALLS:20}
+        window: ${CB_WINDOW:50}
+        open-wait: ${CB_OPEN_WAIT:15s}
+      notification:
+        total: ${NOTIFICATION_TOTAL_TIMEOUT:1500ms}
+        connect: ${NOTIFICATION_CONNECT_TIMEOUT:300ms}
+        read: ${NOTIFICATION_READ_TIMEOUT:1s}
+        slow: ${NOTIFICATION_SLOW_THRESHOLD:800ms}
+        pool-wait: ${HTTP_POOL_WAIT:200ms}
+        concurrency: ${NOTIFICATION_CONCURRENCY:50}
+        minimum-calls: ${CB_MINIMUM_CALLS:20}
+        window: ${CB_WINDOW:50}
+        open-wait: ${CB_OPEN_WAIT:15s}
+      ai-matching:
+        total: ${AI_MATCHING_TOTAL_TIMEOUT:350ms}
+        connect: ${AI_MATCHING_CONNECT_TIMEOUT:100ms}
+        read: ${AI_MATCHING_READ_TIMEOUT:200ms}
+        slow: ${AI_MATCHING_SLOW_THRESHOLD:150ms}
+        pool-wait: ${HTTP_POOL_WAIT:200ms}
+        concurrency: ${AI_MATCHING_CONCURRENCY:20}
+        minimum-calls: ${CB_MINIMUM_CALLS:20}
+        window: ${CB_WINDOW:50}
+        open-wait: ${CB_OPEN_WAIT:15s}
+      ai-food:
+        total: ${AI_FOOD_TOTAL_TIMEOUT:350ms}
+        connect: ${AI_FOOD_CONNECT_TIMEOUT:100ms}
+        read: ${AI_FOOD_READ_TIMEOUT:200ms}
+        slow: ${AI_FOOD_SLOW_THRESHOLD:150ms}
+        pool-wait: ${HTTP_POOL_WAIT:200ms}
+        concurrency: ${AI_FOOD_CONCURRENCY:20}
+        minimum-calls: ${CB_MINIMUM_CALLS:20}
+        window: ${CB_WINDOW:50}
+        open-wait: ${CB_OPEN_WAIT:15s}
+      osrm:
+        total: ${OSRM_TOTAL_TIMEOUT:1200ms}
+        connect: ${OSRM_CONNECT_TIMEOUT:300ms}
+        read: ${OSRM_READ_TIMEOUT:800ms}
+        slow: ${OSRM_SLOW_THRESHOLD:600ms}
+        pool-wait: ${HTTP_POOL_WAIT:200ms}
+        concurrency: ${OSRM_CONCURRENCY:20}
+        minimum-calls: ${CB_MINIMUM_CALLS:20}
+        window: ${CB_WINDOW:50}
+        open-wait: ${CB_OPEN_WAIT:15s}

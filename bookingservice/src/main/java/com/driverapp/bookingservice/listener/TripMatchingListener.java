@@ -16,7 +16,7 @@ public class TripMatchingListener {
 
     private final MatchingService matchingService;
 
-    @RabbitListener(queues = MatchingRabbitMQConfig.TRIP_MATCHING_QUEUE)
+    @RabbitListener(containerFactory = "resilienceRabbitListenerContainerFactory", queues = MatchingRabbitMQConfig.TRIP_MATCHING_QUEUE)
     public void onTripCreated(DomainEvent<TripEventPayload> event) {
         log.info("[RabbitMQ] Tiếp nhận trip.created cho TripId={}", event.getPayload().getTripId());
         try {
@@ -24,6 +24,7 @@ public class TripMatchingListener {
         } catch (Exception e) {
             log.error("[RabbitMQ] Lỗi xử lý matching cho TripId={}: {}",
                     event.getPayload().getTripId(), e.getMessage(), e);
+            throw e;
         }
     }
 }

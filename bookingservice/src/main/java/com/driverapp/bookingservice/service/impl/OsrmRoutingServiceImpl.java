@@ -12,12 +12,16 @@ import java.util.List;
 
 @Slf4j
 @Service("osrmRoutingService")
-@RequiredArgsConstructor
 public class OsrmRoutingServiceImpl implements RoutingService {
 
-    private final RestClient restClient = RestClient.create();
+    private final RestClient restClient;
 
-    @Value("${services.osrm.url:http://localhost:5000}")
+    public OsrmRoutingServiceImpl(com.driverapp.bookingservice.config.HttpClientConfig clients,
+            @Value("${services.osrm.url:http://localhost:5000}") String baseUrl) {
+        this.restClient = clients.client("osrm", baseUrl, false);
+        this.osrmBaseUrl = baseUrl;
+    }
+
     private String osrmBaseUrl;
 
     /**

@@ -160,3 +160,8 @@ cd bookingservice
 ./mvnw spring-boot:run
 ```
 *(Yêu cầu MongoDB tại `:27017`, RabbitMQ tại `:5672`, Elasticsearch tại `:9200` và Eureka Server `:8761` đang hoạt động)*.
+
+
+## Timeout, request limit và circuit breaker
+
+Xem [hướng dẫn cấu hình resilience](../RESILIENCE_CONFIGURATION.md) để biết ngưỡng mặc định, biến môi trường, lỗi 429/503/504, kiểm thử Redis/HTTP và rollback. Với local demo OTP, đặt `AUTH_EXPOSE_OTP=true`; production cần SmsSender thật.

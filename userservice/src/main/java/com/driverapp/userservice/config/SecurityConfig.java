@@ -35,7 +35,8 @@ public class SecurityConfig {
                                 "/api/auth/login",
                                 "/api/auth/verify-otp",
                                 "/api/auth/refresh",
-                                "/api/auth/logout"
+                                "/api/auth/logout",
+                                "/api/auth/resend-otp", "/api/v1/auth/resend-otp"
                         ).permitAll()
                         .requestMatchers("/api/users/**").permitAll()
                         .anyRequest().authenticated()

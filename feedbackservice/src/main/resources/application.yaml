@@ -6,6 +6,12 @@ spring:
     name: feedbackservice
 
   datasource:
+    hikari:
+      connection-timeout: ${DB_POOL_TIMEOUT_MS:500}
+      maximum-pool-size: ${DB_POOL_SIZE:20}
+      data-source-properties:
+        socketTimeout: ${DB_SOCKET_TIMEOUT_SECONDS:2}
+        options: "-c statement_timeout=2000 -c lock_timeout=1000"
     url: jdbc:postgresql://localhost:5432/driverapp_feedback_db
     username: ${DB_USERNAME:thanhtiendo}
     password: ${DB_PASSWORD:12345khongcho}
@@ -20,7 +26,7 @@ spring:
         retry:
           enabled: true
           initial-interval: 2000ms
-          max-retries: 3
+          max-retries: ${RABBIT_LISTENER_MAX_RETRIES:3}
           multiplier: 2.0
 
   jpa:
@@ -52,3 +58,27 @@ services:
     base-url: ${USER_SERVICE_URL:http://userservice}
 
 
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+resilience:
+  http:
+    enabled: ${HTTP_RESILIENCE_ENABLED:true}
+    clients:
+      user:
+        total: ${USER_TOTAL_TIMEOUT:1500ms}
+        connect: ${USER_CONNECT_TIMEOUT:300ms}
+        read: ${USER_READ_TIMEOUT:1s}
+        slow: ${USER_SLOW_THRESHOLD:800ms}
+        pool-wait: ${HTTP_POOL_WAIT:200ms}
+        concurrency: ${USER_CONCURRENCY:50}
+        minimum-calls: ${CB_MINIMUM_CALLS:20}
+        window: ${CB_WINDOW:50}
+        open-wait: ${CB_OPEN_WAIT:15s}

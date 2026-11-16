@@ -21,7 +21,8 @@ public class TripNotificationListener {
     private final NotificationService notificationService;
     private final ProcessedEventRepository processedEventRepository;
 
-    @RabbitListener(queues = "trip.notification.queue")
+    @RabbitListener(containerFactory = "resilienceRabbitListenerContainerFactory", queues = "trip.notification.queue")
+    @org.springframework.transaction.annotation.Transactional
     public void handleTripNotification(DomainEvent<TripEventPayload> event) {
         if (processedEventRepository.existsById(event.getEventId())) {
             log.info("[Notification] Bỏ qua event đã push: {}", event.getEventId());
@@ -34,22 +35,23 @@ public class TripNotificationListener {
 
         try {
             if (payload.getCustomerId() != null) {
-                notificationService.createNotification(new CreateNotificationRequest(
+                notificationService.createTripNotification(new CreateNotificationRequest(
                         "Cập nhật chuyến đi",
                         message,
                         UUID.fromString(payload.getCustomerId())
-                ));
+                ), payload);
             }
 
             if (payload.getDriverId() != null) {
-                notificationService.createNotification(new CreateNotificationRequest(
+                notificationService.createTripNotification(new CreateNotificationRequest(
                         "Cập nhật chuyến đi",
                         message,
                         UUID.fromString(payload.getDriverId())
-                ));
+                ), payload);
             }
         } catch (Exception e) {
             log.error("[Notification] Lỗi khi tạo notification cho tripId={}: {}", payload.getTripId(), e.getMessage());
+            throw e;
         }
 
         processedEventRepository.save(ProcessedEvent.builder()

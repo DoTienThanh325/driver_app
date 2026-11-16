@@ -34,8 +34,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -60,6 +58,7 @@ public class MatchingServiceImpl implements MatchingService {
     private final NotificationClient notificationClient;
     private final MatchingEventPublisher matchingEventPublisher;
     private final MongoTemplate mongoTemplate;
+    private final io.micrometer.core.instrument.MeterRegistry meters;
 
     @Value("${matching.shadow-logging:true}")
     private boolean shadowLogging;
@@ -84,12 +83,29 @@ public class MatchingServiceImpl implements MatchingService {
                 FindAndModifyOptions.options().returnNew(true), Trip.class);
 
         if (trip == null) {
-            log.warn("[Matching] Bỏ qua trip.created vì Trip {} không ở trạng thái REQUESTED", tripId);
+            trip = tripRepository.findById(tripId).orElse(null);
+            if (trip == null || trip.getStatus() != TripStatus.SEARCHING_DRIVER) return;
+            var session = matchingSessionRepository.findById(tripId).orElse(null);
+            if (session != null) {
+                for (int rank = 1; rank <= Math.min(TOP_AI_BROADCAST_CANDIDATES, session.getCandidates().size()); rank++) {
+                    dispatchOfferToCandidate(tripId, session, rank);
+                }
+                return;
+            }
+        }
+        executeMatchingRound(tripId, trip.getSearchRound() == null ? 1 : trip.getSearchRound());
+    }
+
+    public void resumeRound(String tripId, int round) {
+        if (round < 1 || round > MAX_SEARCH_ROUNDS) throw new IllegalArgumentException("Invalid matching round");
+        var session = matchingSessionRepository.findById(tripId).orElse(null);
+        if (session != null && session.getSearchRound() > round) return;
+        if (session != null && session.getSearchRound() == round) {
+            for (int rank = 1; rank <= Math.min(TOP_AI_BROADCAST_CANDIDATES, session.getCandidates().size()); rank++)
+                dispatchOfferToCandidate(tripId, session, rank);
             return;
         }
-
-        // Bắt đầu Vòng 1 tìm kiếm
-        executeMatchingRound(tripId, 1);
+        executeMatchingRound(tripId, round);
     }
 
     private void executeMatchingRound(String tripId, int round) {
@@ -141,8 +157,7 @@ public class MatchingServiceImpl implements MatchingService {
             if (round < MAX_SEARCH_ROUNDS) {
                 log.info("[Matching] Vòng {} ({}km) chưa có tài xế cho Trip {}. Chờ {}s để mở rộng sang Vòng {}...",
                         round, radiusKm, tripId, RETRY_DELAY_SECONDS, round + 1);
-                CompletableFuture.delayedExecutor(RETRY_DELAY_SECONDS, TimeUnit.SECONDS)
-                        .execute(() -> executeMatchingRound(tripId, round + 1));
+                matchingEventPublisher.scheduleRound(tripId, round + 1);
             } else {
                 log.warn("[Matching] Đã quét hết {} vòng (tối đa {}km) cho Trip {}. Chuyển sang NO_DRIVER_FOUND",
                         MAX_SEARCH_ROUNDS, radiusKm, tripId);
@@ -157,6 +172,12 @@ public class MatchingServiceImpl implements MatchingService {
                 .toList();
 
         List<Double> etas = routingService.calculateEtasToPickup(pickUpLat, pickUpLng, driverCoords);
+
+        if (etas == null || etas.size() != candidates.size() || etas.stream().anyMatch(e -> e == null || !Double.isFinite(e) || e >= 999)) {
+            // Estimate from straight-line distance at 30 km/h when routing is unavailable.
+            etas = candidates.stream().map(d -> Math.max(0.1, d.distanceKm() * 2.0)).toList();
+            meters.counter("dependency.fallback", "dependency", "osrm").increment();
+        }
 
         // 4. Xếp hạng: AI Scoring Model (Fallback về Rule-based ETA)
         List<MatchingSession.CandidateDriver> rankedList = rankCandidates(trip, candidates, etas);
@@ -270,7 +291,7 @@ public class MatchingServiceImpl implements MatchingService {
                         features
                 );
 
-                // Gọi AI Scoring Service qua Circuit Breaker (Timeout 50ms)
+                // Gọi AI Scoring Service qua timeout/circuit breaker cấu hình ngoài code
                 Optional<DriverScoringResponse> aiResponse = aiMatchingClient.scoreCandidates(aiRequest);
 
                 if (aiResponse.isPresent() && !aiResponse.get().rankedCandidates().isEmpty()) {
@@ -331,8 +352,7 @@ public class MatchingServiceImpl implements MatchingService {
             if (currentRound < MAX_SEARCH_ROUNDS) {
                 log.info("[Matching] Đã hết ứng viên Vòng {}. Mở rộng sang Vòng {} sau {}s...",
                         currentRound, currentRound + 1, RETRY_DELAY_SECONDS);
-                CompletableFuture.delayedExecutor(RETRY_DELAY_SECONDS, TimeUnit.SECONDS)
-                        .execute(() -> executeMatchingRound(tripId, currentRound + 1));
+                matchingEventPublisher.scheduleRound(tripId, currentRound + 1);
             } else {
                 log.warn("[Matching] Đã hết ứng viên cho Trip {} sau {} vòng.", tripId, MAX_SEARCH_ROUNDS);
                 markTripNoDriverFound(tripId);
@@ -349,8 +369,14 @@ public class MatchingServiceImpl implements MatchingService {
 
         MatchingSession.CandidateDriver candidate = candidates.get(index);
 
+        String stableOfferId = tripId + ":" + session.getSearchRound() + ":" + targetRank;
+        MatchingOffer existing = matchingOfferRepository.findById(stableOfferId).orElse(null);
+        if (existing != null && existing.getStatus() != MatchingOfferStatus.PENDING) return;
+
         // Tạo MatchingOffer PENDING
         MatchingOffer offer = MatchingOffer.builder()
+                .id(stableOfferId)
+                .searchRound(session.getSearchRound())
                 .driverId(candidate.getDriverId())
                 .tripId(tripId)
                 .status(MatchingOfferStatus.PENDING)
@@ -359,7 +385,12 @@ public class MatchingServiceImpl implements MatchingService {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        MatchingOffer savedOffer = matchingOfferRepository.save(offer);
+        MatchingOffer savedOffer;
+        if (existing != null) savedOffer = existing;
+        else {
+            try { savedOffer = mongoTemplate.insert(offer); }
+            catch (org.springframework.dao.DuplicateKeyException alreadyDispatched) { return; }
+        }
 
         session.setCurrentRank(targetRank);
         session.setCurrentOfferId(savedOffer.getId());
@@ -373,13 +404,20 @@ public class MatchingServiceImpl implements MatchingService {
                 : String.format("Khách cách bạn %.1f phút. Bạn có %ds để nhận cuốc.",
                         candidate.getEtaMinutes(), OFFER_TIMEOUT_SECONDS);
 
+        // Persist the timer before optional notification delivery. Failure is retried by RabbitMQ.
+        if (!Boolean.TRUE.equals(savedOffer.getTimeoutScheduled())) {
+            matchingEventPublisher.scheduleOfferTimeout(tripId, savedOffer.getId(), targetRank);
+            savedOffer.setTimeoutScheduled(true);
+            matchingOfferRepository.save(savedOffer);
+        }
+        if (!Boolean.TRUE.equals(savedOffer.getNotificationSent())) {
         notificationClient.createNotification(new CreateNotificationRequest(
                 candidate.isBackToBack() ? "Có cuốc xe gối đầu mới!" : "Có cuốc xe mới!",
                 notifMsg,
                 candidate.getDriverId()));
-
-        // Hẹn giờ timeout 12s qua RabbitMQ Delay Queue
-        matchingEventPublisher.scheduleOfferTimeout(tripId, savedOffer.getId(), targetRank);
+            savedOffer.setNotificationSent(true);
+            matchingOfferRepository.save(savedOffer);
+        }
 
         // Ghi log phục vụ Machine Learning Phase 3 (Shadow Logging)
         if (shadowLogging) {
@@ -419,7 +457,7 @@ public class MatchingServiceImpl implements MatchingService {
 
         // Kiểm tra trạng thái Offer hiện tại
         MatchingOffer offer = matchingOfferRepository.findById(offerId).orElse(null);
-        if (offer == null || offer.getStatus() != MatchingOfferStatus.PENDING) {
+        if (offer == null || (offer.getStatus() != MatchingOfferStatus.PENDING && offer.getStatus() != MatchingOfferStatus.EXPIRED)) {
             log.info("[Matching] Offer {} không còn PENDING (Status={}). Bỏ qua timeout.",
                     offerId, offer != null ? offer.getStatus() : "NULL");
             return;
@@ -446,7 +484,7 @@ public class MatchingServiceImpl implements MatchingService {
         log.info("[Matching] Offer #{} cho Trip {} đã hết hạn 12s. Chuyển sang tài xế kế tiếp.", rank, tripId);
 
         MatchingSession session = matchingSessionRepository.findById(tripId).orElse(null);
-        if (session != null) {
+        if (session != null && (offer.getSearchRound() == null || offer.getSearchRound() == session.getSearchRound())) {
             dispatchOfferToCandidate(tripId, session, rank + 1);
         }
     }

@@ -8,5 +8,7 @@ public interface OtpChallengeService {
 
     OtpChallengeResult create(UUID userId);
 
+    UUID validatedUserId(String challengeToken);
+
     UUID verify(String challengeToken, String otp);
 }

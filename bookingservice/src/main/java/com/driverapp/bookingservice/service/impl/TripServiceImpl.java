@@ -140,12 +140,6 @@ public class TripServiceImpl implements TripService {
 
                 Trip saved = tripRepository.save(trip);
 
-                // ── Gọi Notification Service ─────────────────────────────────────────
-                notificationClient.createNotification(new CreateNotificationRequest(
-                                "Chuyến đi đã được tạo",
-                                "Hệ thống đang tìm tài xế cho chuyến đi của bạn. Vui lòng chờ trong giây lát.",
-                                customerId));
-
                 // ── Phát sự kiện trip.created (Matching Worker sẽ nhận và bắt đầu tìm tài xế) ──
                 double foodPriceVal = saved.getTotalFoodPrice() != null ? saved.getTotalFoodPrice() : 0.0;
                 java.math.BigDecimal totalAmt = java.math.BigDecimal.valueOf(saved.getShippFare() + foodPriceVal);
@@ -160,6 +154,12 @@ public class TripServiceImpl implements TripService {
                                 .pickupAddress(saved.getPickUpAddress())
                                 .dropoffAddress(saved.getDestinationAddress())
                                 .build());
+
+                // ── Gọi Notification Service ─────────────────────────────────────────
+                notificationClient.createNotification(new CreateNotificationRequest(
+                                "Chuyến đi đã được tạo",
+                                "Hệ thống đang tìm tài xế cho chuyến đi của bạn. Vui lòng chờ trong giây lát.",
+                                customerId));
 
                 return new CreateTripResponse("Tạo chuyến thành công", saved.getId());
         }

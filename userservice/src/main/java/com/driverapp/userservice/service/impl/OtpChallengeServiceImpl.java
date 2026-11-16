@@ -23,11 +23,14 @@ public class OtpChallengeServiceImpl
         implements OtpChallengeService {
 
     private final OtpProperties otpProperties;
+    private final com.driverapp.userservice.service.AuthRateLimitService rateLimits;
 
     private final SecureRandom random = new SecureRandom();
 
     @Override
     public OtpChallengeResult create(UUID userId) {
+        rateLimits.check("otp-cooldown", userId.toString());
+        rateLimits.check("otp-hour", userId.toString());
         String otp = "%06d".formatted(
                 random.nextInt(1_000_000)
         );
@@ -65,56 +68,37 @@ public class OtpChallengeServiceImpl
     }
 
     @Override
-    public UUID verify(
-            String challengeToken,
-            String otp
-    ) {
+    public UUID validatedUserId(String challengeToken) {
+        return UUID.fromString(verifiedFields(challengeToken)[0]);
+    }
+
+    @Override
+    public UUID verify(String challengeToken, String otp) {
+        String[] fields = verifiedFields(challengeToken);
+        UUID userId = UUID.fromString(fields[0]);
+        int remaining = (int)Math.max(1, Long.parseLong(fields[1]) - Instant.now().getEpochSecond());
+        rateLimits.check("verify", userId.toString());
+        rateLimits.checkChallenge(challengeToken, remaining);
+        if (otp == null || !MessageDigest.isEqual(hmac(userId + ":" + fields[2] + ":" + otp), decode(fields[3]))) {
+            throw invalidOtp();
+        }
+        rateLimits.consumeChallenge(challengeToken, remaining);
+        return userId;
+    }
+
+    private String[] verifiedFields(String challengeToken) {
         try {
+            if (challengeToken == null || challengeToken.length() > 4096) throw invalidOtp();
             String[] parts = challengeToken.split("\\.", -1);
-
-            if (parts.length != 2) {
-                throw invalidOtp();
-            }
-
-            boolean validSignature = MessageDigest.isEqual(
-                    hmac(parts[0]),
-                    decode(parts[1])
-            );
-
-            if (!validSignature) {
-                throw invalidOtp();
-            }
-
-            String payload = new String(
-                    decode(parts[0]),
-                    StandardCharsets.UTF_8
-            );
-
-            String[] fields = payload.split(":", -1);
-
-            if (fields.length != 4) {
-                throw invalidOtp();
-            }
-
-            UUID userId = UUID.fromString(fields[0]);
-            long expiresAt = Long.parseLong(fields[1]);
-            UUID nonce = UUID.fromString(fields[2]);
-
-            if (Instant.now().getEpochSecond() >= expiresAt) {
-                throw invalidOtp();
-            }
-
-            boolean validOtp = MessageDigest.isEqual(
-                    hmac(userId + ":" + nonce + ":" + otp),
-                    decode(fields[3])
-            );
-
-            if (!validOtp) {
-                throw invalidOtp();
-            }
-
-            return userId;
-        } catch (IllegalArgumentException exception) {
+            if (parts.length != 2 || !MessageDigest.isEqual(hmac(parts[0]), decode(parts[1]))) throw invalidOtp();
+            String[] fields = new String(decode(parts[0]), StandardCharsets.UTF_8).split(":", -1);
+            if (fields.length != 4) throw invalidOtp();
+            UUID.fromString(fields[0]);
+            UUID.fromString(fields[2]);
+            if (Instant.now().getEpochSecond() >= Long.parseLong(fields[1])) throw invalidOtp();
+            decode(fields[3]);
+            return fields;
+        } catch (IllegalArgumentException invalid) {
             throw invalidOtp();
         }
     }

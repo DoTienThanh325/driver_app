@@ -1,114 +1,258 @@
 server:
   port: 8080
-
 spring:
   application:
     name: api-gateway
   codec:
     max-in-memory-size: 50MB
-
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:200ms}
+      timeout: ${REDIS_COMMAND_TIMEOUT:300ms}
   security:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: http://localhost:8081
-          jwk-set-uri: http://localhost:8081/.well-known/jwks.json
-
-  # cloud:
-  #   gateway:
-  #     server:
-  #       webflux:
-  #         globalcors:
-  #           add-to-simple-url-handler-mapping: true
-  #           cors-configurations:
-  #             '[/**]':
-  #               allowedOrigins:
-  #                 - http://localhost:3000
-  #                 - http://localhost:4200
-  #               allowedMethods:
-  #                 - GET
-  #                 - POST
-  #                 - PUT
-  #                 - PATCH
-  #                 - DELETE
-  #                 - OPTIONS
-  #               allowedHeaders:
-  #                 - Authorization
-  #                 - Content-Type
-
-  #         routes:
-  #           - id: user-service
-  #             uri: http://localhost:8081
-  #             predicates:
-  #               - Path=/api/auth/**,/api/users/**
-
-  #           - id: driver-service
-  #             uri: http://localhost:8082
-  #             predicates:
-  #               - Path=/api/drivers/**,/api/vehicles/**
-
-  #           - id: booking-service
-  #             uri: http://localhost:8083
-  #             predicates:
-  #               - Path=/api/trips/**,/api/bookings/**
-
-  #           - id: payment-service
-  #             uri: http://localhost:8084
-  #             predicates:
-  #               - Path=/api/payments/**,/api/vouchers/**
-
-  #           - id: notification-service
-  #             uri: http://localhost:8085
-  #             predicates:
-  #               - Path=/api/notifications/**
-
-  #           - id: feedback-service
-  #             uri: http://localhost:8086
-  #             predicates:
-  #               - Path=/api/feedback/**,/api/complaints/**
-
+          issuer-uri: ${JWT_ISSUER_URI:http://localhost:8081}
+          jwk-set-uri: ${JWT_JWK_SET_URI:http://localhost:8081/.well-known/jwks.json}
   cloud:
     gateway:
       server:
         webflux:
           discovery:
             locator:
-              enabled: true
-              lower-case-service-id: true
+              enabled: false
+          httpclient:
+            connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
+            response-timeout: ${GATEWAY_RESPONSE_TIMEOUT:5s}
+            pool:
+              type: fixed
+              max-connections: ${GATEWAY_MAX_CONNECTIONS:200}
+              acquire-timeout: ${GATEWAY_POOL_WAIT_MS:500}
           routes:
-            - id: userservice
+            - id: auth
               uri: lb://userservice
               predicates:
-                - Path=/api/auth/**,/api/users/**,/.well-known/jwks.json
-
-            - id: driverservice
+                - Path=/api/auth/**,/api/v1/auth/resend-otp
+                - Method=POST
+              metadata:
+                policy: auth
+                connect-timeout: 1000
+                response-timeout: 5000
+                deadline-ms: 6000
+            - id: jwks
+              uri: lb://userservice
+              predicates:
+                - Path=/.well-known/jwks.json
+                - Method=GET
+              metadata:
+                policy: jwks
+                connect-timeout: 1000
+                response-timeout: 5000
+                deadline-ms: 6000
+            - id: driver-upload
               uri: lb://driverservice
               predicates:
-                - Path=/api/drivers/**,/api/vehicles/**
-
-            - id: bookingservice
+                - Path=/api/drivers/register,/api/drivers/registration,/api/vehicles,/api/vehicles/**
+                - Method=POST,PATCH
+              filters:
+                - name: RequestSize
+                  args:
+                    maxSize: 50MB
+              metadata:
+                policy: upload
+                connect-timeout: 2000
+                response-timeout: 30000
+                deadline-ms: 35000
+            - id: search
               uri: lb://bookingservice
               predicates:
-                - Path=/api/trips/**,/api/bookings/**,/api/matching-offers/**,/api/businesses/**,/api/business-documents/**,/api/foods/**,/api/restaurants/**
-
-            - id: paymentservice
+                - Path=/api/bookings/foods/search/**,/api/foods/search/**,/api/bookings/foods/recommendations/**,/api/foods/recommendations/**
+                - Method=GET,POST
+              metadata:
+                policy: search
+                connect-timeout: 1000
+                response-timeout: 4000
+                deadline-ms: 4500
+            - id: booking-upload
+              uri: lb://bookingservice
+              predicates:
+                - Path=/api/businesses/registration,/api/business-documents/**,/api/foods/**,/api/bookings/foods/**
+                - Method=POST,PATCH
+              filters:
+                - name: RequestSize
+                  args:
+                    maxSize: 26MB
+              metadata:
+                policy: upload
+                connect-timeout: 2000
+                response-timeout: 30000
+                deadline-ms: 35000
+            - id: location
+              uri: lb://driverservice
+              predicates:
+                - Path=/api/drivers/location
+                - Method=POST
+              metadata:
+                policy: location
+                connect-timeout: 500
+                response-timeout: 2000
+                deadline-ms: 2500
+            - id: trip-write
+              uri: lb://bookingservice
+              predicates:
+                - Path=/api/trips/**,/api/matching-offers/**
+                - Method=POST,PATCH,PUT,DELETE
+              metadata:
+                policy: write
+                connect-timeout: 1000
+                response-timeout: 8000
+                deadline-ms: 8500
+            - id: payment-write
               uri: lb://paymentservice
               predicates:
                 - Path=/api/payments/**,/api/vouchers/**
-
-            - id: notificationservice
+                - Method=POST,PATCH,PUT,DELETE
+              metadata:
+                policy: write
+                connect-timeout: 1000
+                response-timeout: 8000
+                deadline-ms: 8500
+            - id: user
+              uri: lb://userservice
+              predicates:
+                - Path=/api/users/**
+              metadata:
+                policy: read
+                connect-timeout: 1000
+                response-timeout: 5000
+                deadline-ms: 6000
+            - id: driver
+              uri: lb://driverservice
+              predicates:
+                - Path=/api/drivers/**,/api/vehicles/**
+              metadata:
+                policy: read
+                connect-timeout: 1000
+                response-timeout: 5000
+                deadline-ms: 6000
+            - id: booking
+              uri: lb://bookingservice
+              predicates:
+                - Path=/api/trips/**,/api/bookings/**,/api/matching-offers/**,/api/businesses/**,/api/business-documents/**,/api/foods/**,/api/restaurants/**
+              metadata:
+                policy: read
+                connect-timeout: 1000
+                response-timeout: 5000
+                deadline-ms: 6000
+            - id: payment
+              uri: lb://paymentservice
+              predicates:
+                - Path=/api/payments/**,/api/vouchers/**
+              metadata:
+                policy: read
+                connect-timeout: 1000
+                response-timeout: 5000
+                deadline-ms: 6000
+            - id: notification-ws
+              uri: lb://notificationservice
+              predicates:
+                - Path=/ws/notifications/**
+              metadata:
+                policy: read
+                connect-timeout: 5000
+                deadline-ms: 0
+            - id: notification
               uri: lb://notificationservice
               predicates:
                 - Path=/api/notifications/**
-
-            - id: feedbackservice
+              metadata:
+                policy: read
+                connect-timeout: 1000
+                response-timeout: 5000
+                deadline-ms: 6000
+            - id: feedback
               uri: lb://feedbackservice
               predicates:
                 - Path=/api/feedback/**,/api/feedbacks/**,/api/complaints/**
-
+              metadata:
+                policy: read
+                connect-timeout: 1000
+                response-timeout: 5000
+                deadline-ms: 6000
 eureka:
   client:
     service-url:
       defaultZone: ${EUREKA_DEFAULT_ZONE:http://localhost:8761/eureka/}
   instance:
     prefer-ip-address: ${EUREKA_PREFER_IP_ADDRESS:true}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+resilience:
+  gateway:
+    minimum-calls: ${GATEWAY_CB_MINIMUM_CALLS:20}
+    window: ${GATEWAY_CB_WINDOW:50}
+    open-wait: ${GATEWAY_CB_OPEN_WAIT:15s}
+    rate-limit-enabled: ${GATEWAY_RATE_LIMIT_ENABLED:true}
+    circuit-breaker-enabled: ${GATEWAY_CIRCUIT_BREAKER_ENABLED:true}
+    trusted-proxies: ${TRUSTED_PROXY_CIDRS:}
+    policies:
+      ingress:
+        rate: ${GATEWAY_INGRESS_RATE:100}
+        burst: ${GATEWAY_INGRESS_BURST:200}
+        window-seconds: 0
+      login:
+        rate: ${GATEWAY_LOGIN_RATE:10}
+        burst: ${GATEWAY_LOGIN_BURST:10}
+        window-seconds: 60
+      otp:
+        rate: ${GATEWAY_OTP_RATE:5}
+        burst: ${GATEWAY_OTP_BURST:5}
+        window-seconds: 60
+      verify:
+        rate: ${GATEWAY_VERIFY_RATE:20}
+        burst: ${GATEWAY_VERIFY_BURST:20}
+        window-seconds: 60
+      refresh:
+        rate: ${GATEWAY_REFRESH_RATE:20}
+        burst: ${GATEWAY_REFRESH_BURST:20}
+        window-seconds: 60
+      auth:
+        rate: ${GATEWAY_AUTH_RATE:10}
+        burst: ${GATEWAY_AUTH_BURST:20}
+        window-seconds: 0
+      jwks:
+        rate: ${GATEWAY_JWKS_RATE:10}
+        burst: ${GATEWAY_JWKS_BURST:20}
+        window-seconds: 0
+      read:
+        rate: ${GATEWAY_READ_RATE:10}
+        burst: ${GATEWAY_READ_BURST:20}
+        window-seconds: 0
+      search:
+        rate: ${GATEWAY_SEARCH_RATE:5}
+        burst: ${GATEWAY_SEARCH_BURST:10}
+        window-seconds: 0
+      write:
+        rate: ${GATEWAY_WRITE_RATE:1}
+        burst: ${GATEWAY_WRITE_BURST:3}
+        window-seconds: 0
+      location:
+        slow: ${GATEWAY_LOCATION_SLOW_THRESHOLD:1s}
+        rate: ${GATEWAY_LOCATION_RATE:2}
+        burst: ${GATEWAY_LOCATION_BURST:5}
+        window-seconds: 0
+      upload:
+        slow: ${GATEWAY_UPLOAD_SLOW_THRESHOLD:25s}
+        rate: ${GATEWAY_UPLOAD_RATE:10}
+        burst: ${GATEWAY_UPLOAD_BURST:10}
+        window-seconds: 60
+      admin:
+        rate: ${GATEWAY_ADMIN_RATE:5}
+        burst: ${GATEWAY_ADMIN_BURST:10}
+        window-seconds: 0

@@ -28,13 +28,15 @@ public class SecurityConfig {
                                 .cors(Customizer.withDefaults())
                                 .authorizeExchange(exchange -> exchange
                                                 .pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                                                .pathMatchers(HttpMethod.GET, "/.well-known/jwks.json").permitAll()
                                                 .pathMatchers(
                                                                 HttpMethod.POST,
                                                                 "/api/auth/register",
                                                                 "/api/auth/login",
                                                                 "/api/auth/verify-otp",
                                                                 "/api/auth/refresh",
-                                                                "/api/auth/logout")
+                                                                "/api/auth/logout",
+                                "/api/auth/resend-otp", "/api/v1/auth/resend-otp")
                                                 .permitAll()
                                                 .pathMatchers("/api/drivers/test").hasRole("CUSTOMER")
                                                 .pathMatchers("/api/drivers/register").hasRole("CUSTOMER")
