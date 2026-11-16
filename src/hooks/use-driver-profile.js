@@ -4,6 +4,8 @@ import { authService } from '@/services/auth.service';
 import { userStorage } from '@/services/storage/user.storage';
 import { driverService } from '@/services/driver.service';
 import { processImageForUpload } from '@/utils/image-processor';
+import { offlineCacheStorage } from '@/services/storage/offline-cache.storage';
+import { offlineSyncService, SYNC_TASK_TYPE } from '@/services/offline-sync.service';
 
 export function useDriverProfile() {
   const [profile, setProfile] = useState(null);
@@ -12,6 +14,8 @@ export function useDriverProfile() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [hasPendingSync, setHasPendingSync] = useState(false);
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
 
   // Chế độ chỉnh sửa (Edit Mode)
   const [isEditMode, setIsEditMode] = useState(false);
@@ -48,19 +52,59 @@ export function useDriverProfile() {
   const [isDocModalVisible, setIsDocModalVisible] = useState(false);
   const [isAddVehicleModalVisible, setIsAddVehicleModalVisible] = useState(false);
 
+  const syncVehicleList = useCallback((detail) => {
+    if (detail?.vehicles && detail.vehicles.length > 0) {
+      setVehicles(
+        detail.vehicles.map((v, idx) => ({
+          id: v.id || `veh-${idx + 1}`,
+          name: v.vehicleType === 'CAR' ? `Ô tô ${idx + 1}` : `Xe máy ${idx + 1}`,
+          vehicleType: v.vehicleType || 'MOTORBIKE',
+          registrationFrontUrl: v.registrationFront,
+          plateImgUrl: v.plate,
+          status: v.status || detail.verificationStatus || 'APPROVED',
+        }))
+      );
+    } else if (detail?.vehicle) {
+      setVehicles([
+        {
+          id: detail.vehicle.id || 'veh-1',
+          name: detail.vehicle.vehicleType === 'CAR' ? 'Ô tô 1' : 'Xe máy 1',
+          vehicleType: detail.vehicle.vehicleType || 'MOTORBIKE',
+          registrationFrontUrl: detail.vehicle.registrationFront,
+          plateImgUrl: detail.vehicle.plate,
+          status: detail.vehicle.status || detail.verificationStatus || 'APPROVED',
+        },
+      ]);
+    } else {
+      setVehicles([]);
+    }
+  }, []);
+
   const fetchProfile = useCallback(async (isManualCheck = false) => {
     try {
-      if (!isManualCheck) setIsLoading(true);
+      // Ưu tiên đọc dữ liệu từ cache trước để người dùng thấy ngay
+      if (!isManualCheck && !driverDetail) {
+        const cached = await offlineCacheStorage.getDriverProfile();
+        if (cached) {
+          setDriverDetail(cached);
+          syncVehicleList(cached);
+          setIsLoading(false);
+        }
+      }
+
+      const pending = await offlineSyncService.hasPendingTask(SYNC_TASK_TYPE.DRIVER_PROFILE_IMAGES);
+      setHasPendingSync(pending);
+
+      if (!isManualCheck && !driverDetail) setIsLoading(true);
       const user = await userStorage.getUserProfile();
       setProfile(user);
 
       if (user?.id) {
         const detail = await driverService.getDriverDetail(user.id);
         setDriverDetail(detail);
+        setIsOfflineMode(false);
 
         // [ROLE UPDATE STRATEGY]
-        // Nếu verificationStatus là APPROVED:
-        // Kiểm tra xem userStorage đã có role DRIVER chưa. Nếu chưa -> refresh token + update profile
         const isApproved = detail?.verificationStatus === 'APPROVED';
         if (isApproved) {
           const hasDriverRole = await userStorage.isDriver();
@@ -85,46 +129,39 @@ export function useDriverProfile() {
           }
         }
 
-        if (detail?.vehicles && detail.vehicles.length > 0) {
-          setVehicles(
-            detail.vehicles.map((v, idx) => ({
-              id: v.id || `veh-${idx + 1}`,
-              name: v.vehicleType === 'CAR' ? `Ô tô ${idx + 1}` : `Xe máy ${idx + 1}`,
-              vehicleType: v.vehicleType || 'MOTORBIKE',
-              registrationFrontUrl: v.registrationFront,
-              plateImgUrl: v.plate,
-              status: v.status || detail.verificationStatus || 'APPROVED',
-            }))
-          );
-        } else if (detail?.vehicle) {
-          setVehicles([
-            {
-              id: detail.vehicle.id || 'veh-1',
-              name: detail.vehicle.vehicleType === 'CAR' ? 'Ô tô 1' : 'Xe máy 1',
-              vehicleType: detail.vehicle.vehicleType || 'MOTORBIKE',
-              registrationFrontUrl: detail.vehicle.registrationFront,
-              plateImgUrl: detail.vehicle.plate,
-              status: detail.vehicle.status || detail.verificationStatus || 'APPROVED',
-            },
-          ]);
-        } else {
-          setVehicles([]);
-        }
+        syncVehicleList(detail);
       }
     } catch (err) {
-      console.warn('Lỗi tải thông tin hồ sơ tài xế:', err);
+      console.warn('Lỗi tải thông tin hồ sơ tài xế (dùng dữ liệu cache):', err);
+      setIsOfflineMode(true);
+      // Nạp fallback từ cache nếu fetch gặp sự cố
+      const cached = await offlineCacheStorage.getDriverProfile();
+      if (cached) {
+        setDriverDetail(cached);
+        syncVehicleList(cached);
+      }
       if (isManualCheck) {
-        Alert.alert('Lỗi', 'Không thể kiểm tra trạng thái lúc này. Vui lòng thử lại sau.');
+        Alert.alert(
+          'Chưa có kết nối mạng',
+          'Hiện chưa thể kiểm tra xét duyệt mới nhất từ ban quản trị. Bạn đang xem thông tin đã lưu gần nhất.'
+        );
       }
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
       setIsCheckingStatus(false);
     }
-  }, []);
+  }, [driverDetail, syncVehicleList]);
 
   const handlePullRefresh = useCallback(async () => {
     setIsRefreshing(true);
+    try {
+      await offlineSyncService.processSyncQueue();
+      const pending = await offlineSyncService.hasPendingTask(SYNC_TASK_TYPE.DRIVER_PROFILE_IMAGES);
+      setHasPendingSync(pending);
+    } catch (e) {
+      console.warn('Lỗi khi sync queue lúc pull refresh:', e);
+    }
     await fetchProfile();
   }, [fetchProfile]);
 
@@ -135,6 +172,10 @@ export function useDriverProfile() {
 
   useEffect(() => {
     fetchProfile();
+    const unsubscribe = offlineSyncService.subscribe(() => {
+      offlineSyncService.hasPendingTask(SYNC_TASK_TYPE.DRIVER_PROFILE_IMAGES).then(setHasPendingSync);
+    });
+    return () => unsubscribe();
   }, [fetchProfile]);
 
   // Điều khiển Modal Zoom
@@ -295,21 +336,53 @@ export function useDriverProfile() {
 
       await Promise.all(compressTasks);
 
-      await driverService.updateRegistration(formData);
+      try {
+        await driverService.updateRegistration(formData);
+        await offlineSyncService.removeTask(SYNC_TASK_TYPE.DRIVER_PROFILE_IMAGES);
+        setHasPendingSync(false);
 
-      Alert.alert(
-        'Cập nhật thành công',
-        'Ảnh giấy tờ mới đã được lưu và gửi tới quản trị viên để xét duyệt lại.',
-        [{ text: 'Đồng ý' }]
-      );
+        Alert.alert(
+          'Cập nhật thành công',
+          'Ảnh giấy tờ mới đã được lưu và gửi tới quản trị viên để xét duyệt lại.',
+          [{ text: 'Đồng ý' }]
+        );
+      } catch (uploadErr) {
+        // Nếu upload thất bại do lỗi mạng hoặc server: Lưu cache cục bộ + Enqueue sync task
+        console.warn('Lỗi kết nối khi cập nhật hồ sơ tài xế, lưu vào hàng đợi đồng bộ:', uploadErr?.message);
+        
+        const updatedDetail = {
+          ...driverDetail,
+          idCard: {
+            front: draftImages.idCardFront || driverDetail?.idCard?.front,
+            back: draftImages.idCardBack || driverDetail?.idCard?.back,
+          },
+          license: {
+            front: draftImages.driverLicenseFront || draftImages.driverLicenseMotorbikeFront || draftImages.driverLicenseCarFront || driverDetail?.license?.front,
+            back: draftImages.driverLicenseBack || draftImages.driverLicenseMotorbikeBack || draftImages.driverLicenseCarBack || driverDetail?.license?.back,
+          },
+          verificationStatus: 'PENDING',
+        };
+        setDriverDetail(updatedDetail);
+        await offlineCacheStorage.saveDriverProfile(updatedDetail);
+        await offlineSyncService.enqueueTask(SYNC_TASK_TYPE.DRIVER_PROFILE_IMAGES, { draftImages });
+        setHasPendingSync(true);
+
+        Alert.alert(
+          'Đã ghi nhận ảnh giấy tờ',
+          'Ảnh mới đã được lưu trên máy của bạn. Hệ thống sẽ tự động gửi đi xét duyệt ngay khi mạng ổn định lại mà bạn không cần tải lại ảnh.',
+          [{ text: 'Đồng ý' }]
+        );
+      }
 
       // Reset draft và tắt edit mode
       handleCancelEdit();
       // Tải lại dữ liệu mới nhất
       await fetchProfile();
     } catch (err) {
-      const msg = err.message || 'Cập nhật ảnh giấy tờ thất bại. Vui lòng thử lại.';
-      Alert.alert('Lỗi cập nhật', msg);
+      Alert.alert(
+        'Chưa thể gửi ảnh',
+        err.message || 'Đường truyền bị gián đoạn. Bạn vui lòng kiểm tra kết nối mạng và bấm "Lưu" lại nhé.'
+      );
     } finally {
       setIsSaving(false);
     }
@@ -376,6 +449,8 @@ export function useDriverProfile() {
     isAddVehicleModalVisible,
     hasMotorbikeLicense,
     hasCarLicense,
+    hasPendingSync,
+    isOfflineMode,
     fetchProfile,
     handlePullRefresh,
     handleCheckApprovalStatus,

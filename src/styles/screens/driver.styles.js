@@ -148,6 +148,46 @@ export const driverStyles = StyleSheet.create({
   },
 
   // Trạng thái tạm nghỉ (Offline)
+  historyButtonCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+    marginBottom: 20,
+  },
+  historyCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 8,
+  },
+  historyIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#E6F8F8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  historyTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 2,
+  },
+  historySubtitle: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+
   offlineStateContainer: {
     alignItems: 'center',
     justifyContent: 'center',

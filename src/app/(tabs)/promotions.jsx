@@ -54,20 +54,30 @@ export default function PromotionsScreen() {
 
   const handleClaim = async (voucher) => {
     try {
-      await voucherService.claimVoucher(voucher.id, 1);
-      Alert.alert('Thành công', 'Đã nhận voucher vào ví ưu đãi của bạn!', [
-        {
-          text: 'Xem đã nhận',
-          onPress: () => {
-            setActiveTab('CLAIMED');
-            fetchVouchers();
+      const quantity = Number(
+        voucher.numberOfVouchersPerCus ||
+        voucher.numberOfVouchers ||
+        voucher.quantity ||
+        1
+      );
+      await voucherService.claimVoucher(voucher.id, quantity);
+      Alert.alert(
+        'Thành công',
+        `Đã nhận ${quantity > 1 ? `${quantity} ` : ''}voucher vào ví ưu đãi của bạn!`,
+        [
+          {
+            text: 'Xem đã nhận',
+            onPress: () => {
+              setActiveTab('CLAIMED');
+              fetchVouchers();
+            },
           },
-        },
-        {
-          text: 'Ở lại',
-          onPress: () => fetchVouchers(),
-        },
-      ]);
+          {
+            text: 'Ở lại',
+            onPress: () => fetchVouchers(),
+          },
+        ]
+      );
     } catch (err) {
       Alert.alert('Không thể nhận voucher', err.message || 'Đã có lỗi xảy ra.');
     }

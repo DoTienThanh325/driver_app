@@ -23,10 +23,11 @@ export default function DriverProfileScreen() {
     isAddVehicleModalVisible,
     hasMotorbikeLicense,
     hasCarLicense,
+    hasPendingSync,
+    isOfflineMode,
     fetchProfile,
     isLoading,
     isRefreshing,
-    isCheckingStatus,
     isSaving,
     isEditMode,
     draftImages,
@@ -46,7 +47,6 @@ export default function DriverProfileScreen() {
     handleCloseAddVehicle,
     handleAddVehicleSuccess,
     handlePullRefresh,
-    handleCheckApprovalStatus,
   } = useDriverProfile();
 
   // Presigned URLs từ hệ thống hoặc fallback asset
@@ -105,6 +105,7 @@ export default function DriverProfileScreen() {
               source={{ uri: displayUri }}
               style={styles.documentImage}
               contentFit="cover"
+              cachePolicy="memory-disk"
               transition={200}
             />
           ) : (
@@ -158,26 +159,9 @@ export default function DriverProfileScreen() {
             {!isEditMode ? (
               <>
                 {driverDetail?.verificationStatus === 'PENDING' ? (
-                  <>
-                    <View style={styles.pendingBadgeHeader}>
-                      <ThemedText style={styles.pendingBadgeHeaderText}>Chờ duyệt</ThemedText>
-                    </View>
-                    <Pressable
-                      style={styles.checkStatusBtnHeader}
-                      onPress={handleCheckApprovalStatus}
-                      disabled={isCheckingStatus}
-                      hitSlop={6}
-                    >
-                      {isCheckingStatus ? (
-                        <ActivityIndicator size="small" color="#D97706" />
-                      ) : (
-                        <Ionicons name="refresh-outline" size={13} color="#D97706" />
-                      )}
-                      <ThemedText style={styles.checkStatusBtnHeaderText}>
-                        {isCheckingStatus ? '...' : 'Kiểm tra'}
-                      </ThemedText>
-                    </Pressable>
-                  </>
+                  <View style={styles.pendingBadgeHeader}>
+                    <ThemedText style={styles.pendingBadgeHeaderText}>Chờ duyệt</ThemedText>
+                  </View>
                 ) : (
                   <View style={styles.approvedBadgeHeader}>
                     <ThemedText style={styles.approvedBadgeHeaderText}>Đã duyệt</ThemedText>
@@ -231,6 +215,27 @@ export default function DriverProfileScreen() {
           />
         }
       >
+        {/* Banner thông báo trạng thái đồng bộ ngoại tuyến */}
+        {hasPendingSync && (
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: '#EFF6FF',
+            paddingHorizontal: 14,
+            paddingVertical: 10,
+            borderRadius: 10,
+            marginBottom: 12,
+            borderLeftWidth: 4,
+            borderLeftColor: '#3B82F6',
+            gap: 8,
+          }}>
+            <Ionicons name="cloud-offline-outline" size={18} color="#2563EB" />
+            <ThemedText style={{ fontSize: 13, color: '#1E40AF', flex: 1, fontWeight: '500' }}>
+              Có ảnh mới đang chờ gửi duyệt. Ứng dụng sẽ tự động hoàn tất khi có mạng.
+            </ThemedText>
+          </View>
+        )}
+
         {/* Banner thông báo chế độ chỉnh sửa */}
         {isEditMode && (
           <View style={styles.editNoticeBanner}>

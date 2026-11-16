@@ -1,5 +1,6 @@
 import { apiClient } from './api-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { offlineCacheStorage } from './storage/offline-cache.storage';
 
 export const PAYMENT_METHOD = {
   PAY_DIRECTLY: 'PAY_DIRECTLY', // Tiền mặt trực tiếp
@@ -100,10 +101,59 @@ export const paymentService = {
   },
 
   /**
-   * Tài xế đăng ký / cập nhật số tài khoản ngân hàng để nhận VietQR
+   * Đăng ký mới thông tin tài khoản ngân hàng của tài xế (POST)
    * POST /api/payments/driver-payment-info
+   * @param {Object} data
+   * @param {string} data.bankName - Tên ngân hàng
+   * @param {string} data.bankBin - Mã BIN ngân hàng (6 số)
+   * @param {string} data.bankAccountNumber - Số tài khoản ngân hàng
+   * @param {string} data.bankAccountName - Tên chủ tài khoản (Viết hoa không dấu)
+   * @returns {Promise<any>}
    */
-  registerDriverPaymentInfo: async (bankInfo) => {
-    return await apiClient.post('/api/payments/driver-payment-info', bankInfo);
+  registerDriverPaymentInfo: async (data = {}) => {
+    return await apiClient.post('/api/payments/driver-payment-info', {
+      bankName: data.bankName ? data.bankName.trim() : '',
+      bankBin: data.bankBin ? String(data.bankBin).trim() : '',
+      bankAccountNumber: data.bankAccountNumber ? String(data.bankAccountNumber).trim() : '',
+      bankAccountName: data.bankAccountName ? String(data.bankAccountName).trim().toUpperCase() : '',
+    });
+  },
+
+  /**
+   * Cập nhật thông tin tài khoản ngân hàng của tài xế (PATCH)
+   * PATCH /api/payments/driver-payment-info
+   * @param {Object} data
+   * @param {string} data.bankName - Tên ngân hàng
+   * @param {string} data.bankBin - Mã BIN ngân hàng (6 số)
+   * @param {string} data.bankAccountNumber - Số tài khoản ngân hàng
+   * @param {string} data.bankAccountName - Tên chủ tài khoản (Viết hoa không dấu)
+   * @returns {Promise<any>}
+   */
+  updateDriverPaymentInfo: async (data = {}) => {
+    return await apiClient.patch('/api/payments/driver-payment-info', {
+      bankName: data.bankName ? data.bankName.trim() : '',
+      bankBin: data.bankBin ? String(data.bankBin).trim() : '',
+      bankAccountNumber: data.bankAccountNumber ? String(data.bankAccountNumber).trim() : '',
+      bankAccountName: data.bankAccountName ? String(data.bankAccountName).trim().toUpperCase() : '',
+    });
+  },
+
+  /**
+   * Lấy thông tin tài khoản ngân hàng hiện tại của tài xế
+   * GET /api/payments/driver-payment-info
+   * @returns {Promise<any>}
+   */
+  getDriverPaymentInfo: async () => {
+    try {
+      const data = await apiClient.get('/api/payments/driver-payment-info');
+      if (data) {
+        await offlineCacheStorage.saveBankLink(data);
+      }
+      return data;
+    } catch (error) {
+      console.warn('Lỗi khi tải thông tin tài khoản ngân hàng từ server, đọc từ cache:', error?.message);
+      const cached = await offlineCacheStorage.getBankLink();
+      return cached || null;
+    }
   },
 };

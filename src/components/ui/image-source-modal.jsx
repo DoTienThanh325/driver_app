@@ -2,14 +2,14 @@ import { ThemedText } from '@/components/themed-text';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import React from 'react';
-import { Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Modal, Platform, Pressable, StyleSheet, View, Alert } from 'react-native';
 
 export function ImageSourceModal({ visible, title, onSelectImage, onClose, useModal = true }) {
   const handleLaunchCamera = async () => {
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
-        alert('Cần cấp quyền truy cập máy ảnh để chụp giấy tờ.');
+        Alert.alert('Quyền truy cập', 'Cần cấp quyền truy cập máy ảnh để chụp giấy tờ.');
         return;
       }
 
@@ -32,7 +32,7 @@ export function ImageSourceModal({ visible, title, onSelectImage, onClose, useMo
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        alert('Cần cấp quyền truy cập thư viện để chọn ảnh.');
+        Alert.alert('Quyền truy cập', 'Cần cấp quyền truy cập thư viện để chọn ảnh.');
         return;
       }
 

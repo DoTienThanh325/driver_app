@@ -69,11 +69,11 @@ export function VoucherTicketCard({ voucher, isClaimed = false, onClaim, onPress
 
       {/* 3. Phần thân vé bên phải (Nền trắng) */}
       <View style={styles.rightBlock}>
-        <Text style={styles.titleText} numberOfLines={2}>
+        <Text style={styles.titleText}>
           {voucherTitle}
         </Text>
 
-        <Text style={styles.conditionText} numberOfLines={1}>
+        <Text style={styles.conditionText}>
           {minOrderText}
         </Text>
 

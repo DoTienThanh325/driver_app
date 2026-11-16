@@ -1,8 +1,9 @@
 import { apiClient } from './api-client';
+import { offlineCacheStorage } from './storage/offline-cache.storage';
 
 export const voucherService = {
   /**
-   * Lấy danh sách voucher của App chưa nhận
+   * Lấy danh sách voucher của App chưa nhận (Dành cho mục Ưu đãi - do Admin phát hành dùng chung, không lưu cache)
    * GET /api/vouchers/app?type=... (mặc định không truyền type để lấy tất cả)
    * @param {string} [type] - 'FOOD' | 'TRANSIT' | null
    */
@@ -12,7 +13,7 @@ export const voucherService = {
       return await apiClient.get(endpoint);
     } catch (err) {
       if (err.isNetworkError) {
-        // Fallback demo mock nếu offline
+        // Fallback demo mock nếu offline: Toàn bộ voucher của mục Ưu đãi đều có providerType là 'APP'
         return [
           {
             id: 'mock-v1',
@@ -30,7 +31,7 @@ export const voucherService = {
             maxDiscount: 30000,
             minValue: 150000,
             type: 'FOOD',
-            providerType: 'RESTAURANT',
+            providerType: 'APP',
             claimableCount: 2,
             numberOfVouchersPerCus: 2,
             expiredAt: '2026-11-15T23:59:59',
@@ -76,6 +77,49 @@ export const voucherService = {
     return await apiClient.post('/api/vouchers/claim', {
       voucherId,
       numberOfVouchers,
+    });
+  },
+
+  /**
+   * Lấy danh sách voucher của Nhà hàng (Role BUSINESS - do Quán phát hành, providerType là RESTAURANT)
+   * Thông tin lưu vào cache là của riêng từng nhà hàng theo restaurantId
+   * GET /api/vouchers/restaurants/{restaurantId}
+   */
+  getRestaurantVouchers: async (restaurantId) => {
+    try {
+      if (!restaurantId || restaurantId === 'default') {
+        const cached = await offlineCacheStorage.getRestaurantVouchers(restaurantId);
+        return cached || [];
+      }
+      const data = await apiClient.get(`/api/vouchers/restaurants/${restaurantId}`);
+      const list = Array.isArray(data) ? data : [];
+      await offlineCacheStorage.saveRestaurantVouchers(list, restaurantId);
+      return list;
+    } catch (err) {
+      console.warn('Lỗi khi tải voucher nhà hàng, đọc từ cache:', err?.message);
+      const cached = await offlineCacheStorage.getRestaurantVouchers(restaurantId);
+      return cached || [];
+    }
+  },
+
+  /**
+   * Tạo voucher mới cho Nhà hàng (Role BUSINESS)
+   * POST /api/vouchers
+   */
+  createBusinessVoucher: async ({
+    discount,
+    maxDiscount,
+    minValue,
+    expiredAt,
+    numberOfVouchersPerCus = 1,
+  }) => {
+    return await apiClient.post('/api/vouchers', {
+      discount: Number(discount),
+      maxDiscount: Number(maxDiscount),
+      minValue: Number(minValue),
+      type: 'FOOD',
+      expiredAt,
+      numberOfVouchersPerCus: Number(numberOfVouchersPerCus) || 1,
     });
   },
 };

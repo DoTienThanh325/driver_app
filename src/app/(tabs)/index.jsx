@@ -55,7 +55,7 @@ export default function HomeScreen() {
   };
 
   const handleBookingMeal = () => {
-    Alert.alert('Đặt món', 'Dịch vụ gọi món T&M Meal đang chuẩn bị danh mục quán ăn ngon cho bạn!');
+    router.push('/food-search');
   };
 
   return (

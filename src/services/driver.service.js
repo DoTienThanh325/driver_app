@@ -1,4 +1,5 @@
 import { apiClient } from './api-client';
+import { offlineCacheStorage } from './storage/offline-cache.storage';
 
 export const AVAILABILITY_STATUS = {
   AVAILABLE: 'AVAILABLE',
@@ -68,14 +69,7 @@ export const driverService = {
    * @returns {Promise<{message: string}>}
    */
   updateRegistration: async (formData) => {
-    try {
-      return await apiClient.patchFormData('/api/drivers/registration', formData);
-    } catch (err) {
-      if (err.isNetworkError) {
-        return { message: 'Cập nhật thông tin hồ sơ thành công (Demo Mode)' };
-      }
-      throw err;
-    }
+    return await apiClient.patchFormData('/api/drivers/registration', formData);
   },
 
   /**
@@ -108,8 +102,18 @@ export const driverService = {
    */
   getDriverDetail: async (driverId) => {
     try {
-      return await apiClient.get(`/api/drivers/${driverId}`);
+      const data = await apiClient.get(`/api/drivers/${driverId}`);
+      if (data) {
+        await offlineCacheStorage.saveDriverProfile(data);
+      }
+      return data;
     } catch (err) {
+      // Ưu tiên lấy từ cache offline nếu mạng lỗi
+      const cached = await offlineCacheStorage.getDriverProfile();
+      if (cached) {
+        return cached;
+      }
+
       if (err.isNetworkError) {
         return {
           driverId,

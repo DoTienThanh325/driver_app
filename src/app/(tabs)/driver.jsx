@@ -500,7 +500,7 @@ export default function DriverScreen() {
             </View>
           </View>
 
-          {/* 2. Thẻ Thu nhập hôm nay (Khớp với Image 1) */}
+          {/* 2. Thẻ Thu nhập hôm nay */}
           <View style={styles.incomeCard}>
             <ThemedText style={styles.incomeHeader}>Thu nhập hôm nay</ThemedText>
             <View style={styles.incomeMiddleRow}>
@@ -512,7 +512,27 @@ export default function DriverScreen() {
             <ThemedText style={styles.incomeFooterText}>12 Chuyến   4h 30p Online</ThemedText>
           </View>
 
-          {/* 3. Thẻ hiển thị vị trí GPS hiện tại của Tài xế */}
+          {/* 3. Mục Các cuốc xe đã thực hiện */}
+          <Pressable
+            style={styles.historyButtonCard}
+            onPress={() => router.push('/driver-trips')}
+            android_ripple={{ color: '#E5E7EB' }}
+          >
+            <View style={styles.historyCardLeft}>
+              <View style={styles.historyIconBox}>
+                <Ionicons name="car-sport" size={24} color="#00B5B8" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <ThemedText style={styles.historyTitle}>Các cuốc xe đã thực hiện</ThemedText>
+                <ThemedText style={styles.historySubtitle}>
+                  Xem lịch sử cuốc xe & đánh giá từ khách hàng
+                </ThemedText>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+          </Pressable>
+
+          {/* 4. Thẻ hiển thị vị trí GPS hiện tại của Tài xế */}
           {isAvailable && (
             <>
               <View style={styles.gpsCard}>
@@ -556,7 +576,7 @@ export default function DriverScreen() {
             </>
           )}
 
-          {/* 3. NỘI DUNG CHÍNH THEO TRẠNG THÁI */}
+          {/* 5. NỘI DUNG CHÍNH THEO TRẠNG THÁI */}
           {!isAvailable ? (
             /* TRẠNG THÁI: OFFLINE */
             <View style={styles.offlineStateContainer}>

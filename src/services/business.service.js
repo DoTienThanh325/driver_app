@@ -1,4 +1,5 @@
 import { apiClient } from './api-client';
+import { offlineCacheStorage } from './storage/offline-cache.storage';
 
 export const BUSINESS_REGISTRATION_STATUS = {
   NOT_REGISTERED: 'NOT_REGISTERED',
@@ -48,7 +49,11 @@ export const businessService = {
       const endpoint = userId
         ? `/api/businesses/registration/user/${userId}`
         : '/api/businesses/registration/me';
-      return await apiClient.get(endpoint);
+      const data = await apiClient.get(endpoint);
+      if (data) {
+        await offlineCacheStorage.saveBusinessProfile(data);
+      }
+      return data;
     } catch (err) {
       if (
         err.message?.includes('404') ||
@@ -57,8 +62,20 @@ export const businessService = {
       ) {
         return null;
       }
-      // Fallback về getMyBusiness nếu endpoint mới chưa sẵn sàng
-      return await businessService.getMyBusiness();
+      // Thử fallback từ getMyBusiness
+      try {
+        const myBiz = await businessService.getMyBusiness();
+        if (myBiz) {
+          await offlineCacheStorage.saveBusinessProfile(myBiz);
+          return myBiz;
+        }
+      } catch (e) {
+        // Ignored
+      }
+      // Ưu tiên đọc từ cache nếu lỗi kết nối
+      const cached = await offlineCacheStorage.getBusinessProfile();
+      if (cached) return cached;
+      return null;
     }
   },
 
@@ -111,13 +128,6 @@ export const businessService = {
    * @returns {Promise<{message: string}>}
    */
   updateRestaurant: async (restaurantId, data) => {
-    try {
-      return await apiClient.patch(`/api/bookings/restaurants/${restaurantId}`, data);
-    } catch (err) {
-      if (err.isNetworkError) {
-        return { message: 'updated successfully' };
-      }
-      throw err;
-    }
+    return await apiClient.patch(`/api/bookings/restaurants/${restaurantId}`, data);
   },
 };
