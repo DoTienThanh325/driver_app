@@ -229,7 +229,35 @@ export default function DriverActiveTripScreen() {
       nextStatus = TRIP_STATUS.IN_PROGRESS;
       confirmMsg = 'Khách đã lên xe. Bắt đầu đưa khách đến điểm đến?';
     } else if (trip.status === TRIP_STATUS.IN_PROGRESS) {
-      // Khi tài xế bấm hoàn thành cuốc xe, mở giao diện thu tiền / xác nhận thanh toán
+      // Khi tài xế bấm đến điểm trả khách (thu tiền), cập nhật ngay sang COMPLETED trên BookingService
+      // để phía khách hàng lập tức hiển thị thông tin chuyến đi hoàn tất và yêu cầu trả tiền
+      Alert.alert('Đến điểm trả khách', 'Xác nhận bạn đã đưa khách đến nơi an toàn và tiến hành thu cước phí?', [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Thu tiền',
+          onPress: async () => {
+            setIsUpdatingStatus(true);
+            try {
+              if (!String(trip.id).startsWith('sample') && trip.id !== 'TRIP-DEMO') {
+                await tripService.updateTripStatus(trip.id, TRIP_STATUS.COMPLETED);
+              }
+              setTrip((prev) => ({ ...prev, status: TRIP_STATUS.COMPLETED }));
+              await handleOpenPaymentModal();
+            } catch (err) {
+              if (err.message?.includes('COMPLETED') || err.message?.includes('kết thúc')) {
+                setTrip((prev) => ({ ...prev, status: TRIP_STATUS.COMPLETED }));
+                await handleOpenPaymentModal();
+              } else {
+                Alert.alert('Lỗi cập nhật', err.message || 'Không thể cập nhật trạng thái.');
+              }
+            } finally {
+              setIsUpdatingStatus(false);
+            }
+          },
+        },
+      ]);
+      return;
+    } else if (trip.status === TRIP_STATUS.COMPLETED) {
       handleOpenPaymentModal();
       return;
     }
@@ -347,9 +375,13 @@ export default function DriverActiveTripScreen() {
         }
       }
 
-      // 2. Cập nhật chuyến đi sang COMPLETED trên Booking Service
-      if (!String(trip.id).startsWith('sample') && trip.id !== 'TRIP-DEMO') {
-        await tripService.updateTripStatus(trip.id, TRIP_STATUS.COMPLETED);
+      // 2. Đảm bảo trạng thái chuyến đi đã cập nhật COMPLETED trên Booking Service
+      if (trip.status !== TRIP_STATUS.COMPLETED && !String(trip.id).startsWith('sample') && trip.id !== 'TRIP-DEMO') {
+        try {
+          await tripService.updateTripStatus(trip.id, TRIP_STATUS.COMPLETED);
+        } catch (e) {
+          // Bỏ qua nếu đã COMPLETED trước đó khi mở bảng thu tiền
+        }
       }
 
       setShowPaymentModal(false);
@@ -433,6 +465,8 @@ export default function DriverActiveTripScreen() {
         return '2. BẮT ĐẦU CHUYẾN ĐI';
       case TRIP_STATUS.IN_PROGRESS:
         return '3. ĐÃ ĐẾN ĐIỂM TRẢ KHÁCH (THU TIỀN)';
+      case TRIP_STATUS.COMPLETED:
+        return 'MỞ LẠI BẢNG THU TIỀN';
       default:
         return 'CẬP NHẬT TRẠNG THÁI';
     }
