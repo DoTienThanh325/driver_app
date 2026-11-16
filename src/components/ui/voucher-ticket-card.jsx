@@ -3,9 +3,13 @@ import { View, Text, Pressable, StyleSheet } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 export function VoucherTicketCard({ voucher, isClaimed = false, onClaim, onPress }) {
+  // Kiểm tra hạn sử dụng và tính khả dụng của voucher
+  const isExpired = voucher.expiredAt ? new Date(voucher.expiredAt) < new Date() : false;
+  const isInactive = isExpired || voucher.isInactive || voucher.status === 'EXPIRED';
+
   const isTransit = String(voucher.type).toUpperCase() === 'TRANSIT';
-  const badgeColor = isTransit ? '#00B5B8' : '#FF8A00';
-  const softBgColor = isTransit ? '#E6F8F8' : '#FFF3E8';
+  const badgeColor = isInactive ? '#9CA3AF' : (isTransit ? '#00B5B8' : '#FF8A00');
+  const softBgColor = isInactive ? '#F3F4F6' : (isTransit ? '#E6F8F8' : '#FFF3E8');
 
   // Định dạng mức giảm (20% hoặc 30k)
   const isPercent = Number(voucher.discount) < 100;
@@ -51,8 +55,14 @@ export function VoucherTicketCard({ voucher, isClaimed = false, onClaim, onPress
   );
 
   return (
-    <Pressable style={styles.cardContainer} onPress={onPress}>
-      {/* 1. Khối màu bên trái (Xanh ngọc Transit / Cam Meal) */}
+    <Pressable
+      style={[
+        styles.cardContainer,
+        isInactive && { opacity: 0.65, backgroundColor: '#F9FAFB' },
+      ]}
+      onPress={onPress}
+    >
+      {/* 1. Khối màu bên trái (Xanh ngọc Transit / Cam Meal / Xám nếu hết hạn) */}
       <View style={[styles.leftBlock, { backgroundColor: badgeColor }]}>
         <Text style={styles.discountText}>{discountDisplay}</Text>
         <Text style={styles.maxDiscountText}>{maxDiscountText}</Text>
@@ -67,25 +77,37 @@ export function VoucherTicketCard({ voucher, isClaimed = false, onClaim, onPress
         <View style={styles.centerNotch} />
       </View>
 
-      {/* 3. Phần thân vé bên phải (Nền trắng) */}
+      {/* 3. Phần thân vé bên phải (Nền trắng hoặc Xám nhẹ) */}
       <View style={styles.rightBlock}>
-        <Text style={styles.titleText}>
+        <Text style={[styles.titleText, isInactive && { color: '#6B7280' }]}>
           {voucherTitle}
         </Text>
 
-        <Text style={styles.conditionText}>
+        <Text style={[styles.conditionText, isInactive && { color: '#9CA3AF' }]}>
           {minOrderText}
         </Text>
 
         <View style={styles.footerRow}>
-          {/* Hạn sử dụng màu đỏ */}
+          {/* Hạn sử dụng */}
           <View style={styles.expiryBox}>
-            <Ionicons name="time-outline" size={13} color="#EF4444" />
-            <Text style={styles.expiryText}>HSD: {expiryDate}</Text>
+            <Ionicons
+              name={isInactive ? 'alert-circle-outline' : 'time-outline'}
+              size={13}
+              color={isInactive ? '#9CA3AF' : '#EF4444'}
+            />
+            <Text style={[styles.expiryText, isInactive && { color: '#9CA3AF' }]}>
+              HSD: {expiryDate}{isInactive ? ' (Hết hạn)' : ''}
+            </Text>
           </View>
 
-          {/* Nút Nhận hoặc Huy hiệu Đã nhận */}
-          {isClaimed ? (
+          {/* Nút Nhận hoặc Huy hiệu Đã nhận / Hết hạn */}
+          {isInactive ? (
+            <View style={[styles.claimedBadge, { backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB' }]}>
+              <Text style={[styles.claimedBadgeText, { color: '#9CA3AF' }]}>
+                {isClaimed ? 'Đã hết hạn' : 'Hết hạn'}
+              </Text>
+            </View>
+          ) : isClaimed ? (
             <View style={[styles.claimedBadge, { backgroundColor: softBgColor }]}>
               <Text style={[styles.claimedBadgeText, { color: badgeColor }]}>
                 Đã nhận (x{voucher.quantity || 1})

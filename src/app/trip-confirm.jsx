@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
+  ScrollView,
   Pressable,
   ActivityIndicator,
   Alert,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
@@ -15,6 +18,7 @@ import { ThemedView } from '@/components/themed-view';
 import { StatusBar } from 'expo-status-bar';
 import { tripService, VEHICLE_TYPE } from '@/services/trip.service';
 import { paymentService } from '@/services/payment.service';
+import { voucherService } from '@/services/voucher.service';
 import { tripConfirmStyles as styles } from '@/styles/screens/trip-confirm.styles';
 
 export default function TripConfirmScreen() {
@@ -32,6 +36,109 @@ export default function TripConfirmScreen() {
   const [vehicleType, setVehicleType] = useState(VEHICLE_TYPE.MOTORBIKE);
   const [preferredPayMethod, setPreferredPayMethod] = useState('PAY_DIRECTLY'); // 'PAY_DIRECTLY' (Tiền mặt) | 'PAY_BEFORE' (VietQR)
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Quản lý Voucher ưu đãi chuyến đi
+  const [vouchers, setVouchers] = useState([]);
+  const [selectedVoucher, setSelectedVoucher] = useState(null);
+  const [isVoucherModalVisible, setIsVoucherModalVisible] = useState(false);
+  const [customVoucherCode, setCustomVoucherCode] = useState('');
+  const [isLoadingVouchers, setIsLoadingVouchers] = useState(false);
+
+  // Tải danh sách Voucher TRANSIT từ Database và API
+  useEffect(() => {
+    let isMounted = true;
+    async function loadTransitVouchers() {
+      setIsLoadingVouchers(true);
+      try {
+        const [appTransitVouchers, appAllVouchers, myVouchers] = await Promise.all([
+          voucherService.getAppVouchers('TRANSIT').catch(() => []),
+          voucherService.getAppVouchers(null).catch(() => []),
+          voucherService.getMyVouchers().catch(() => []),
+        ]);
+
+        const list = [];
+        const seen = new Set();
+
+        [...(myVouchers || []), ...(appTransitVouchers || []), ...(appAllVouchers || [])].forEach((v) => {
+          if (v && v.id && !seen.has(v.id)) {
+            seen.add(v.id);
+            list.push(v);
+          }
+        });
+
+        // Seed fallback nếu DB chưa có hoặc đang offline
+        if (list.length === 0) {
+          list.push(
+            {
+              id: 'VOUCHER-TRANSIT-50PCT',
+              discount: 50,
+              maxDiscount: 30000,
+              minValue: 0,
+              type: 'TRANSIT',
+              providerType: 'APP',
+              expiredAt: '2027-12-31T23:59:59',
+            },
+            {
+              id: 'VOUCHER-TRANSIT-10K',
+              discount: 10000,
+              maxDiscount: 10000,
+              minValue: 0,
+              type: 'TRANSIT',
+              providerType: 'APP',
+              expiredAt: '2027-12-31T23:59:59',
+            },
+            {
+              id: 'VOUCHER-TRANSIT-20PCT',
+              discount: 20,
+              maxDiscount: 25000,
+              minValue: 0,
+              type: 'TRANSIT',
+              providerType: 'APP',
+              expiredAt: '2027-12-31T23:59:59',
+            },
+            {
+              id: 'VOUCHER-TRANSIT-15K',
+              discount: 15000,
+              maxDiscount: 15000,
+              minValue: 0,
+              type: 'TRANSIT',
+              providerType: 'APP',
+              expiredAt: '2027-12-31T23:59:59',
+            },
+            {
+              id: 'VOUCHER-TRANSIT-100K-MIN',
+              discount: 30000,
+              maxDiscount: 30000,
+              minValue: 100000,
+              type: 'TRANSIT',
+              providerType: 'APP',
+              expiredAt: '2027-12-31T23:59:59',
+            },
+            {
+              id: 'VOUCHER-FOOD-25K',
+              discount: 25000,
+              maxDiscount: 25000,
+              minValue: 0,
+              type: 'FOOD',
+              providerType: 'APP',
+              expiredAt: '2027-12-31T23:59:59',
+            }
+          );
+        }
+
+        if (isMounted) {
+          setVouchers(list);
+        }
+      } catch (err) {
+        console.warn('Lỗi tải danh sách voucher:', err);
+      } finally {
+        if (isMounted) setIsLoadingVouchers(false);
+      }
+    }
+
+    loadTransitVouchers();
+    return () => { isMounted = false; };
+  }, []);
 
   // Parse tọa độ lộ trình từ params nếu đã được tải trước từ book-trip
   const initialRouteCoords = useMemo(() => {
@@ -159,6 +266,120 @@ export default function TripConfirmScreen() {
 
   const selectedFare = vehicleType === VEHICLE_TYPE.MOTORBIKE ? motorbikeFare : carFare;
 
+  // Tính số tiền được giảm theo voucher
+  const calculateDiscount = (voucher, fare) => {
+    if (!voucher || !fare) return 0;
+    const isPercent = Number(voucher.discount) < 100;
+    let disc = 0;
+    if (isPercent) {
+      disc = Math.round((fare * Number(voucher.discount)) / 100);
+      if (voucher.maxDiscount && voucher.maxDiscount > 0) {
+        disc = Math.min(disc, Number(voucher.maxDiscount));
+      }
+    } else {
+      disc = Math.min(Number(voucher.discount), fare);
+    }
+    return disc;
+  };
+
+  // Kiểm tra tính khả dụng của voucher với giá cước chuyến đi hiện tại
+  const checkVoucherEligibility = (v, fare) => {
+    if (!v) return { isEligible: false, reason: 'Voucher không tồn tại' };
+
+    // 1. Kiểm tra loại dịch vụ: Chỉ áp dụng TRANSIT hoặc voucher chung
+    if (v.type && String(v.type).toUpperCase() === 'FOOD') {
+      return {
+        isEligible: false,
+        reason: 'Chỉ áp dụng cho đặt món T&M Meal (Đồ ăn), không dùng cho gọi xe',
+      };
+    }
+
+    // 2. Kiểm tra hạn sử dụng
+    if (v.expiredAt) {
+      try {
+        const exp = new Date(v.expiredAt).getTime();
+        if (exp < Date.now()) {
+          return {
+            isEligible: false,
+            reason: 'Mã ưu đãi này đã hết hạn sử dụng',
+          };
+        }
+      } catch (e) {}
+    }
+
+    // 3. Kiểm tra điều kiện giá cước tối thiểu
+    const minVal = Number(v.minValue) || 0;
+    if (minVal > 0 && fare < minVal) {
+      const diff = minVal - fare;
+      return {
+        isEligible: false,
+        reason: `Cần cước tối thiểu ${Number(minVal).toLocaleString('vi-VN')} đ (còn thiếu ${Number(diff).toLocaleString('vi-VN')} đ)`,
+      };
+    }
+
+    return { isEligible: true, reason: '' };
+  };
+
+  // Phân loại thành 2 danh sách: Khả dụng (sáng) và Không khả dụng (xám đi)
+  const { eligibleVouchers, ineligibleVouchers } = useMemo(() => {
+    const eligible = [];
+    const ineligible = [];
+    vouchers.forEach((v) => {
+      const status = checkVoucherEligibility(v, selectedFare);
+      if (status.isEligible) {
+        eligible.push({ ...v, ...status });
+      } else {
+        ineligible.push({ ...v, ...status });
+      }
+    });
+    return { eligibleVouchers: eligible, ineligibleVouchers: ineligible };
+  }, [vouchers, selectedFare]);
+
+  // Nếu đã chọn voucher nhưng đổi phương tiện làm cước thấp hơn minValue -> tự động hủy voucher
+  useEffect(() => {
+    if (selectedVoucher) {
+      const status = checkVoucherEligibility(selectedVoucher, selectedFare);
+      if (!status.isEligible) {
+        setSelectedVoucher(null);
+        Alert.alert(
+          'Voucher không còn hiệu lực',
+          `Voucher "${selectedVoucher.id}" đã tự động hủy do:\n${status.reason}`
+        );
+      }
+    }
+  }, [selectedFare]);
+
+  const discountAmount = useMemo(() => {
+    return calculateDiscount(selectedVoucher, selectedFare);
+  }, [selectedVoucher, selectedFare]);
+
+  const finalFare = Math.max(0, selectedFare - discountAmount);
+
+  const handleApplyCustomCode = () => {
+    if (!customVoucherCode.trim()) {
+      Alert.alert('Thông báo', 'Vui lòng nhập mã ưu đãi.');
+      return;
+    }
+    const code = customVoucherCode.trim().toUpperCase();
+    const found = vouchers.find((v) => v.id.toUpperCase() === code);
+    if (found) {
+      const eligibility = checkVoucherEligibility(found, selectedFare);
+      if (!eligibility.isEligible) {
+        Alert.alert(
+          'Chưa đủ điều kiện',
+          `Voucher "${found.id}" chưa thể áp dụng cho chuyến xe này:\n\n${eligibility.reason}`
+        );
+        return;
+      }
+      setSelectedVoucher(found);
+      setIsVoucherModalVisible(false);
+      setCustomVoucherCode('');
+      Alert.alert('Thành công 🎉', `Đã áp dụng mã "${found.id}"!`);
+    } else {
+      Alert.alert('Không tìm thấy', `Mã giảm giá "${code}" không tồn tại hoặc đã hết hạn.`);
+    }
+  };
+
   // HTML bản đồ Leaflet vẽ cung đường di chuyển thực tế
   const mapHtml = useMemo(() => {
     const midLat = (pickUpLat + destLat) / 2;
@@ -267,7 +488,7 @@ export default function TripConfirmScreen() {
         destinationAddress: destinationAddress.trim(),
         shippingType: 'PASSENGER',
         vehicleType,
-        shippFare: selectedFare,
+        shippFare: finalFare,
       };
 
       const res = await tripService.createTrip(payload);
@@ -286,19 +507,26 @@ export default function TripConfirmScreen() {
         destinationAddress: destinationAddress.trim(),
         shippingType: 'PASSENGER',
         vehicleType,
-        shippFare: selectedFare,
+        shippFare: finalFare,
+        originalFare: selectedFare,
+        voucherId: selectedVoucher?.id || null,
+        discountAmount: discountAmount || 0,
         status: 'REQUESTED',
         distanceKm: actualDistanceKm,
       };
 
+      const voucherMsg = discountAmount > 0
+        ? `\nCước gốc: ${Number(selectedFare).toLocaleString('vi-VN')} đ\nƯu đãi (${selectedVoucher?.id}): -${Number(discountAmount).toLocaleString('vi-VN')} đ\nThanh toán thực tế: ${Number(finalFare).toLocaleString('vi-VN')} đ`
+        : `\nCước phí: ${Number(selectedFare).toLocaleString('vi-VN')} đ`;
+
       Alert.alert(
         'Đặt chuyến thành công 🎉',
-        `Hệ thống đang điều phối tài xế gần bạn nhất!\nLộ trình thực tế: ${actualDistanceKm} km\nCước phí: ${Number(selectedFare).toLocaleString('vi-VN')} đ\nThanh toán: ${preferredPayMethod === 'PAY_BEFORE' ? 'Chuyển khoản VietQR' : 'Tiền mặt'}`,
+        `Hệ thống đang điều phối tài xế gần bạn nhất!\nLộ trình thực tế: ${actualDistanceKm} km${voucherMsg}\nThanh toán: ${preferredPayMethod === 'PAY_BEFORE' ? 'Chuyển khoản VietQR' : 'Tiền mặt'}`,
         [
           {
             text: 'Theo dõi chuyến đi',
             onPress: () =>
-              router.replace({
+              router.navigate({
                 pathname: '/book-trip',
                 params: {
                   tripId: newTripId,
@@ -352,9 +580,9 @@ export default function TripConfirmScreen() {
       </View>
 
       {/* 2. NỬA 1/3 DƯỚI: CHỌN XE & GIÁ XE & ẤN ĐẶT */}
-      <View style={[styles.bottomSheet, { paddingBottom: Math.max(insets.bottom + 12, 20) }]}>
+      <View style={[styles.bottomSheet, { paddingBottom: Math.max(insets.bottom + 8, 16) }]}>
         <View style={styles.dragHandle} />
-
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 10 }}>
         <View style={styles.sheetHeaderRow}>
           <ThemedText style={styles.sheetTitle}>Chọn phương tiện di chuyển</ThemedText>
           <View style={[styles.peakHourBadge, isPeakHour ? styles.peakHourBadgePeak : styles.peakHourBadgeNormal]}>
@@ -494,6 +722,96 @@ export default function TripConfirmScreen() {
           </View>
         </View>
 
+        {/* Khối Chọn Voucher / Mã Giảm Giá */}
+        <View style={{ marginBottom: 14 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <ThemedText style={{ fontSize: 13, fontWeight: '700', color: '#374151' }}>
+              Mã giảm giá & Khuyến mãi:
+            </ThemedText>
+            {selectedVoucher && (
+              <Pressable onPress={() => setSelectedVoucher(null)} hitSlop={6}>
+                <ThemedText style={{ fontSize: 12, fontWeight: '700', color: '#EF4444' }}>
+                  Hủy áp dụng
+                </ThemedText>
+              </Pressable>
+            )}
+          </View>
+
+          <Pressable
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingVertical: 10,
+              paddingHorizontal: 12,
+              borderRadius: 14,
+              borderWidth: 1.5,
+              borderColor: selectedVoucher ? '#00B5B8' : '#E5E7EB',
+              backgroundColor: selectedVoucher ? '#E6F8F8' : '#F9FAFB',
+            }}
+            onPress={() => setIsVoucherModalVisible(true)}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
+              <View
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 17,
+                  backgroundColor: selectedVoucher ? '#00B5B8' : '#E5E7EB',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginRight: 10,
+                }}
+              >
+                <Ionicons
+                  name="pricetag"
+                  size={18}
+                  color={selectedVoucher ? '#FFFFFF' : '#6B7280'}
+                />
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <ThemedText
+                  style={{
+                    fontSize: 13,
+                    fontWeight: '700',
+                    color: selectedVoucher ? '#008B8D' : '#111827',
+                  }}
+                  numberOfLines={1}
+                >
+                  {selectedVoucher ? selectedVoucher.id : 'Chọn hoặc nhập mã ưu đãi'}
+                </ThemedText>
+                <ThemedText
+                  style={{
+                    fontSize: 12,
+                    color: selectedVoucher ? '#00B5B8' : '#6B7280',
+                    fontWeight: selectedVoucher ? '700' : '400',
+                    marginTop: 1,
+                  }}
+                >
+                  {selectedVoucher
+                    ? `Tiết kiệm -${Number(discountAmount).toLocaleString('vi-VN')} đ`
+                    : `${eligibleVouchers.length} ưu đãi khả dụng`}
+                </ThemedText>
+              </View>
+            </View>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <ThemedText
+                style={{
+                  fontSize: 12,
+                  fontWeight: '700',
+                  color: '#00B5B8',
+                  marginRight: 4,
+                }}
+              >
+                {selectedVoucher ? 'Đổi mã' : 'Chọn mã'}
+              </ThemedText>
+              <Ionicons name="chevron-forward" size={16} color="#00B5B8" />
+            </View>
+          </Pressable>
+        </View>
+
         {/* Nút đặt chuyến */}
         <Pressable
           style={[styles.bookBtn, isSubmitting && styles.bookBtnDisabled]}
@@ -503,12 +821,408 @@ export default function TripConfirmScreen() {
           {isSubmitting ? (
             <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
-            <ThemedText style={styles.bookBtnText}>
-              ĐẶT XE • {Number(selectedFare).toLocaleString('vi-VN')} đ
-            </ThemedText>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+              <ThemedText style={styles.bookBtnText}>
+                ĐẶT XE • {Number(finalFare).toLocaleString('vi-VN')} đ
+              </ThemedText>
+              {discountAmount > 0 && (
+                <ThemedText
+                  style={{
+                    fontSize: 13,
+                    color: 'rgba(255,255,255,0.75)',
+                    textDecorationLine: 'line-through',
+                    marginLeft: 8,
+                  }}
+                >
+                  {Number(selectedFare).toLocaleString('vi-VN')} đ
+                </ThemedText>
+              )}
+            </View>
           )}
         </Pressable>
+        </ScrollView>
       </View>
+
+      {/* Modal Chọn Voucher */}
+      <Modal
+        visible={isVoucherModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsVoucherModalVisible(false)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            justifyContent: 'flex-end',
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: '#FFFFFF',
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              maxHeight: '80%',
+              paddingBottom: Math.max(insets.bottom + 12, 24),
+            }}
+          >
+            {/* Header Modal */}
+            <View
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                paddingHorizontal: 20,
+                paddingVertical: 16,
+                borderBottomWidth: 1,
+                borderBottomColor: '#F3F4F6',
+              }}
+            >
+              <ThemedText style={{ fontSize: 17, fontWeight: '800', color: '#111827' }}>
+                Ưu đãi chuyến xe T&M
+              </ThemedText>
+              <Pressable
+                onPress={() => setIsVoucherModalVisible(false)}
+                hitSlop={8}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 16,
+                  backgroundColor: '#F3F4F6',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Ionicons name="close" size={20} color="#4B5563" />
+              </Pressable>
+            </View>
+
+            {/* Ô nhập mã giảm giá trực tiếp */}
+            <View
+              style={{
+                flexDirection: 'row',
+                paddingHorizontal: 16,
+                paddingVertical: 12,
+                gap: 8,
+              }}
+            >
+              <TextInput
+                style={{
+                  flex: 1,
+                  backgroundColor: '#F3F4F6',
+                  borderRadius: 12,
+                  paddingHorizontal: 14,
+                  paddingVertical: 10,
+                  fontSize: 14,
+                  color: '#111827',
+                  fontWeight: '600',
+                }}
+                placeholder="Nhập mã ưu đãi (ví dụ: VOUCHER-TRANSIT-50PCT)"
+                placeholderTextColor="#9CA3AF"
+                value={customVoucherCode}
+                onChangeText={setCustomVoucherCode}
+                autoCapitalize="characters"
+              />
+              <Pressable
+                style={{
+                  backgroundColor: '#00B5B8',
+                  borderRadius: 12,
+                  paddingHorizontal: 16,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+                onPress={handleApplyCustomCode}
+              >
+                <ThemedText style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>
+                  Áp dụng
+                </ThemedText>
+              </Pressable>
+            </View>
+
+            {/* Danh sách Voucher khả dụng & không khả dụng */}
+            <ScrollView
+              style={{ paddingHorizontal: 16, maxHeight: 420 }}
+              showsVerticalScrollIndicator={false}
+            >
+              {/* NHÓM 1: VOUCHER KHẢ DỤNG */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, marginTop: 4 }}>
+                <Ionicons name="checkmark-circle" size={16} color="#00B5B8" style={{ marginRight: 6 }} />
+                <ThemedText style={{ fontSize: 13, fontWeight: '800', color: '#111827' }}>
+                  ƯU ĐÃI KHẢ DỤNG CHO CHUYẾN ĐI ({eligibleVouchers.length})
+                </ThemedText>
+              </View>
+
+              {isLoadingVouchers ? (
+                <ActivityIndicator size="small" color="#00B5B8" style={{ marginVertical: 20 }} />
+              ) : eligibleVouchers.length === 0 ? (
+                <View style={{ backgroundColor: '#F9FAFB', padding: 14, borderRadius: 12, marginBottom: 14, alignItems: 'center' }}>
+                  <ThemedText style={{ color: '#6B7280', fontSize: 13 }}>
+                    Hiện chưa có mã giảm giá nào đạt điều kiện cho giá cước này.
+                  </ThemedText>
+                </View>
+              ) : (
+                eligibleVouchers.map((v) => {
+                  const isPercent = Number(v.discount) < 100;
+                  const discountText = isPercent
+                    ? `Giảm ${Math.round(v.discount)}%`
+                    : `Giảm ${Number(v.discount).toLocaleString('vi-VN')} đ`;
+                  const maxDiscText = v.maxDiscount > 0
+                    ? `Tối đa ${Number(v.maxDiscount).toLocaleString('vi-VN')} đ`
+                    : '';
+                  const isSelected = selectedVoucher?.id === v.id;
+                  const estimatedDisc = calculateDiscount(v, selectedFare);
+
+                  return (
+                    <Pressable
+                      key={v.id}
+                      style={{
+                        flexDirection: 'row',
+                        backgroundColor: '#FFFFFF',
+                        borderRadius: 14,
+                        borderWidth: 1.5,
+                        borderColor: isSelected ? '#00B5B8' : '#E5E7EB',
+                        marginBottom: 10,
+                        overflow: 'hidden',
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 1 },
+                        shadowOpacity: 0.05,
+                        shadowRadius: 3,
+                        elevation: 1,
+                      }}
+                      onPress={() => {
+                        setSelectedVoucher(isSelected ? null : v);
+                        setIsVoucherModalVisible(false);
+                      }}
+                    >
+                      {/* Cột trái: Tỷ lệ giảm */}
+                      <View
+                        style={{
+                          width: 80,
+                          backgroundColor: isSelected ? '#00B5B8' : '#009688',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: 8,
+                        }}
+                      >
+                        <Ionicons name="car-outline" size={20} color="#FFFFFF" style={{ marginBottom: 2 }} />
+                        <ThemedText
+                          style={{
+                            color: '#FFFFFF',
+                            fontWeight: '800',
+                            fontSize: 16,
+                            textAlign: 'center',
+                          }}
+                        >
+                          {isPercent ? `${Math.round(v.discount)}%` : `${Math.round(v.discount / 1000)}k`}
+                        </ThemedText>
+                        <ThemedText style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10, fontWeight: '700' }}>
+                          GIẢM
+                        </ThemedText>
+                      </View>
+
+                      {/* Thân voucher */}
+                      <View style={{ flex: 1, padding: 12, justifyContent: 'center' }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <ThemedText style={{ fontSize: 14, fontWeight: '700', color: '#111827' }}>
+                            {v.id}
+                          </ThemedText>
+                          {isSelected && (
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                backgroundColor: '#E6F8F8',
+                                paddingHorizontal: 6,
+                                paddingVertical: 2,
+                                borderRadius: 8,
+                              }}
+                            >
+                              <Ionicons name="checkmark-circle" size={14} color="#00B5B8" />
+                              <ThemedText style={{ fontSize: 11, color: '#00B5B8', fontWeight: '700', marginLeft: 3 }}>
+                                Đang dùng
+                              </ThemedText>
+                            </View>
+                          )}
+                        </View>
+
+                        <ThemedText style={{ fontSize: 12, color: '#059669', fontWeight: '600', marginTop: 2 }}>
+                          {discountText} {maxDiscText ? `• ${maxDiscText}` : ''}
+                        </ThemedText>
+
+                        <ThemedText style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>
+                          {v.minValue > 0 ? `Đơn tối thiểu ${Number(v.minValue).toLocaleString('vi-VN')} đ` : 'Áp dụng cho mọi giá cước'}
+                        </ThemedText>
+
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginTop: 6,
+                            paddingTop: 6,
+                            borderTopWidth: 1,
+                            borderTopColor: '#F3F4F6',
+                          }}
+                        >
+                          <ThemedText style={{ fontSize: 11, color: '#00B5B8', fontWeight: '600' }}>
+                            Tiết kiệm: ~{Number(estimatedDisc).toLocaleString('vi-VN')} đ
+                          </ThemedText>
+                          <ThemedText
+                            style={{
+                              fontSize: 12,
+                              fontWeight: '700',
+                              color: isSelected ? '#EF4444' : '#00B5B8',
+                            }}
+                          >
+                            {isSelected ? 'Bỏ chọn' : 'Áp dụng'}
+                          </ThemedText>
+                        </View>
+                      </View>
+                    </Pressable>
+                  );
+                })
+              )}
+
+              {/* NHÓM 2: VOUCHER KHÔNG KHẢ DỤNG (LÀM XÁM ĐI) */}
+              {ineligibleVouchers.length > 0 && (
+                <>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, marginTop: 14 }}>
+                    <Ionicons name="close-circle-outline" size={16} color="#9CA3AF" style={{ marginRight: 6 }} />
+                    <ThemedText style={{ fontSize: 13, fontWeight: '800', color: '#6B7280' }}>
+                      ƯU ĐÃI CHƯA ĐỦ ĐIỀU KIỆN ÁP DỤNG ({ineligibleVouchers.length})
+                    </ThemedText>
+                  </View>
+
+                  {ineligibleVouchers.map((v) => {
+                    const isPercent = Number(v.discount) < 100;
+                    const discountText = isPercent
+                      ? `Giảm ${Math.round(v.discount)}%`
+                      : `Giảm ${Number(v.discount).toLocaleString('vi-VN')} đ`;
+                    const maxDiscText = v.maxDiscount > 0
+                      ? `Tối đa ${Number(v.maxDiscount).toLocaleString('vi-VN')} đ`
+                      : '';
+
+                    return (
+                      <Pressable
+                        key={v.id}
+                        style={{
+                          flexDirection: 'row',
+                          backgroundColor: '#F9FAFB',
+                          borderRadius: 14,
+                          borderWidth: 1.5,
+                          borderColor: '#E5E7EB',
+                          marginBottom: 10,
+                          overflow: 'hidden',
+                          opacity: 0.65,
+                        }}
+                        onPress={() => {
+                          Alert.alert('Chưa đủ điều kiện áp dụng', v.reason);
+                        }}
+                      >
+                        {/* Cột trái: Làm xám đi */}
+                        <View
+                          style={{
+                            width: 80,
+                            backgroundColor: '#9CA3AF',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: 8,
+                          }}
+                        >
+                          <Ionicons
+                            name={v.type === 'FOOD' ? 'fast-food-outline' : 'car-outline'}
+                            size={20}
+                            color="#FFFFFF"
+                            style={{ marginBottom: 2 }}
+                          />
+                          <ThemedText
+                            style={{
+                              color: '#FFFFFF',
+                              fontWeight: '800',
+                              fontSize: 16,
+                              textAlign: 'center',
+                            }}
+                          >
+                            {isPercent ? `${Math.round(v.discount)}%` : `${Math.round(v.discount / 1000)}k`}
+                          </ThemedText>
+                          <ThemedText style={{ color: 'rgba(255,255,255,0.9)', fontSize: 10, fontWeight: '700' }}>
+                            GIẢM
+                          </ThemedText>
+                        </View>
+
+                        {/* Thân voucher */}
+                        <View style={{ flex: 1, padding: 12, justifyContent: 'center' }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <ThemedText style={{ fontSize: 14, fontWeight: '700', color: '#6B7280' }}>
+                              {v.id}
+                            </ThemedText>
+                            <View
+                              style={{
+                                backgroundColor: '#E5E7EB',
+                                paddingHorizontal: 6,
+                                paddingVertical: 2,
+                                borderRadius: 6,
+                              }}
+                            >
+                              <ThemedText style={{ fontSize: 10, color: '#6B7280', fontWeight: '700' }}>
+                                Không khả dụng
+                              </ThemedText>
+                            </View>
+                          </View>
+
+                          <ThemedText style={{ fontSize: 12, color: '#6B7280', fontWeight: '600', marginTop: 2 }}>
+                            {discountText} {maxDiscText ? `• ${maxDiscText}` : ''}
+                          </ThemedText>
+
+                          {/* Lý do chưa đủ điều kiện (Màu đỏ cảnh báo) */}
+                          <View
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              backgroundColor: '#FEE2E2',
+                              paddingHorizontal: 8,
+                              paddingVertical: 4,
+                              borderRadius: 6,
+                              marginTop: 5,
+                            }}
+                          >
+                            <Ionicons name="alert-circle" size={13} color="#DC2626" style={{ marginRight: 4 }} />
+                            <ThemedText
+                              style={{ fontSize: 11, color: '#DC2626', fontWeight: '600', flex: 1 }}
+                              numberOfLines={2}
+                            >
+                              {v.reason}
+                            </ThemedText>
+                          </View>
+
+                          <View
+                            style={{
+                              flexDirection: 'row',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              marginTop: 6,
+                              paddingTop: 6,
+                              borderTopWidth: 1,
+                              borderTopColor: '#E5E7EB',
+                            }}
+                          >
+                            <ThemedText style={{ fontSize: 11, color: '#9CA3AF' }}>
+                              {v.type === 'FOOD' ? 'Voucher món ăn' : 'Chưa đạt giá cước'}
+                            </ThemedText>
+                            <ThemedText style={{ fontSize: 12, fontWeight: '700', color: '#9CA3AF' }}>
+                              Chi tiết ➜
+                            </ThemedText>
+                          </View>
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                </>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </ThemedView>
   );
 }

@@ -33,6 +33,7 @@ export default function VoucherDetailScreen() {
 
   const isTransit = String(voucher.type).toUpperCase() === 'TRANSIT';
   const isPercent = Number(voucher.discount) < 100;
+  const isExpired = voucher.expiredAt ? new Date(voucher.expiredAt) < new Date() : false;
   const discountDisplay = isPercent
     ? `${Math.round(voucher.discount)}%`
     : `${Math.round(voucher.discount / 1000)}k`;
@@ -94,8 +95,8 @@ export default function VoucherDetailScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      {/* 1. Hero Section (Màu xanh lớn trên cùng) */}
-      <View style={styles.heroBanner}>
+      {/* 1. Hero Section (Màu xanh lớn trên cùng, hoặc Xám nếu hết hạn) */}
+      <View style={[styles.heroBanner, isExpired && { backgroundColor: '#6B7280' }]}>
         {/* Thanh điều hướng quay lại */}
         <View style={styles.headerNav}>
           <Pressable style={styles.backButton} onPress={() => router.back()} hitSlop={8}>
@@ -114,8 +115,10 @@ export default function VoucherDetailScreen() {
         <ThemedText style={styles.heroVoucherTitle}>{voucherTitle}</ThemedText>
 
         {/* Nhãn nhà cung cấp */}
-        <View style={styles.providerBadge}>
-          <ThemedText style={styles.providerBadgeText}>{providerLabel}</ThemedText>
+        <View style={[styles.providerBadge, isExpired && { backgroundColor: 'rgba(239, 68, 68, 0.25)' }]}>
+          <ThemedText style={[styles.providerBadgeText, isExpired && { color: '#FEE2E2' }]}>
+            {isExpired ? 'ĐÃ HẾT HẠN' : providerLabel}
+          </ThemedText>
         </View>
       </View>
 
@@ -181,15 +184,19 @@ export default function VoucherDetailScreen() {
         {/* 3. Nút hành động */}
         <View style={styles.bottomActionArea}>
           <Pressable
-            style={[styles.primaryActionButton, isSubmitting && { opacity: 0.7 }]}
-            onPress={handleAction}
-            disabled={isSubmitting}
+            style={[
+              styles.primaryActionButton,
+              isExpired && { backgroundColor: '#E5E7EB' },
+              isSubmitting && { opacity: 0.7 },
+            ]}
+            onPress={isExpired ? () => Alert.alert('Thông báo', 'Ưu đãi này đã hết hạn.') : handleAction}
+            disabled={isSubmitting || isExpired}
           >
             {isSubmitting ? (
               <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <ThemedText style={styles.primaryActionText}>
-                {isClaimed ? 'Sử dụng ngay' : 'Nhận ưu đãi'}
+              <ThemedText style={[styles.primaryActionText, isExpired && { color: '#9CA3AF' }]}>
+                {isExpired ? 'Ưu đãi đã hết hạn' : isClaimed ? 'Sử dụng ngay' : 'Nhận ưu đãi'}
               </ThemedText>
             )}
           </Pressable>

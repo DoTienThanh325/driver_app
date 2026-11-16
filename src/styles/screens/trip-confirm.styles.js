@@ -5,9 +5,9 @@ export const tripConfirmStyles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F3F4F6',
   },
-  // Nửa 2/3 trên hiển thị bản đồ
+  // Nửa trên hiển thị bản đồ
   mapContainer: {
-    flex: 2, // Chiếm 2/3 chiều cao màn hình
+    flex: 1.1,
     position: 'relative',
     backgroundColor: '#E5E7EB',
   },
@@ -57,9 +57,9 @@ export const tripConfirmStyles = StyleSheet.create({
     marginLeft: 4,
   },
 
-  // Nửa 1/3 dưới hiển thị chọn xe & giá xe
+  // Nửa dưới hiển thị chọn xe, voucher, thanh toán & giá xe
   bottomSheet: {
-    flex: 1, // Chiếm 1/3 chiều cao màn hình
+    flex: 1.3,
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
