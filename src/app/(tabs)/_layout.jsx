@@ -1,10 +1,12 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Platform } from 'react-native';
 import { Tabs } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { userStorage } from '@/services/storage/user.storage';
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
   const [isDriver, setIsDriver] = useState(false);
 
   const checkDriverRole = useCallback(async () => {
@@ -22,6 +24,11 @@ export default function TabLayout() {
     };
   }, [checkDriverRole]);
 
+  // Đảm bảo chiều cao và khoảng cách đệm đáy luôn bao trùm thanh điều hướng (3 nút Home/Back/Recent hoặc gesture bar) trên Android & iOS
+  const bottomInset = insets.bottom;
+  const tabHeight = 60 + bottomInset;
+  const paddingBottom = Math.max(bottomInset, 8);
+
   return (
     <Tabs
       screenOptions={{
@@ -29,8 +36,8 @@ export default function TabLayout() {
         tabBarActiveTintColor: '#FFFFFF',
         tabBarInactiveTintColor: 'rgba(255, 255, 255, 0.7)',
         tabBarStyle: {
-          height: Platform.OS === 'ios' ? 84 : 64,
-          paddingBottom: Platform.OS === 'ios' ? 24 : 8,
+          height: tabHeight,
+          paddingBottom: paddingBottom,
           paddingTop: 8,
           backgroundColor: '#00B5B8',
           borderTopColor: 'transparent',

@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { VoucherTicketCard } from '@/components/ui/voucher-ticket-card';
@@ -87,6 +88,7 @@ export default function PromotionsScreen() {
 
   return (
     <View style={styles.container}>
+      <StatusBar style="light" />
       {/* 1. Header Teal Cong */}
       <View style={[styles.headerBanner, { paddingTop: Math.max(insets.top + 10, 44) }]}>
         <Text style={styles.headerTitle}>Ưu đãi</Text>

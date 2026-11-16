@@ -396,6 +396,9 @@ export const driverStyles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '800',
     color: '#111827',
+    lineHeight: 36, // Đảm bảo khoảng cách dòng đủ cho kích thước font 28
+    paddingVertical: 2, // Đệm tránh cắt đầu số
+    includeFontPadding: false, // Tắt font padding mặc định của Android
   },
   incomeIconBox: {
     width: 44,
@@ -485,6 +488,22 @@ export const driverStyles = StyleSheet.create({
     lineHeight: 20,
     fontWeight: '500',
   },
+    viewDetailRideBtn: {
+    backgroundColor: '#E6F8F8',
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    marginTop: 14,
+    borderWidth: 1.5,
+    borderColor: '#00B5B8',
+  },
+  viewDetailRideBtnText: {
+    color: '#00B5B8',
+    fontSize: 15,
+    fontWeight: '700',
+  },
   acceptRideBtn: {
     backgroundColor: '#00B5B8',
     borderRadius: 14,
@@ -502,15 +521,63 @@ export const driverStyles = StyleSheet.create({
   // MODAL XEM CHI TIẾT CUỐC XE ("sau đó tài xế bấm vào xem chuyến, ok thì nhận")
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'flex-end',
   },
   modalContent: {
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 20,
-    paddingBottom: 36,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 24,
+    height: '92%',
+    display: 'flex',
+  },
+  modalBodyScroll: {
+    flex: 1,
+  },
+  modalMapContainer: {
+    height: 280, // Chiếm khoảng 1/2 chiều cao hiển thị
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 14,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    position: 'relative',
+  },
+  modalMapWebView: {
+    flex: 1,
+  },
+  modalMapBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  modalMapBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#00B5B8',
+    marginLeft: 3,
+  },
+    modalDragHandle: {
+    width: 44,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#D1D5DB',
+    alignSelf: 'center',
+    marginBottom: 12,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -530,10 +597,11 @@ export const driverStyles = StyleSheet.create({
     padding: 4,
   },
   modalPriceHighlight: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '800',
     color: '#00B5B8',
-    marginBottom: 14,
+    lineHeight: 34,
+    paddingVertical: 4,
     textAlign: 'center',
   },
   modalSection: {
@@ -560,7 +628,10 @@ export const driverStyles = StyleSheet.create({
   modalActions: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 10,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    backgroundColor: '#FFFFFF',
   },
   modalRejectBtn: {
     flex: 1,

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, Pressable, Platform } from 'react-native';
 import { router } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ThemedText } from '@/components/themed-text';
 
@@ -15,6 +16,7 @@ export function SubHeader({ title, rightElement = null, onBack = null, backgroun
 
   return (
     <View style={[styles.container, backgroundColor && { backgroundColor }]}>
+      <StatusBar style="light" />
       <View style={styles.content}>
         <View style={styles.leftGroup}>
           <Pressable style={styles.backButton} onPress={handleBack} hitSlop={10}>

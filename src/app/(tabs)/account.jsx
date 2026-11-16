@@ -2,6 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useFocusEffect } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -148,6 +149,7 @@ export default function AccountScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      <StatusBar style="light" />
       {/* 1. Header Banner Teal */}
       <View style={styles.headerBanner}>
         <View style={styles.headerContent}>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Switch,
@@ -9,6 +9,7 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { WebView } from 'react-native-webview';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
 
@@ -18,6 +19,7 @@ import { useDriverAvailability } from '@/hooks/use-driver-availability';
 import { authService } from '@/services/auth.service';
 import { userStorage } from '@/services/storage/user.storage';
 import { tripService, TRIP_STATUS } from '@/services/trip.service';
+import { paymentService } from '@/services/payment.service';
 import { driverStyles as styles } from '@/styles/screens/driver.styles';
 
 // Vị trí mặc định tài xế quanh trung tâm Hà Nội để dễ dàng bắt matching
@@ -36,6 +38,64 @@ export default function DriverScreen() {
 
   // Cuốc xe đang xem chi tiết trong Modal ("sau đó tài xế bấm vào xem chuyến, ok thì nhận")
   const [selectedOfferForDetail, setSelectedOfferForDetail] = useState(null);
+
+  // Tuyến đường thực tế OSRM hiển thị trong Modal chi tiết cuốc xe
+  const [modalRouteCoords, setModalRouteCoords] = useState([]);
+  const [modalDistanceKm, setModalDistanceKm] = useState(null);
+  const [isLoadingModalRoute, setIsLoadingModalRoute] = useState(false);
+
+  // Gọi OSRM lấy tuyến đường thực tế khi mở xem chi tiết cuốc xe
+  useEffect(() => {
+    if (!selectedOfferForDetail) {
+      setModalRouteCoords([]);
+      setModalDistanceKm(null);
+      return;
+    }
+
+    let isMounted = true;
+    async function fetchModalRoute() {
+      setIsLoadingModalRoute(true);
+      try {
+        const pLat = selectedOfferForDetail.pickUpLatitude || (driverCoords.latitude - 0.006);
+        const pLon = selectedOfferForDetail.pickUpLongitude || (driverCoords.longitude + 0.005);
+        const dLat = selectedOfferForDetail.destinationLatitude || (driverCoords.latitude + 0.012);
+        const dLon = selectedOfferForDetail.destinationLongitude || (driverCoords.longitude - 0.008);
+
+        const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${pLon},${pLat};${dLon},${dLat}?overview=full&geometries=geojson`;
+        const res = await fetch(osrmUrl, {
+          headers: { 'User-Agent': 'DriverApp-Client/1.0', 'Accept': 'application/json' },
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.routes && data.routes.length > 0) {
+            const primary = data.routes[0];
+            const distKm = Math.max(0.5, Math.round((primary.distance / 1000) * 10) / 10);
+            const coords = primary.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+
+            if (isMounted) {
+              setModalRouteCoords(coords);
+              setModalDistanceKm(distKm);
+              setIsLoadingModalRoute(false);
+              return;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Lỗi lấy tuyến đường OSRM cho modal chi tiết:', err);
+      }
+
+      if (isMounted) {
+        setIsLoadingModalRoute(false);
+      }
+    }
+
+    fetchModalRoute();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedOfferForDetail]);
 
   // Danh sách lời mời cuốc xe từ AI Matching
   const [pendingOffers, setPendingOffers] = useState([]);
@@ -184,11 +244,33 @@ export default function DriverScreen() {
     return () => clearInterval(interval);
   }, [activeTrip?.id]);
 
+  // Tự động đăng ký thông tin ngân hàng mặc định của tài xế vào PaymentService để nhận VietQR
+  useEffect(() => {
+    paymentService
+      .registerDriverPaymentInfo({
+        bankName: 'MBBank (Quân Đội)',
+        bankBin: '970422',
+        bankAccountNumber: '0399888999',
+        bankAccountName: 'TAI XE DRIVER APP',
+      })
+      .catch(() => {});
+  }, []);
+
   // Nhận cuốc xe (Hỗ trợ cả cuốc mới & cuốc gối đầu)
   const handleAcceptOffer = async (offer) => {
     if (!offer) return;
     setIsAccepting(true);
     try {
+      // Đảm bảo thông tin ngân hàng đã cập nhật
+      paymentService
+        .registerDriverPaymentInfo({
+          bankName: 'MBBank (Quân Đội)',
+          bankBin: '970422',
+          bankAccountNumber: '0399888999',
+          bankAccountName: 'TAI XE DRIVER APP',
+        })
+        .catch(() => {});
+
       setSelectedOfferForDetail(null);
 
       // Chuyển sang màn hình Chi tiết cuốc xe & Thông tin khách hàng
@@ -361,7 +443,7 @@ export default function DriverScreen() {
       case TRIP_STATUS.DRIVER_ARRIVING:
         return '2. BẮT ĐẦU CHUYẾN ĐI';
       case TRIP_STATUS.IN_PROGRESS:
-        return '3. HOÀN THÀNH CHUYẾN ĐI';
+        return '3. ĐÃ ĐẾN ĐIỂM TRẢ KHÁCH (THU TIỀN)';
       default:
         return 'CẬP NHẬT TRẠNG THÁI';
     }
@@ -588,15 +670,11 @@ export default function DriverScreen() {
                         </ThemedText>
                       </View>
                       <Pressable
-                        style={styles.acceptRideBtn}
-                        onPress={() => handleAcceptOffer(offer)}
-                        disabled={isAccepting}
+                        style={styles.viewDetailRideBtn}
+                        onPress={() => setSelectedOfferForDetail(offer)}
                       >
-                        {isAccepting ? (
-                          <ActivityIndicator size="small" color="#FFFFFF" />
-                        ) : (
-                          <ThemedText style={styles.acceptRideBtnText}>Nhận cuốc gối đầu</ThemedText>
-                        )}
+                        <Ionicons name="eye-outline" size={18} color="#00B5B8" style={{ marginRight: 6 }} />
+                        <ThemedText style={styles.viewDetailRideBtnText}>Xem chi tiết cuốc gối đầu</ThemedText>
                       </Pressable>
                     </Pressable>
                   ))}
@@ -652,17 +730,13 @@ export default function DriverScreen() {
                     </ThemedText>
                   </View>
 
-                  {/* Nút Nhận chuyến trực tiếp */}
+                  {/* Nút Xem chi tiết chuyến xe (Chuyển việc nhận chuyến vào bên trong chi tiết) */}
                   <Pressable
-                    style={styles.acceptRideBtn}
-                    onPress={() => handleAcceptOffer(offer)}
-                    disabled={isAccepting}
+                    style={styles.viewDetailRideBtn}
+                    onPress={() => setSelectedOfferForDetail(offer)}
                   >
-                    {isAccepting ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <ThemedText style={styles.acceptRideBtnText}>Nhận chuyến</ThemedText>
-                    )}
+                    <Ionicons name="eye-outline" size={18} color="#00B5B8" style={{ marginRight: 6 }} />
+                    <ThemedText style={styles.viewDetailRideBtnText}>Xem chi tiết chuyến xe</ThemedText>
                   </Pressable>
                 </Pressable>
               ))}
@@ -697,10 +771,152 @@ export default function DriverScreen() {
               </Pressable>
             </View>
 
-            {/* Tiền cước nổi bật */}
-            <ThemedText style={styles.modalPriceHighlight}>
-              {Number(selectedOfferForDetail?.shippFare || 25000).toLocaleString('vi-VN')} đ
-            </ThemedText>
+            <ScrollView style={styles.modalBodyScroll} showsVerticalScrollIndicator={false}>
+
+            {/* Bản đồ trực quan lộ trình & vị trí tài xế + khách */}
+            {selectedOfferForDetail && (
+              <View style={styles.modalMapContainer}>
+                <WebView
+                  originWhitelist={['*']}
+                  source={{
+                    html: `
+                      <!DOCTYPE html>
+                      <html>
+                      <head>
+                        <meta charset="utf-8" />
+                        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+                        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+                        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+                        <style>
+                          * { box-sizing: border-box; margin: 0; padding: 0; }
+                          body, html, #map { height: 100%; width: 100%; overflow: hidden; background: #e5e7eb; }
+                          .custom-pin {
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            color: white;
+                            font-weight: 700;
+                            font-size: 10px;
+                            font-family: sans-serif;
+                            border-radius: 50%;
+                            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+                            border: 2px solid #FFFFFF;
+                          }
+                        </style>
+                      </head>
+                      <body>
+                        <div id="map"></div>
+                        <script>
+                          var pLat = ${selectedOfferForDetail.pickUpLatitude || (driverCoords.latitude - 0.006)};
+                          var pLon = ${selectedOfferForDetail.pickUpLongitude || (driverCoords.longitude + 0.005)};
+                          var dLat = ${selectedOfferForDetail.destinationLatitude || (driverCoords.latitude + 0.012)};
+                          var dLon = ${selectedOfferForDetail.destinationLongitude || (driverCoords.longitude - 0.008)};
+                          var drvLat = ${driverCoords.latitude};
+                          var drvLon = ${driverCoords.longitude};
+
+                          var map = L.map('map', { zoomControl: false }).setView([drvLat, drvLon], 14);
+                          
+                          L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+                            maxZoom: 19,
+                            subdomains: ['0', '1', '2', '3']
+                          }).addTo(map);
+
+                          // Tài xế (Xanh dương)
+                          var drvIcon = L.divIcon({
+                            className: 'custom-pin',
+                            html: '<div style="background:#2563EB; width:26px; height:26px; border-radius:13px; display:flex; align-items:center; justify-content:center;">Bạn</div>',
+                            iconSize: [26, 26],
+                            iconAnchor: [13, 13]
+                          });
+                          L.marker([drvLat, drvLon], { icon: drvIcon }).addTo(map);
+
+                          // Điểm đón (Xanh ngọc)
+                          var pickupIcon = L.divIcon({
+                            className: 'custom-pin',
+                            html: '<div style="background:#00B5B8; width:26px; height:26px; border-radius:13px; display:flex; align-items:center; justify-content:center;">Đón</div>',
+                            iconSize: [26, 26],
+                            iconAnchor: [13, 13]
+                          });
+                          var pMarker = L.marker([pLat, pLon], { icon: pickupIcon }).addTo(map);
+
+                          // Điểm đến (Cam)
+                          var destIcon = L.divIcon({
+                            className: 'custom-pin',
+                            html: '<div style="background:#F97316; width:26px; height:26px; border-radius:13px; display:flex; align-items:center; justify-content:center;">Đến</div>',
+                            iconSize: [26, 26],
+                            iconAnchor: [13, 13]
+                          });
+                          var dMarker = L.marker([dLat, dLon], { icon: destIcon }).addTo(map);
+
+                          // Tuyến đường thực tế bám sát mặt đường phố từ OSRM
+                          var actualCoords = ${JSON.stringify(modalRouteCoords.length > 0 ? modalRouteCoords : [[selectedOfferForDetail.pickUpLatitude || (driverCoords.latitude - 0.006), selectedOfferForDetail.pickUpLongitude || (driverCoords.longitude + 0.005)], [selectedOfferForDetail.destinationLatitude || (driverCoords.latitude + 0.012), selectedOfferForDetail.destinationLongitude || (driverCoords.longitude - 0.008)]])};
+
+                          // Đường viền 3D cho cung đường thực tế
+                          L.polyline(actualCoords, {
+                            color: '#00838F',
+                            weight: 8,
+                            opacity: 0.5,
+                            lineJoin: 'round',
+                            lineCap: 'round'
+                          }).addTo(map);
+
+                          // Cung đường di chuyển thực tế uốn lượn theo đường phố
+                          var tripLine = L.polyline(actualCoords, {
+                            color: '#00B5B8',
+                            weight: 5,
+                            opacity: 0.95,
+                            lineJoin: 'round',
+                            lineCap: 'round'
+                          }).addTo(map);
+
+                          // Đường nét đứt tiếp cận của tài xế đến điểm đón
+                          L.polyline([[drvLat, drvLon], [pLat, pLon]], {
+                            color: '#2563EB',
+                            weight: 3,
+                            dashArray: '5, 5',
+                            opacity: 0.8
+                          }).addTo(map);
+
+                          var group = new L.featureGroup([
+                            L.marker([drvLat, drvLon]),
+                            pMarker,
+                            dMarker,
+                            tripLine
+                          ]);
+                          map.fitBounds(group.getBounds(), { padding: [35, 35] });
+                        </script>
+                      </body>
+                      </html>
+                    `
+                  }}
+                  scrollEnabled={false}
+                  javaScriptEnabled={true}
+                  domStorageEnabled={true}
+                  style={styles.modalMapWebView}
+                />
+
+                <View style={styles.modalMapBadge}>
+                  {isLoadingModalRoute ? (
+                    <ActivityIndicator size="small" color="#00B5B8" style={{ marginRight: 3 }} />
+                  ) : (
+                    <Ionicons name="navigate-circle" size={15} color="#00B5B8" />
+                  )}
+                  <ThemedText style={styles.modalMapBadgeText}>
+                    {isLoadingModalRoute
+                      ? 'Đang vẽ tuyến...'
+                      : `Thực tế: ${modalDistanceKm || (selectedOfferForDetail?.distanceKm ? selectedOfferForDetail.distanceKm.toFixed(1) : '2.5')} km`}
+                  </ThemedText>
+                </View>
+              </View>
+            )}
+
+            {/* Tiền cước nổi bật (Tối ưu không bị cắt chữ) */}
+            <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginBottom: 12, paddingVertical: 4 }}>
+              <ThemedText style={{ fontSize: 14, color: '#4B5563', marginRight: 6, fontWeight: '600' }}>Cước thu khách:</ThemedText>
+              <ThemedText style={styles.modalPriceHighlight}>
+                {Number(selectedOfferForDetail?.shippFare || 24000).toLocaleString('vi-VN')} đ
+              </ThemedText>
+            </View>
 
             {/* Lộ trình đón - trả */}
             <View style={styles.modalSection}>
@@ -753,12 +969,13 @@ export default function DriverScreen() {
               </View>
 
               <View style={[styles.modalRow, { marginBottom: 0 }]}>
-                <ThemedText style={styles.modalLabel}>Hình thức thanh toán:</ThemedText>
-                <ThemedText style={styles.modalValue}>Tiền mặt / Trực tiếp</ThemedText>
+                <ThemedText style={styles.modalLabel}>Thanh toán:</ThemedText>
+                <ThemedText style={[styles.modalValue, { color: '#EF4444', fontWeight: '700' }]}>Chưa thanh toán</ThemedText>
               </View>
             </View>
+            </ScrollView>
 
-            {/* Nút hành động */}
+            {/* Nút hành động cố định ở đáy modal */}
             <View style={styles.modalActions}>
               <Pressable
                 style={styles.modalRejectBtn}
