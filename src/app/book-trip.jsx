@@ -410,6 +410,12 @@ export default function BookTripScreen() {
 
   // Xử lý khi khách hàng chọn phương thức thanh toán (Tiền mặt hoặc Chuyển khoản VietQR)
   const handleSelectPayMethod = async (method) => {
+    // Không cho phép thay đổi phương thức thanh toán khi chuyến đi đã hoàn tất hoặc đã thanh toán xong
+    if (activeTrip?.status === TRIP_STATUS.COMPLETED || tripPayment?.status === 'COMPLETED') {
+      Alert.alert('Thông báo', 'Chuyến đi đã hoàn tất, không thể thay đổi phương thức thanh toán.');
+      return;
+    }
+
     setSelectedPayMethod(method);
     if (!activeTrip?.id) return;
 
@@ -1008,7 +1014,7 @@ export default function BookTripScreen() {
                   </View>
                 ) : activeTrip.status === TRIP_STATUS.COMPLETED ? (
                   <>
-                    {/* KHỐI CHỌN THANH TOÁN SAU KHI HOÀN THÀNH CHUYẾN ĐI */}
+                    {/* KHỐI HIỂN THỊ THANH TOÁN SAU KHI HOÀN THÀNH CHUYẾN ĐI (KHÓA ĐỔI PHƯƠNG THỨC) */}
                     <View style={styles.paymentCompleteCard}>
                       <View style={[styles.paymentHeaderRow, { marginBottom: 14 }]}>
                         <View style={[styles.paymentSuccessIcon, { backgroundColor: '#ECFDF5' }]}>
@@ -1017,12 +1023,21 @@ export default function BookTripScreen() {
                         <View style={{ flex: 1 }}>
                           <ThemedText style={styles.paymentTitle}>Chuyến đi đã hoàn tất</ThemedText>
                           <ThemedText style={styles.paymentSubtitle}>
-                            Vui lòng chọn hình thức thanh toán thuận tiện cho bạn
+                            {tripPayment?.status === 'COMPLETED'
+                              ? 'Đã xác nhận thanh toán thành công'
+                              : 'Chi tiết phương thức thanh toán chuyến đi'}
                           </ThemedText>
                         </View>
+                        {tripPayment?.status === 'COMPLETED' && (
+                          <View style={{ backgroundColor: '#D1FAE5', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }}>
+                            <ThemedText style={{ color: '#059669', fontSize: 12, fontWeight: '700' }}>
+                              ĐÃ THANH TOÁN
+                            </ThemedText>
+                          </View>
+                        )}
                       </View>
 
-                      {/* Header phương thức hiện tại + Nút đổi */}
+                      {/* Header phương thức thanh toán (Cố định, không cho đổi) */}
                       <View style={[styles.paymentHeaderRow, { marginBottom: 12, backgroundColor: '#F9FAFB', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#F3F4F6' }]}>
                         <View style={[styles.paymentSuccessIcon, { backgroundColor: selectedPayMethod === PAYMENT_METHOD.PAY_BEFORE ? '#EFF6FF' : '#ECFDF5' }]}>
                           <Ionicons
@@ -1039,17 +1054,6 @@ export default function BookTripScreen() {
                             {Number(activeTrip.shippFare || shippFare).toLocaleString('vi-VN')} đ
                           </ThemedText>
                         </View>
-                        {/* Nút đổi hình thức */}
-                        <Pressable
-                          onPress={() => setSelectedPayMethod(
-                            selectedPayMethod === PAYMENT_METHOD.PAY_BEFORE
-                              ? PAYMENT_METHOD.PAY_DIRECTLY
-                              : PAYMENT_METHOD.PAY_BEFORE
-                          )}
-                          style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: '#E5E7EB' }}
-                        >
-                          <ThemedText style={{ fontSize: 12, color: '#374151', fontWeight: '700' }}>Đổi</ThemedText>
-                        </Pressable>
                       </View>
 
                       {/* Nội dung thanh toán chi tiết */}
@@ -1057,7 +1061,9 @@ export default function BookTripScreen() {
                         <View style={styles.paymentStatusNotice}>
                           <Ionicons name="information-circle" size={18} color="#065F46" />
                           <ThemedText style={styles.paymentStatusNoticeText}>
-                            Vui lòng thanh toán trực tiếp {Number(activeTrip.shippFare || shippFare).toLocaleString('vi-VN')} đ tiền mặt cho tài xế.
+                            {tripPayment?.status === 'COMPLETED'
+                              ? `Đã thanh toán ${Number(activeTrip.shippFare || shippFare).toLocaleString('vi-VN')} đ tiền mặt cho tài xế.`
+                              : `Vui lòng thanh toán trực tiếp ${Number(activeTrip.shippFare || shippFare).toLocaleString('vi-VN')} đ tiền mặt cho tài xế.`}
                           </ThemedText>
                         </View>
                       ) : (
@@ -1065,11 +1071,15 @@ export default function BookTripScreen() {
                           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
                             <Ionicons name="scan-outline" size={24} color="#0284C7" style={{ marginRight: 8 }} />
                             <ThemedText style={{ fontSize: 14, fontWeight: '800', color: '#0369A1' }}>
-                              Quét mã trên điện thoại tài xế
+                              {tripPayment?.status === 'COMPLETED'
+                                ? 'Đã hoàn tất chuyển khoản VietQR'
+                                : 'Quét mã trên điện thoại tài xế'}
                             </ThemedText>
                           </View>
                           <ThemedText style={{ fontSize: 13, color: '#1E293B', lineHeight: 20 }}>
-                            Tài xế đang hiển thị mã VietQR trên màn hình. Bạn hãy mở ứng dụng Ngân hàng (hoặc Ví điện tử) để quét mã và chuyển {Number(activeTrip.shippFare || shippFare).toLocaleString('vi-VN')} đ trực tiếp cho tài xế.
+                            {tripPayment?.status === 'COMPLETED'
+                              ? `Tài xế đã xác nhận nhận được ${Number(activeTrip.shippFare || shippFare).toLocaleString('vi-VN')} đ chuyển khoản thành công.`
+                              : `Tài xế đang hiển thị mã VietQR trên màn hình. Bạn hãy mở ứng dụng Ngân hàng (hoặc Ví điện tử) để quét mã và chuyển ${Number(activeTrip.shippFare || shippFare).toLocaleString('vi-VN')} đ trực tiếp cho tài xế.`}
                           </ThemedText>
                         </View>
                       )}
