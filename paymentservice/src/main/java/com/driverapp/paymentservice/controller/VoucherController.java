@@ -2,6 +2,7 @@ package com.driverapp.paymentservice.controller;
 
 import com.driverapp.paymentservice.dto.request.ClaimVoucherRequest;
 import com.driverapp.paymentservice.dto.request.CreateVoucherRequest;
+import com.driverapp.paymentservice.dto.response.UserVoucherResponse;
 import com.driverapp.paymentservice.dto.response.VoucherItemResponse;
 import com.driverapp.paymentservice.models.enums.VoucherType;
 import com.driverapp.paymentservice.service.VoucherService;
@@ -75,5 +76,14 @@ public class VoucherController {
     public List<VoucherItemResponse> getRestaurantVouchers(
             @PathVariable String restaurantId) {
         return voucherService.getRestaurantVouchers(restaurantId);
+    }
+
+    /**
+     * GET /api/vouchers/my-vouchers
+     * Customer xem danh sách voucher đã nhận
+     */
+    @GetMapping("/my-vouchers")
+    public List<UserVoucherResponse> getMyVouchers(@AuthenticationPrincipal Jwt jwt) {
+        return voucherService.getMyVouchers(jwt);
     }
 }

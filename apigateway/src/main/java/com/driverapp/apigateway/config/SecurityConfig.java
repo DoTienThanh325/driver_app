@@ -42,7 +42,10 @@ public class SecurityConfig {
                                                 .hasAnyRole("CUSTOMER", "DRIVER")
                                                 .pathMatchers(HttpMethod.POST, "/api/vehicles", "/api/vehicles/**")
                                                 .hasAnyRole("CUSTOMER", "DRIVER")
-                                                .pathMatchers("/api/bookings/foods").hasRole("BUSINESS")
+                                                .pathMatchers(HttpMethod.GET, "/api/bookings/foods", "/api/bookings/foods/**")
+                                                .permitAll()
+                                                .pathMatchers("/api/bookings/foods", "/api/bookings/foods/**")
+                                                .hasRole("BUSINESS")
                                                 .pathMatchers("/api/bookings/restaurants",
                                                                 "/api/bookings/restaurants/**")
                                                 .hasRole("BUSINESS")
@@ -50,7 +53,13 @@ public class SecurityConfig {
                                                 .pathMatchers(HttpMethod.PATCH, "/api/trips/{tripId}/cancel")
                                                 .hasAnyRole("CUSTOMER", "DRIVER")
                                                 .pathMatchers("/api/trips").hasAnyRole("CUSTOMER", "DRIVER")
-                                                .pathMatchers("/api/businesses/registration").hasRole("CUSTOMER")
+                                                .pathMatchers(HttpMethod.GET,
+                                                                "/api/businesses/registration/user/*",
+                                                                "/api/businesses/registration/me",
+                                                                "/api/businesses/registration/**",
+                                                                "/api/businesses/me")
+                                                .hasAnyRole("CUSTOMER", "BUSINESS")
+                                                .pathMatchers(HttpMethod.POST, "/api/businesses/registration").hasRole("CUSTOMER")
                                                 .pathMatchers("/api/businesses/*/review").hasRole("ADMIN")
                                                 .pathMatchers("/api/drivers/*/verification-status").hasRole("ADMIN")
                                                 .pathMatchers("/api/drivers/candidates").hasRole("ADMIN")
@@ -66,6 +75,8 @@ public class SecurityConfig {
                                                 .pathMatchers(HttpMethod.POST, "/api/payments/trip").hasRole("CUSTOMER")
                                                 .pathMatchers(HttpMethod.PATCH, "/api/payments/trip/*/confirm").hasRole("DRIVER")
                                                 .pathMatchers(HttpMethod.POST, "/api/payments/driver-payment-info").hasRole("DRIVER")
+                                                .pathMatchers(HttpMethod.PATCH, "/api/payments/driver-payment-info").hasRole("DRIVER")
+                                                .pathMatchers(HttpMethod.GET, "/api/payments/driver-payment-info").hasRole("DRIVER")
                                                 .pathMatchers(HttpMethod.PUT, "/api/payments/driver-payment-info").hasRole("DRIVER")
                                                 .pathMatchers(HttpMethod.POST, "/api/feedbacks", "/api/feedbacks/**").hasRole("CUSTOMER")
                                                 .pathMatchers(HttpMethod.POST, "/api/complaints", "/api/complaints/**").hasAnyRole("CUSTOMER", "DRIVER")

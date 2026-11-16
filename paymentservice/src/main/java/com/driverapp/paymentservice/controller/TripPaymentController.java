@@ -2,6 +2,7 @@ package com.driverapp.paymentservice.controller;
 
 import com.driverapp.paymentservice.dto.request.CreateDriverPaymentInfoRequest;
 import com.driverapp.paymentservice.dto.request.SwitchToPayBeforeRequest;
+import com.driverapp.paymentservice.dto.response.DriverPaymentInfoResponse;
 import com.driverapp.paymentservice.dto.response.TripPaymentResponse;
 import com.driverapp.paymentservice.service.TripPaymentService;
 import jakarta.validation.Valid;
@@ -55,8 +56,17 @@ public class TripPaymentController {
     }
 
     /**
+     * GET /api/payments/driver-payment-info
+     * Lấy thông tin STK ngân hàng của tài xế
+     */
+    @GetMapping("/driver-payment-info")
+    public DriverPaymentInfoResponse getDriverPaymentInfo(@AuthenticationPrincipal Jwt jwt) {
+        return tripPaymentService.getDriverPaymentInfo(jwt);
+    }
+
+    /**
      * POST /api/payments/driver-payment-info
-     * Driver đăng ký / cập nhật STK ngân hàng của mình (API có sẵn)
+     * Driver đăng ký STK ngân hàng của mình
      */
     @PostMapping("/driver-payment-info")
     @ResponseStatus(HttpStatus.CREATED)
@@ -64,6 +74,17 @@ public class TripPaymentController {
             @Valid @RequestBody CreateDriverPaymentInfoRequest request,
             @AuthenticationPrincipal Jwt jwt) {
         return tripPaymentService.registerDriverPaymentInfo(request, jwt);
+    }
+
+    /**
+     * PATCH /api/payments/driver-payment-info
+     * Driver cập nhật STK ngân hàng của mình
+     */
+    @PatchMapping("/driver-payment-info")
+    public Map<String, String> updateDriverPaymentInfo(
+            @Valid @RequestBody CreateDriverPaymentInfoRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        return tripPaymentService.updateDriverPaymentInfo(request, jwt);
     }
 
     /**

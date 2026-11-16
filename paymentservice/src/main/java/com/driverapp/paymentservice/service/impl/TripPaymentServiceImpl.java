@@ -2,6 +2,7 @@ package com.driverapp.paymentservice.service.impl;
 
 import com.driverapp.paymentservice.dto.request.CreateDriverPaymentInfoRequest;
 import com.driverapp.paymentservice.dto.request.SwitchToPayBeforeRequest;
+import com.driverapp.paymentservice.dto.response.DriverPaymentInfoResponse;
 import com.driverapp.paymentservice.dto.response.TripPaymentResponse;
 import com.driverapp.paymentservice.models.DriverPaymentInfo;
 import com.driverapp.paymentservice.models.PaymentTransaction;
@@ -318,6 +319,46 @@ public class TripPaymentServiceImpl implements TripPaymentService {
                 driverUserId, request.getBankName(), request.getBankAccountNumber());
 
         return Map.of("message", "Đăng ký thông tin ngân hàng thành công");
+    }
+
+    // ────────────────────────── 6b. LẤY THÔNG TIN NGÂN HÀNG CỦA TÀI XẾ ──────────────────────────
+    @Override
+    public DriverPaymentInfoResponse getDriverPaymentInfo(Jwt jwt) {
+        UUID driverUserId = UUID.fromString(jwt.getSubject());
+        DriverPaymentInfo info = driverPaymentInfoRepository.findByDriverId(driverUserId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tài xế chưa liên kết thông tin tài khoản ngân hàng"));
+
+        return DriverPaymentInfoResponse.builder()
+                .bankName(info.getBankName())
+                .bankAccountNumber(info.getBankAccountNumber())
+                .bankAccountName(info.getBankAccountName())
+                .build();
+    }
+
+    // ────────────────────────── 6c. TÀI XẾ CẬP NHẬT (PATCH) THÔNG TIN NGÂN HÀNG ──────────────────────────
+    @Override
+    @Transactional
+    public Map<String, String> updateDriverPaymentInfo(CreateDriverPaymentInfoRequest request, Jwt jwt) {
+        UUID driverUserId = UUID.fromString(jwt.getSubject());
+        LocalDateTime now = LocalDateTime.now();
+
+        DriverPaymentInfo info = driverPaymentInfoRepository.findByDriverId(driverUserId)
+                .orElseGet(() -> DriverPaymentInfo.builder()
+                        .driverId(driverUserId)
+                        .createdAt(now)
+                        .build());
+
+        info.setBankName(request.getBankName());
+        info.setBankBin(request.getBankBin());
+        info.setBankAccountNumber(request.getBankAccountNumber());
+        info.setBankAccountName(request.getBankAccountName());
+        info.setUpdatedAt(now);
+
+        driverPaymentInfoRepository.save(info);
+        log.info("Tài xế (userId={}) đã cập nhật (PATCH) thông tin ngân hàng thành công: bank={}, stk={}",
+                driverUserId, request.getBankName(), request.getBankAccountNumber());
+
+        return Map.of("message", "Cập nhật thông tin ngân hàng thành công");
     }
 
     // ────────────────────────── 7. TỰ ĐỘNG CHỐT PAY_DIRECTLY KHI COMPLETED ──────────────────────────

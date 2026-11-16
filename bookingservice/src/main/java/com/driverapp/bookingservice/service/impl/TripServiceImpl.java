@@ -2,6 +2,7 @@ package com.driverapp.bookingservice.service.impl;
 
 import com.driverapp.bookingservice.client.DriverServiceClient;
 import com.driverapp.bookingservice.client.NotificationClient;
+import com.driverapp.bookingservice.client.UserServiceClient;
 import com.driverapp.bookingservice.dto.request.CancelTripRequest;
 import com.driverapp.bookingservice.dto.request.CreateNotificationRequest;
 import com.driverapp.bookingservice.dto.request.CreateTripRequest;
@@ -9,6 +10,8 @@ import com.driverapp.bookingservice.dto.request.FoodOrderItemRequest;
 import com.driverapp.bookingservice.dto.request.UpdateTripStatusRequest;
 import com.driverapp.bookingservice.dto.response.AcceptTripResponse;
 import com.driverapp.bookingservice.dto.response.CreateTripResponse;
+import com.driverapp.bookingservice.dto.response.DriverTripResponse;
+import com.driverapp.bookingservice.dto.response.UserInfoResponse;
 import com.driverapp.bookingservice.models.Food;
 import com.driverapp.bookingservice.models.FoodOption;
 import com.driverapp.bookingservice.models.FoodSelected;
@@ -22,6 +25,11 @@ import com.driverapp.bookingservice.repository.MatchingOfferRepository;
 import com.driverapp.bookingservice.repository.TripRepository;
 import com.driverapp.bookingservice.service.TripService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -50,6 +58,7 @@ public class TripServiceImpl implements TripService {
         private final com.driverapp.bookingservice.publisher.TripEventPublisher tripEventPublisher;
         private final MatchingOfferRepository matchingOfferRepository;
         private final com.driverapp.bookingservice.repository.MatchingOfferLogRepository matchingOfferLogRepository;
+        private final UserServiceClient userServiceClient;
 
 
         @Override
@@ -466,5 +475,84 @@ public class TripServiceImpl implements TripService {
                                 "shippFare", savedTrip.getShippFare(),
                                 "driverId", driverUserId.toString()
                 );
+        }
+
+        @Override
+        public Page<DriverTripResponse> getDriverTripHistory(
+                        UUID driverUserId, List<TripStatus> statuses, int page, int size) {
+
+                List<TripStatus> queryStatuses = (statuses == null || statuses.isEmpty())
+                                ? List.of(TripStatus.COMPLETED, TripStatus.CANCELLED)
+                                : statuses;
+
+                Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+                Page<Trip> tripPage = tripRepository.findByDriverIdAndStatusIn(driverUserId, queryStatuses, pageable);
+
+                List<DriverTripResponse> responses = tripPage.getContent().stream().map(trip -> {
+                        // 1. Lấy thông tin khách hàng từ UserServiceClient (tuyệt đối không lấy id)
+                        DriverTripResponse.CustomerProfile customerProfile = null;
+                        if (trip.getCustomerId() != null) {
+                                try {
+                                        UserInfoResponse userInfo = userServiceClient.getUserInfo(trip.getCustomerId());
+                                        if (userInfo != null) {
+                                                customerProfile = new DriverTripResponse.CustomerProfile(
+                                                                userInfo.username(),
+                                                                userInfo.phoneNumber()
+                                                );
+                                        }
+                                } catch (Exception e) {
+                                        customerProfile = new DriverTripResponse.CustomerProfile("Khách hàng", "N/A");
+                                }
+                        }
+
+                        // 2. Chi tiết món ăn nếu đơn hàng là FOOD_DELIVERY (tuyệt đối không lấy id)
+                        List<DriverTripResponse.FoodItemDetail> foodDetails = null;
+                        if (trip.getShippingType() == ShippingType.FOOD_DELIVERY
+                                        && trip.getFoodSelectedsList() != null
+                                        && !trip.getFoodSelectedsList().isEmpty()) {
+                                foodDetails = trip.getFoodSelectedsList().stream().map(item -> {
+                                        String foodName = "Món ăn";
+                                        if (item.getFoodId() != null) {
+                                                foodName = foodRepository.findById(item.getFoodId())
+                                                                .map(Food::getName)
+                                                                .orElse("Món ăn không xác định");
+                                        }
+                                        return new DriverTripResponse.FoodItemDetail(
+                                                        foodName,
+                                                        item.getSize(),
+                                                        item.getPrice()
+                                        );
+                                }).toList();
+                        }
+
+                        // 3. Tính toán giá cước
+                        double totalFare = trip.getShippFare() + (trip.getTotalFoodPrice() != null ? trip.getTotalFoodPrice() : 0.0);
+                        DriverTripResponse.TripFare fare = new DriverTripResponse.TripFare(
+                                        trip.getShippFare(),
+                                        trip.getTotalFoodPrice(),
+                                        totalFare
+                        );
+
+                        // 4. Tuyệt đối không chứa ID
+                        return new DriverTripResponse(
+                                        customerProfile,
+                                        trip.getPickUpAddress(),
+                                        trip.getPickUpLatitude(),
+                                        trip.getPickUpLongitude(),
+                                        trip.getDestinationAddress(),
+                                        trip.getDestinationLatitude(),
+                                        trip.getDestinationLongitude(),
+                                        trip.getShippingType(),
+                                        trip.getVehicleType(),
+                                        fare,
+                                        foodDetails,
+                                        trip.getStatus(),
+                                        trip.getCancelReason(),
+                                        trip.getCreatedAt(),
+                                        trip.getUpdatedAt()
+                        );
+                }).toList();
+
+                return new PageImpl<>(responses, pageable, tripPage.getTotalElements());
         }
 }

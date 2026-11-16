@@ -5,8 +5,12 @@ import com.driverapp.bookingservice.dto.request.CreateTripRequest;
 import com.driverapp.bookingservice.dto.request.UpdateTripStatusRequest;
 import com.driverapp.bookingservice.dto.response.AcceptTripResponse;
 import com.driverapp.bookingservice.dto.response.CreateTripResponse;
+import com.driverapp.bookingservice.dto.response.DriverTripResponse;
 import com.driverapp.bookingservice.models.Trip;
+import com.driverapp.bookingservice.models.enums.TripStatus;
+import org.springframework.data.domain.Page;
 
+import java.util.List;
 import java.util.UUID;
 
 public interface TripService {
@@ -19,4 +23,5 @@ public interface TripService {
     Trip getTripById(String tripId);
     Trip getCurrentTrip(UUID customerId);
     java.util.Map<String, Object> simulateMatchingForDriver(UUID driverUserId, double lat, double lng, com.driverapp.bookingservice.models.enums.VehicleType vehicleType);
+    Page<DriverTripResponse> getDriverTripHistory(UUID driverUserId, List<TripStatus> statuses, int page, int size);
 }

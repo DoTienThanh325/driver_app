@@ -52,12 +52,18 @@ public class OtpResendController {
         OtpChallengeResult challenge = otpChallengeService.create(user.getId());
         smsEventPublisher.publishSendOtp(user.getPhoneNumber(), challenge.otp());
 
-        log.info("[SAGA #6] Đã gửi lại mã OTP bất đồng bộ cho số điện thoại: {}", user.getPhoneNumber());
+        log.info("======================================================================");
+        log.info(">> [AUTH] OTP RESEND GENERATED <<");
+        log.info(">> Phone Number : {}", user.getPhoneNumber());
+        log.info(">> OTP Code     : {}", challenge.otp());
+        log.info(">> Expires In   : {} seconds", challenge.expiresInSeconds());
+        log.info("======================================================================");
 
         return ResponseEntity.ok(Map.of(
                 "challengeToken", challenge.challengeToken(),
                 "expiresInSeconds", challenge.expiresInSeconds(),
-                "message", "Mã OTP mới đã được gửi lại vào số điện thoại của bạn."
+                "message", "Mã OTP mới đã được gửi lại vào số điện thoại của bạn.",
+                "otp", challenge.otp()
         ));
     }
 }

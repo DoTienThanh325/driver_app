@@ -6,10 +6,13 @@ import com.driverapp.bookingservice.dto.request.UpdateTripStatusRequest;
 import com.driverapp.bookingservice.dto.response.AcceptTripResponse;
 import com.driverapp.bookingservice.dto.response.CreateTripResponse;
 import com.driverapp.bookingservice.dto.response.CustomerTripCountDto;
+import com.driverapp.bookingservice.dto.response.DriverTripResponse;
 import com.driverapp.bookingservice.models.Trip;
+import com.driverapp.bookingservice.models.enums.TripStatus;
 import com.driverapp.bookingservice.service.TripService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -103,6 +106,22 @@ public class TripController {
     public Trip getCurrentTrip(@AuthenticationPrincipal Jwt jwt) {
         UUID customerId = UUID.fromString(jwt.getSubject());
         return tripService.getCurrentTrip(customerId);
+    }
+
+    /**
+     * GET /api/trips/driver/history
+     * Lấy danh sách các chuyến đi mà tài xế đã hoàn thành, các chuyến đi bị hủy.
+     * Tuyệt đối không lấy id.
+     */
+    @GetMapping("/driver/history")
+    public Page<DriverTripResponse> getDriverTripHistory(
+            @RequestParam(required = false) java.util.List<TripStatus> status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        UUID driverUserId = UUID.fromString(jwt.getSubject());
+        return tripService.getDriverTripHistory(driverUserId, status, page, size);
     }
 
     @GetMapping("/{tripId}")

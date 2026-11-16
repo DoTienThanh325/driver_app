@@ -23,6 +23,7 @@ public class Restaurant {
     private String locationAddress;
     private double locationLatitude;
     private double locationLongitude;
+    private Double rating;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
