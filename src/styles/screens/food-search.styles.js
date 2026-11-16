@@ -7,6 +7,7 @@ export const foodSearchStyles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
+    backgroundColor: '#F8F9FA',
   },
   headerWrapper: {
     position: 'relative',
@@ -51,6 +52,7 @@ export const foodSearchStyles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 10,
+    backgroundColor: '#F8F9FA',
   },
   sectionTitle: {
     fontSize: 18,
@@ -60,17 +62,20 @@ export const foodSearchStyles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 10,
     paddingBottom: 24,
+    backgroundColor: '#F8F9FA',
   },
   loadingContainer: {
     marginTop: 60,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#F8F9FA',
   },
   emptyContainer: {
     marginTop: 60,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 32,
+    backgroundColor: '#F8F9FA',
   },
   emptyText: {
     marginTop: 12,
