@@ -1,5 +1,13 @@
 // @ts-check
-import 'fast-text-encoding';
+// Polyfill TextEncoding safely if not provided by Hermes / Node
+if (typeof TextDecoder === 'undefined') {
+  try {
+    // eslint-disable-next-line no-undef
+    require('fast-text-encoding');
+  } catch {
+    // Hermes RN 0.74+ and Node have native TextDecoder
+  }
+}
 import { toByteArray } from 'base64-js';
 export const MAX_NOTIFICATIONS = 200;
 
