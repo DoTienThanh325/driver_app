@@ -67,20 +67,6 @@ export default function DriverTripsScreen() {
     return trips.filter((t) => t.status === activeTab);
   }, [trips, activeTab]);
 
-  // Đếm số lượng theo tab
-  const counts = useMemo(() => {
-    let completed = 0;
-    let cancelled = 0;
-    trips.forEach((t) => {
-      if (t.status === 'COMPLETED') completed++;
-      if (t.status === 'CANCELLED') cancelled++;
-    });
-    return {
-      all: trips.length,
-      completed,
-      cancelled,
-    };
-  }, [trips]);
 
   const formatVND = (amount) =>
     new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
@@ -136,7 +122,7 @@ export default function DriverTripsScreen() {
           activeOpacity={0.8}
         >
           <Text style={[styles.tabText, activeTab === TAB_ALL && styles.tabTextActive]}>
-            Tất cả ({counts.all})
+            Tất cả
           </Text>
         </TouchableOpacity>
 
@@ -146,7 +132,7 @@ export default function DriverTripsScreen() {
           activeOpacity={0.8}
         >
           <Text style={[styles.tabText, activeTab === TAB_COMPLETED && styles.tabTextActive]}>
-            Hoàn thành ({counts.completed})
+            Hoàn thành
           </Text>
         </TouchableOpacity>
 
@@ -156,7 +142,7 @@ export default function DriverTripsScreen() {
           activeOpacity={0.8}
         >
           <Text style={[styles.tabText, activeTab === TAB_CANCELLED && styles.tabTextActive]}>
-            Đã hủy ({counts.cancelled})
+            Đã hủy
           </Text>
         </TouchableOpacity>
       </View>
