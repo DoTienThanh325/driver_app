@@ -15,7 +15,7 @@ public class OfferTimeoutListener {
 
     private final MatchingService matchingService;
 
-    @RabbitListener(queues = MatchingRabbitMQConfig.MATCHING_OFFER_TIMEOUT_QUEUE)
+    @RabbitListener(containerFactory = "resilienceRabbitListenerContainerFactory", queues = MatchingRabbitMQConfig.MATCHING_OFFER_TIMEOUT_QUEUE)
     public void onOfferTimeout(OfferTimeoutPayload payload) {
         log.info("[RabbitMQ DLX] Timeout 25s kích hoạt cho OfferId={}, TripId={}",
                 payload.getOfferId(), payload.getTripId());
@@ -23,6 +23,7 @@ public class OfferTimeoutListener {
             matchingService.handleOfferTimeout(payload);
         } catch (Exception e) {
             log.error("[RabbitMQ DLX] Lỗi xử lý timeout cho OfferId={}: {}", payload.getOfferId(), e.getMessage(), e);
+            throw e;
         }
     }
 }

@@ -38,6 +38,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
 
+    private final com.driverapp.userservice.service.AuthRateLimitService rateLimits;
+    private final com.driverapp.userservice.config.RateLimitProperties rateLimitProperties;
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final RefreshTokenRepository refreshTokenRepository;
@@ -50,6 +52,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public void register(RegisterRequest request) {
+        rateLimits.check("register", request.phoneNumber());
         if (userRepository.existsByUsername(request.username())
                 || userRepository.existsByPhoneNumber(
                 request.phoneNumber()
@@ -85,6 +88,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional(readOnly = true)
     public LoginResponse login(LoginRequest request) {
+        rateLimits.check("login", request.phoneNumber());
         User user = userRepository
                 .findByPhoneNumber(request.phoneNumber())
                 .orElseThrow(this::invalidCredentials);
@@ -110,18 +114,11 @@ public class AuthServiceImpl implements AuthService {
                 challenge.otp()
         );
 
-        log.info("======================================================================");
-        log.info(">> [AUTH] OTP LOGIN GENERATED <<");
-        log.info(">> Phone Number : {}", user.getPhoneNumber());
-        log.info(">> OTP Code     : {}", challenge.otp());
-        log.info(">> Expires In   : {} seconds", challenge.expiresInSeconds());
-        log.info("======================================================================");
-
         return new LoginResponse(
                 challenge.challengeToken(),
                 challenge.expiresInSeconds(),
                 "Đã gửi mã OTP",
-                challenge.otp()
+                rateLimitProperties.isExposeOtp() ? challenge.otp() : null
         );
     }
 
@@ -150,6 +147,7 @@ public class AuthServiceImpl implements AuthService {
     public TokenResponse refresh(
             RefreshRequest request
     ) {
+        rateLimits.check("refresh", request.refreshToken());
         RefreshToken token = refreshTokenRepository
                 .findByHashForUpdate(
                         jwtService.sha256(

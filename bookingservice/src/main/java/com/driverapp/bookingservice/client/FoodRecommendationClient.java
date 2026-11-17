@@ -4,11 +4,10 @@ import com.driverapp.bookingservice.dto.ai.FoodRecommendationRequest;
 import com.driverapp.bookingservice.dto.ai.FoodRecommendationResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import com.driverapp.bookingservice.config.HttpClientConfig;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
-import java.time.Duration;
 import java.util.Optional;
 
 @Slf4j
@@ -16,16 +15,11 @@ import java.util.Optional;
 public class FoodRecommendationClient {
 
     private final RestClient restClient;
+    private final io.micrometer.core.instrument.MeterRegistry meters;
 
-    public FoodRecommendationClient(@Value("${services.ai-matching.url:http://localhost:8087}") String aiServiceUrl) {
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(Duration.ofMillis(30)); // 30ms bắt tay socket
-        factory.setReadTimeout(Duration.ofMillis(50));    // 50ms ngắt mạch bảo vệ hệ thống (Circuit Breaker)
-
-        this.restClient = RestClient.builder()
-                .baseUrl(aiServiceUrl)
-                .requestFactory(factory)
-                .build();
+    public FoodRecommendationClient(HttpClientConfig httpClients, io.micrometer.core.instrument.MeterRegistry meters, @Value("${services.ai-matching.url:http://localhost:8087}") String aiServiceUrl) {
+        this.meters = meters;
+        this.restClient = httpClients.client("ai-food", aiServiceUrl, false);
     }
 
     public Optional<FoodRecommendationResponse> rankFoods(FoodRecommendationRequest request) {
@@ -38,6 +32,7 @@ public class FoodRecommendationClient {
 
             return Optional.ofNullable(response);
         } catch (Exception e) {
+            meters.counter("dependency.fallback", "dependency", "ai-food").increment();
             log.warn("[Food AI Client] Không thể kết nối tới AI Recommendation Service ({}). Kích hoạt Fallback.", e.getMessage());
             return Optional.empty();
         }

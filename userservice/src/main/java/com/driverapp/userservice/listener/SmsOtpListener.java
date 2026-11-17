@@ -18,8 +18,6 @@ public class SmsOtpListener {
     @RabbitListener(queues = "user.sms-otp.queue")
     public void handleSendSmsOtp(DomainEvent<SmsOtpPayload> event) {
         SmsOtpPayload payload = event.getPayload();
-        log.info("[SMS Consumer] Đang gửi OTP bất đồng bộ đến số điện thoại {}: mã={}",
-                payload.getPhoneNumber(), payload.getOtpCode());
         smsSender.sendOtp(payload.getPhoneNumber(), payload.getOtpCode());
     }
 }

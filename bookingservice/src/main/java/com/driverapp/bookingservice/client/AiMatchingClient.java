@@ -4,11 +4,10 @@ import com.driverapp.bookingservice.dto.ai.DriverScoringRequest;
 import com.driverapp.bookingservice.dto.ai.DriverScoringResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import com.driverapp.bookingservice.config.HttpClientConfig;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
-import java.time.Duration;
 import java.util.Optional;
 
 @Slf4j
@@ -16,16 +15,11 @@ import java.util.Optional;
 public class AiMatchingClient {
 
     private final RestClient restClient;
+    private final io.micrometer.core.instrument.MeterRegistry meters;
 
-    public AiMatchingClient(@Value("${services.ai-matching.url:http://localhost:8087}") String aiServiceUrl) {
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(Duration.ofMillis(30)); // Timeout kết nối 30ms
-        factory.setReadTimeout(Duration.ofMillis(50));    // Timeout đọc 50ms (Circuit Breaker)
-
-        this.restClient = RestClient.builder()
-                .baseUrl(aiServiceUrl)
-                .requestFactory(factory)
-                .build();
+    public AiMatchingClient(HttpClientConfig httpClients, io.micrometer.core.instrument.MeterRegistry meters, @Value("${services.ai-matching.url:http://localhost:8087}") String aiServiceUrl) {
+        this.meters = meters;
+        this.restClient = httpClients.client("ai-matching", aiServiceUrl, false);
     }
 
     public Optional<DriverScoringResponse> scoreCandidates(DriverScoringRequest request) {
@@ -38,6 +32,7 @@ public class AiMatchingClient {
 
             return Optional.ofNullable(response);
         } catch (Exception e) {
+            meters.counter("dependency.fallback", "dependency", "ai-matching").increment();
             log.warn("[AI Client] Không thể chấm điểm qua AI Service ({}). Kích hoạt Rule-based Fallback.", e.getMessage());
             return Optional.empty(); // Kích hoạt Fallback
         }

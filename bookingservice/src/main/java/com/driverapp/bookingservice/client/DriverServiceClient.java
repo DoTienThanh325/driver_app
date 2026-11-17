@@ -3,7 +3,7 @@ package com.driverapp.bookingservice.client;
 import com.driverapp.bookingservice.dto.response.NearbyDriverDto;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.cloud.client.loadbalancer.LoadBalancerInterceptor;
+import com.driverapp.bookingservice.config.HttpClientConfig;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -22,12 +22,9 @@ public class DriverServiceClient {
     private final RestClient restClient;
 
     public DriverServiceClient(
-            LoadBalancerInterceptor loadBalancerInterceptor,
+            HttpClientConfig httpClients,
             @Value("${services.driver.base-url:http://driverservice}") String baseUrl) {
-        this.restClient = RestClient.builder()
-                .baseUrl(baseUrl)
-                .requestInterceptor(loadBalancerInterceptor)
-                .build();
+        this.restClient = httpClients.client("driver", baseUrl, true);
     }
 
     public record DriverCheckResult(UUID driverId, String status) {
@@ -37,35 +34,23 @@ public class DriverServiceClient {
      * Gọi driver-service kiểm tra tài xế theo driverId (chính là userId)
      */
     public void checkDriverAvailable(UUID driverId) {
-        try {
-            DriverCheckResult result = restClient.get()
-                    .uri("/api/drivers/check-available/{driverId}", driverId)
-                    .retrieve()
-                    .body(DriverCheckResult.class);
+        DriverCheckResult result = restClient.get()
+                .uri("/api/drivers/check-available/{driverId}", driverId)
+                .retrieve()
+                .body(DriverCheckResult.class);
 
-            if (result == null || result.driverId() == null) {
-                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không lấy được thông tin tài xế");
-            }
-        } catch (ResponseStatusException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("Lỗi khi kiểm tra tài xế từ driver-service: {}", e.getMessage());
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
-                    "Lỗi kết nối tới driver-service: " + e.getMessage());
+        if (result == null || result.driverId() == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không lấy được thông tin tài xế");
         }
     }
 
     public void updateDriverAvailability(UUID driverId, String status) {
-        try {
-            restClient.patch()
-                    .uri("/api/drivers/availability")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(Map.of("driverId", driverId, "status", status))
-                    .retrieve()
-                    .toBodilessEntity();
-        } catch (Exception e) {
-            log.warn("Không thể cập nhật availability cho driverId={}: {}", driverId, e.getMessage());
-        }
+        restClient.patch()
+                .uri("/api/drivers/availability")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("driverId", driverId, "status", status))
+                .retrieve()
+                .toBodilessEntity();
     }
 
     /**
@@ -73,17 +58,12 @@ public class DriverServiceClient {
      */
     public List<NearbyDriverDto> getNearbyDrivers(double lat, double lng,
                                                    double radiusKm, String vehicleType, int limit) {
-        try {
-            String uri = "/api/drivers/nearby?lat={lat}&lng={lng}&radiusKm={radius}&limit={limit}"
-                    + (vehicleType != null ? "&vehicleType=" + vehicleType : "");
+        String uri = "/api/drivers/nearby?lat={lat}&lng={lng}&radiusKm={radius}&limit={limit}"
+                + (vehicleType != null ? "&vehicleType=" + vehicleType : "");
 
-            return restClient.get()
-                    .uri(uri, lat, lng, radiusKm, limit)
-                    .retrieve()
-                    .body(new ParameterizedTypeReference<List<NearbyDriverDto>>() {});
-        } catch (Exception e) {
-            log.error("Lỗi khi lấy danh sách tài xế gần từ driver-service: {}", e.getMessage());
-            return List.of();
-        }
+        return restClient.get()
+                .uri(uri, lat, lng, radiusKm, limit)
+                .retrieve()
+                .body(new ParameterizedTypeReference<List<NearbyDriverDto>>() {});
     }
-}
+}

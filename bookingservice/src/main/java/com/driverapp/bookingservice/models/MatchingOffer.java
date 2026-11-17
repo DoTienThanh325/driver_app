@@ -20,6 +20,10 @@ public class MatchingOffer {
     private String id;
 
     private UUID driverId;
+    private Integer searchRound;
+    private Boolean timeoutScheduled;
+    private Boolean notificationSent;
+
     private String tripId;
     private MatchingOfferStatus status;
     private Boolean backToBack;

@@ -81,3 +81,8 @@ cd apigateway
 ./mvnw spring-boot:run
 ```
 *(Cần khởi động `eureka` và `userservice` trước để Gateway đăng ký và tải bộ khóa JWKS thành công)*.
+
+
+## Timeout, request limit và circuit breaker
+
+Xem [hướng dẫn cấu hình resilience](../RESILIENCE_CONFIGURATION.md) để biết ngưỡng mặc định, biến môi trường, lỗi 429/503/504, kiểm thử Redis/HTTP và rollback. Với local demo OTP, đặt `AUTH_EXPOSE_OTP=true`; production cần SmsSender thật.

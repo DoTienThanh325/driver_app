@@ -6,11 +6,20 @@ spring:
     name: notificationservice
 
   datasource:
+    hikari:
+      connection-timeout: ${DB_POOL_TIMEOUT_MS:500}
+      maximum-pool-size: ${DB_POOL_SIZE:20}
+      data-source-properties:
+        socketTimeout: ${DB_SOCKET_TIMEOUT_SECONDS:2}
+        options: "-c statement_timeout=2000 -c lock_timeout=1000"
     url: jdbc:postgresql://localhost:5432/driverapp_notification_db
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:12345khongcho}
 
   rabbitmq:
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    connection-timeout: 2s
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME:guest}
@@ -20,7 +29,7 @@ spring:
         retry:
           enabled: true
           initial-interval: 2000ms
-          max-retries: 3
+          max-retries: ${RABBIT_LISTENER_MAX_RETRIES:3}
           multiplier: 2.0
 
   jpa:
@@ -46,3 +55,19 @@ eureka:
       defaultZone: ${EUREKA_DEFAULT_ZONE:http://localhost:8761/eureka/}
   instance:
     prefer-ip-address: ${EUREKA_PREFER_IP_ADDRESS:true}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+websocket:
+  allowed-origins: ${WS_ALLOWED_ORIGINS:*}
+  message-size-limit: ${WS_MESSAGE_SIZE_LIMIT:65536}
+  send-buffer-size: ${WS_SEND_BUFFER_SIZE:524288}
+  send-time-limit: ${WS_SEND_TIME_LIMIT:15000}
+
