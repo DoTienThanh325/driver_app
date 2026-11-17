@@ -21,6 +21,22 @@ spring:
     gateway:
       server:
         webflux:
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                allowedOrigins:
+                  - ${ADMIN_FE_ORIGIN:http://localhost:5173}
+                allowedMethods:
+                  - GET
+                  - POST
+                  - PATCH
+                  - PUT
+                  - DELETE
+                  - OPTIONS
+                allowedHeaders:
+                  - Authorization
+                  - Content-Type
+                allowCredentials: true
           discovery:
             locator:
               enabled: false
@@ -126,6 +142,15 @@ spring:
                 - Path=/api/users/**
               metadata:
                 policy: read
+                connect-timeout: 1000
+                response-timeout: 5000
+                deadline-ms: 6000
+            - id: admin-user
+              uri: lb://userservice
+              predicates:
+                - Path=/api/admin/users/**
+              metadata:
+                policy: write
                 connect-timeout: 1000
                 response-timeout: 5000
                 deadline-ms: 6000

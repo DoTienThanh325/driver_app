@@ -42,6 +42,9 @@ public class BusinessRegistrationDetailResponse {
     /** Lý do từ chối nếu status = REJECTED */
     private String rejectReason;
 
+    /** Lý do khoá nếu status = BANNED */
+    private String banReason;
+
     /** Thời gian đăng ký và cập nhật */
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

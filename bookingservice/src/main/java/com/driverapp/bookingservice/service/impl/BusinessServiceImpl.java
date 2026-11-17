@@ -4,6 +4,7 @@ import com.driverapp.bookingservice.client.UserServiceClient;
 import com.driverapp.bookingservice.dto.request.RegisterBusinessRequest;
 import com.driverapp.bookingservice.dto.request.ReviewBusinessRequest;
 import com.driverapp.bookingservice.dto.response.BusinessRegistrationDetailResponse;
+import com.driverapp.bookingservice.dto.response.BusinessRegistrationSummaryResponse;
 import com.driverapp.bookingservice.dto.response.RegisterBusinessResponse;
 import com.driverapp.bookingservice.models.Business;
 import com.driverapp.bookingservice.models.Restaurant;
@@ -22,9 +23,12 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -143,6 +147,7 @@ public class BusinessServiceImpl implements BusinessService {
                                 .businessLicenseUrls(presignedLicenseUrls)
                                 .status(business.getStatus() != null ? business.getStatus().name() : "PENDING")
                                 .rejectReason(business.getRejectReason())
+                                .banReason(business.getBanReason())
                                 .createdAt(business.getCreatedAt())
                                 .updatedAt(business.getUpdatedAt())
                                 .build();
@@ -193,8 +198,34 @@ public class BusinessServiceImpl implements BusinessService {
 
         // ───────────────────────────── ADMIN: DANH SÁCH THEO STATUS
         @Override
-        public List<Business> listByStatus(BusinessRegistrationStatus status) {
-                return businessRepository.findByStatus(status);
+        public List<BusinessRegistrationSummaryResponse> listByStatus(BusinessRegistrationStatus status) {
+                List<Business> businesses = businessRepository.findByStatus(status);
+                List<String> restaurantIds = businesses.stream()
+                                .map(Business::getRestaurantId)
+                                .filter(id -> id != null && !id.isBlank())
+                                .distinct()
+                                .toList();
+
+                Map<String, String> restaurantNames = new HashMap<>();
+                if (!restaurantIds.isEmpty()) {
+                        restaurantNames = restaurantRepository.findAllById(restaurantIds).stream()
+                                        .collect(Collectors.toMap(
+                                                        Restaurant::getId,
+                                                        r -> r.getName() != null ? r.getName() : "Chưa cập nhật tên",
+                                                        (a, b) -> a));
+                }
+
+                Map<String, String> namesMap = restaurantNames;
+                return businesses.stream()
+                                .map(b -> new BusinessRegistrationSummaryResponse(
+                                                b.getId(),
+                                                b.getUserId(),
+                                                b.getRestaurantId() != null
+                                                                ? namesMap.getOrDefault(b.getRestaurantId(), "Chưa cập nhật tên")
+                                                                : "Chưa cập nhật tên",
+                                                b.getStatus(),
+                                                b.getCreatedAt()))
+                                .toList();
         }
 
         // ───────────────────────────── HELPER

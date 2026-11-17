@@ -62,6 +62,24 @@ public class User {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    @Column(name = "ban_reason", columnDefinition = "TEXT")
+    private String banReason;
+
+    @Column(name = "banned_at")
+    private LocalDateTime bannedAt;
+
+    public void ban(String reason) {
+        this.status = UserStatus.BANNED;
+        this.banReason = reason;
+        this.bannedAt = LocalDateTime.now();
+    }
+
+    public void unban() {
+        this.status = UserStatus.ACTIVE;
+        this.banReason = null;
+        this.bannedAt = null;
+    }
+
     @PrePersist
     void onCreate() {
         LocalDateTime now = LocalDateTime.now();

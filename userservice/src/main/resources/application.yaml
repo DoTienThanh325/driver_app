@@ -80,7 +80,7 @@ management:
 resilience:
   auth:
     enabled: ${AUTH_RATE_LIMIT_ENABLED:true}
-    expose-otp: ${AUTH_EXPOSE_OTP:false}
+    expose-otp: ${AUTH_EXPOSE_OTP:true}
     policies:
       login:
         limit: ${AUTH_LOGIN_LIMIT:5}

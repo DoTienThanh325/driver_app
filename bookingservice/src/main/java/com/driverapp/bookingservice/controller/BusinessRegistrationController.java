@@ -3,6 +3,7 @@ package com.driverapp.bookingservice.controller;
 import com.driverapp.bookingservice.dto.request.RegisterBusinessRequest;
 import com.driverapp.bookingservice.dto.request.ReviewBusinessRequest;
 import com.driverapp.bookingservice.dto.response.BusinessRegistrationDetailResponse;
+import com.driverapp.bookingservice.dto.response.BusinessRegistrationSummaryResponse;
 import com.driverapp.bookingservice.dto.response.RegisterBusinessResponse;
 import com.driverapp.bookingservice.models.Business;
 import com.driverapp.bookingservice.models.enums.BusinessRegistrationStatus;
@@ -81,10 +82,10 @@ public class BusinessRegistrationController {
 
     /**
      * GET /api/businesses?status=PENDING
-     * Admin xem danh sách đơn theo trạng thái.
+     * Admin xem danh sách đơn theo trạng thái (thông tin gọn).
      */
     @GetMapping
-    public List<Business> listByStatus(
+    public List<BusinessRegistrationSummaryResponse> listByStatus(
             @RequestParam(defaultValue = "PENDING") BusinessRegistrationStatus status) {
         return businessService.listByStatus(status);
     }
