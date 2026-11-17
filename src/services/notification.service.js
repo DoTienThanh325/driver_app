@@ -1,4 +1,5 @@
 import * as Notifications from 'expo-notifications';
+import { AndroidImportance } from 'expo-notifications';
 import { Platform } from 'react-native';
 
 /**
@@ -7,7 +8,8 @@ import { Platform } from 'react-native';
  */
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
@@ -33,7 +35,7 @@ export const notificationService = {
       if (Platform.OS === 'android') {
         await Notifications.setNotificationChannelAsync('otp_channel', {
           name: 'Mã xác thực OTP',
-          importance: Notifications.AndroidImportance.MAX,
+          importance: AndroidImportance.MAX,
           vibrationPattern: [0, 250, 250, 250],
           lightColor: '#00B5B8',
           sound: 'default',

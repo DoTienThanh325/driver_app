@@ -14,6 +14,7 @@ import { ThemedView } from '@/components/themed-view';
 import { userStorage } from '@/services/storage/user.storage';
 import { tripService, TRIP_STATUS } from '@/services/trip.service';
 import { homeStyles as styles } from '@/styles/screens/home.styles';
+import { NotificationBell } from '@/components/notifications/notification-bell';
 
 export default function HomeScreen() {
   const [userProfile, setUserProfile] = useState(null);
@@ -84,13 +85,7 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            <Pressable
-              style={styles.bellButton}
-              onPress={() => Alert.alert('Thông báo', 'Bạn không có thông báo mới.')}
-              hitSlop={8}
-            >
-              <Ionicons name="notifications-outline" size={22} color="#111827" />
-            </Pressable>
+            <NotificationBell style={styles.bellButton} />
           </View>
 
           {/* Banner Chuyến đi đang hoạt động (Nếu có) */}

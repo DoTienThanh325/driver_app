@@ -8,6 +8,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as SplashScreen from 'expo-splash-screen';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { offlineSyncService } from '@/services/offline-sync.service';
+import { NotificationProvider } from '@/providers/notification-provider';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -35,30 +36,33 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              animation: 'slide_from_right',
-            }}
-          >
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="book-trip" options={{ title: 'Chọn điểm đi', headerShown: false }} />
-            <Stack.Screen name="trip-confirm" options={{ title: 'Xác nhận chuyến xe', headerShown: false }} />
-            <Stack.Screen name="login" options={{ title: 'Đăng nhập', headerShown: false }} />
-            <Stack.Screen name="register" options={{ title: 'Đăng ký', headerShown: false }} />
-            <Stack.Screen name="driver-register" options={{ title: 'Đăng ký Tài xế', headerShown: false }} />
-            <Stack.Screen name="driver-profile" options={{ title: 'Hồ sơ Tài xế', headerShown: false }} />
-            <Stack.Screen name="driver-active-trip" options={{ title: 'Chuyến xe đang chạy', headerShown: false }} />
-            <Stack.Screen name="business-profile" options={{ title: 'Hồ sơ Nhà hàng', headerShown: false }} />
-            <Stack.Screen name="edit-restaurant" options={{ title: 'Chỉnh sửa Nhà hàng', headerShown: false }} />
-            <Stack.Screen name="bank-link" options={{ title: 'Liên kết ngân hàng', headerShown: false }} />
-            <Stack.Screen name="food-search" options={{ title: 'Tìm kiếm món ăn', headerShown: false }} />
-            <Stack.Screen name="food-detail" options={{ title: 'Chi tiết món ăn', headerShown: false }} />
-            <Stack.Screen name="edit-food" options={{ title: 'Chỉnh sửa món ăn', headerShown: false }} />
-            <Stack.Screen name="driver-trips" options={{ title: 'Lịch sử cuốc xe', headerShown: false }} />
-            <Stack.Screen name="driver-trip-detail" options={{ title: 'Chi tiết cuốc xe', headerShown: false }} />
-          </Stack>
+          <NotificationProvider>
+            <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                animation: 'slide_from_right',
+              }}
+            >
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="notifications" options={{ title: 'Thông báo', headerShown: false }} />
+              <Stack.Screen name="book-trip" options={{ title: 'Chọn điểm đi', headerShown: false }} />
+              <Stack.Screen name="trip-confirm" options={{ title: 'Xác nhận chuyến xe', headerShown: false }} />
+              <Stack.Screen name="login" options={{ title: 'Đăng nhập', headerShown: false }} />
+              <Stack.Screen name="register" options={{ title: 'Đăng ký', headerShown: false }} />
+              <Stack.Screen name="driver-register" options={{ title: 'Đăng ký Tài xế', headerShown: false }} />
+              <Stack.Screen name="driver-profile" options={{ title: 'Hồ sơ Tài xế', headerShown: false }} />
+              <Stack.Screen name="driver-active-trip" options={{ title: 'Chuyến xe đang chạy', headerShown: false }} />
+              <Stack.Screen name="business-profile" options={{ title: 'Hồ sơ Nhà hàng', headerShown: false }} />
+              <Stack.Screen name="edit-restaurant" options={{ title: 'Chỉnh sửa Nhà hàng', headerShown: false }} />
+              <Stack.Screen name="bank-link" options={{ title: 'Liên kết ngân hàng', headerShown: false }} />
+              <Stack.Screen name="food-search" options={{ title: 'Tìm kiếm món ăn', headerShown: false }} />
+              <Stack.Screen name="food-detail" options={{ title: 'Chi tiết món ăn', headerShown: false }} />
+              <Stack.Screen name="edit-food" options={{ title: 'Chỉnh sửa món ăn', headerShown: false }} />
+              <Stack.Screen name="driver-trips" options={{ title: 'Lịch sử cuốc xe', headerShown: false }} />
+              <Stack.Screen name="driver-trip-detail" options={{ title: 'Chi tiết cuốc xe', headerShown: false }} />
+            </Stack>
+          </NotificationProvider>
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

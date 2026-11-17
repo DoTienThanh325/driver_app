@@ -4,6 +4,51 @@
 
 ---
 
+## Thông báo realtime
+
+Ứng dụng nhận thông báo cá nhân qua STOMP khi người dùng đã đăng nhập và ứng dụng
+đang mở trên Android/iOS. Nút chuông ở Trang chủ và Tài xế mở danh sách, có badge
+chưa đọc và thao tác đánh dấu đã đọc. Banner hiển thị trong app trong 5 giây,
+không cần quyền thông báo hệ điều hành. Luồng OTP local vẫn hoạt động riêng.
+
+Mặc định kết nối tới `/ws/notifications` trên `EXPO_PUBLIC_API_URL` (hoặc Gateway
+tự nhận diện), đổi `http/https` sang `ws/wss`. JWT được gửi trong HTTP handshake
+và STOMP CONNECT; client subscribe `/user/queue/notifications`.
+
+Nếu Gateway không chuyển tiếp WebSocket upgrade, đặt URL đầy đủ trong `.env`,
+dùng địa chỉ LAN mà điện thoại truy cập được, rồi khởi động lại Expo:
+
+```dotenv
+EXPO_PUBLIC_NOTIFICATION_WS_URL=ws://192.168.1.10:8086/ws/notifications
+```
+
+Production dùng endpoint `wss://`. App không tự chuyển sang cổng 8086 khi lỗi.
+Backend hiện có route Gateway `lb://notificationservice`; cần kiểm tra thực tế
+HTTP `101 Switching Protocols` và STOMP `CONNECTED` trên môi trường triển khai.
+
+Danh sách lưu tối đa 200 thông báo đã nhận trên thiết bị, tách theo user ID và xóa
+khi đăng xuất. Trạng thái đã đọc không đồng bộ giữa các thiết bị. Backend chưa
+có API lịch sử/replay hoặc gửi push: sự kiện mới khi app đóng, chạy nền hoặc mất
+mạng sẽ không nhận bù. Bản web có thể mở danh sách local nhưng chưa kết nối realtime.
+
+Kiểm tra thay đổi bằng `npm test`, `npm run typecheck` và `npm run lint`.
+Code notification mới bật `@ts-check`; code JavaScript cũ giữ chế độ kiểm tra hiện tại.
+Lint toàn dự án có thể phát hiện các lỗi code cũ khi chạy lần đầu với cấu hình Expo.
+
+Kiểm thử tích hợp trên thiết bị thật với backend đang chạy:
+
+1. Đăng nhập bằng JWT thật, kiểm tra kết nối thành công qua Gateway hoặc URL riêng.
+2. Phát sự kiện chuyến đi hoặc tạo notification bằng công cụ backend cho đúng user ID;
+   kiểm tra một banner, một dòng trong danh sách và badge tăng một lần. Tài khoản khác
+   không được nhận thông báo đó.
+3. Đọc từng mục/tất cả, mở lại app để kiểm tra trạng thái đã đọc và lịch sử local.
+4. Tắt mạng rồi bật lại, restart notificationservice và đưa app về foreground;
+   kiểm tra tự kết nối lại, không nhân đôi thông báo/subscription.
+5. Kiểm tra token hết hạn, refresh thất bại, logout lúc đang reconnect/refresh và đổi
+   tài khoản; không hiển thị hoặc lưu thông báo của phiên cũ trong tài khoản mới.
+
+---
+
 ## 📱 Tính Năng Chính
 
 ### 1. Phân Quyền Người Dùng & Quản Lý Hồ Sơ

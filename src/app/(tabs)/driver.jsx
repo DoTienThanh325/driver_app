@@ -23,6 +23,7 @@ import { tripService, TRIP_STATUS } from '@/services/trip.service';
 import { paymentService } from '@/services/payment.service';
 import { reverseGeocodeCoords } from '@/utils/geocoding';
 import { driverStyles as styles } from '@/styles/screens/driver.styles';
+import { NotificationBell } from '@/components/notifications/notification-bell';
 
 // Vị trí mặc định tài xế quanh trung tâm Hà Nội để dễ dàng bắt matching nếu chưa có GPS
 const DEFAULT_DRIVER_COORDS = {
@@ -575,13 +576,7 @@ export default function DriverScreen() {
                 </View>
               </View>
 
-              <Pressable
-                style={styles.bellButton}
-                onPress={() => Alert.alert('Thông báo', 'Không có thông báo tài xế mới.')}
-                hitSlop={8}
-              >
-                <Ionicons name="notifications-outline" size={22} color="#111827" />
-              </Pressable>
+              <NotificationBell style={styles.bellButton} />
             </View>
 
             {/* Công tắc nhận chuyến: Bật: AVAILABLE | Tắt: OFFLINE */}
