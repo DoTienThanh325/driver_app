@@ -404,14 +404,19 @@ export default function BookTripScreen() {
             return;
           }
           if (![TRIP_STATUS.COMPLETED, TRIP_STATUS.CANCELLED].includes(parsed.status)) {
-            setActiveTrip(parsed);
+            setActiveTrip((prev) => {
+              if (prev?.id === parsed.id && prev?.status === parsed.status) {
+                return prev;
+              }
+              return parsed;
+            });
             return;
           }
         }
       } catch (e) {}
     }
 
-    if (params.tripId && !activeTrip) {
+    if (params.tripId) {
       if (dismissedTripIdRef.current && String(params.tripId) === dismissedTripIdRef.current) {
         return;
       }
@@ -428,7 +433,12 @@ export default function BookTripScreen() {
               TRIP_STATUS.DRIVER_ARRIVING,
               TRIP_STATUS.IN_PROGRESS,
             ].includes(res.status)) {
-              setActiveTrip(res);
+              setActiveTrip((prev) => {
+                if (prev?.id === res.id && prev?.status === res.status) {
+                  return prev;
+                }
+                return res;
+              });
             }
           }
         })
@@ -436,7 +446,7 @@ export default function BookTripScreen() {
     }
 
     return () => { isMounted = false; };
-  }, [params.tripId, params.tripData, activeTrip]);
+  }, [params.tripId, params.tripData]);
 
   // Đồng bộ tọa độ lộ trình từ params nếu có
   useEffect(() => {
@@ -444,7 +454,12 @@ export default function BookTripScreen() {
       try {
         const parsed = typeof params.routeCoords === 'string' ? JSON.parse(params.routeCoords) : params.routeCoords;
         if (Array.isArray(parsed) && parsed.length > 0) {
-          setTrackingRouteCoords(parsed);
+          setTrackingRouteCoords((prev) => {
+            if (prev?.length === parsed.length && prev[0]?.[0] === parsed[0]?.[0]) {
+              return prev;
+            }
+            return parsed;
+          });
         }
       } catch (e) {}
     }
@@ -930,7 +945,16 @@ export default function BookTripScreen() {
       try {
         const updated = await tripService.getTripById(activeTrip.id);
         if (updated) {
-          setActiveTrip(updated);
+          setActiveTrip((prev) => {
+            if (
+              prev?.id === updated.id &&
+              prev?.status === updated.status &&
+              prev?.driverId === updated.driverId
+            ) {
+              return prev;
+            }
+            return updated;
+          });
         }
 
         // Cập nhật trạng thái payment từ PaymentService để đồng bộ giữa khách và tài xế
