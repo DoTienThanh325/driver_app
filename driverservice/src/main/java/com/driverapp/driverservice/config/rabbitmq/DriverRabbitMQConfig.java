@@ -100,7 +100,7 @@ public class DriverRabbitMQConfig {
 
     @Bean
     public Binding feedbackRatingBinding(Queue feedbackRatingQueue, DirectExchange feedbackDirectExchange) {
-        return BindingBuilder.bind(feedbackRatingQueue).to(feedbackDirectExchange).with("feedback.submitted");
+        return BindingBuilder.bind(feedbackRatingQueue).to(feedbackDirectExchange).with("feedback.rating.driver");
     }
 
     @Bean

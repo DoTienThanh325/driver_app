@@ -1,6 +1,7 @@
 package com.driverapp.driverservice.service.impl;
 
 import com.driverapp.driverservice.dto.request.UpdateDriverLocationRequest;
+import com.driverapp.driverservice.dto.response.DriverLocationResponse;
 import com.driverapp.driverservice.dto.response.NearbyDriverResponse;
 import com.driverapp.driverservice.models.Driver;
 import com.driverapp.driverservice.models.DriverAvailability;
@@ -140,5 +141,32 @@ public class DriverLocationServiceImpl implements DriverLocationService {
         }
 
         return candidates;
+    }
+
+    @Override
+    public DriverLocationResponse getDriverLocation(UUID driverId) {
+        String memberKey = driverId.toString();
+        String metaKey = META_KEY_PREFIX + memberKey;
+
+        Map<Object, Object> metaData = redisTemplate.opsForHash().entries(metaKey);
+        if (metaData != null && !metaData.isEmpty() && metaData.containsKey("lat") && metaData.containsKey("lng")) {
+            Double lat = Double.valueOf(metaData.get("lat").toString());
+            Double lng = Double.valueOf(metaData.get("lng").toString());
+            Double heading = metaData.get("heading") != null ? Double.valueOf(metaData.get("heading").toString()) : 0.0;
+            Double speed = metaData.get("speed") != null ? Double.valueOf(metaData.get("speed").toString()) : 0.0;
+            String vehicleType = metaData.get("vehicleType") != null ? metaData.get("vehicleType").toString() : null;
+            Long updatedAt = metaData.get("updatedAt") != null ? Long.valueOf(metaData.get("updatedAt").toString()) : null;
+
+            return new DriverLocationResponse(driverId, lat, lng, heading, speed, vehicleType, updatedAt);
+        }
+
+        // Fallback kiểm tra Redis GEO nếu metadata vừa hết hạn
+        List<Point> positions = redisTemplate.opsForGeo().position(GEO_KEY_PREFIX + "ALL", memberKey);
+        if (positions != null && !positions.isEmpty() && positions.get(0) != null) {
+            Point p = positions.get(0);
+            return new DriverLocationResponse(driverId, p.getY(), p.getX(), 0.0, 0.0, null, System.currentTimeMillis());
+        }
+
+        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy vị trí gần nhất của tài xế");
     }
 }

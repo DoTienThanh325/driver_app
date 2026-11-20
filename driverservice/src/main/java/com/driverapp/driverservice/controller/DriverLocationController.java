@@ -1,6 +1,7 @@
 package com.driverapp.driverservice.controller;
 
 import com.driverapp.driverservice.dto.request.UpdateDriverLocationRequest;
+import com.driverapp.driverservice.dto.response.DriverLocationResponse;
 import com.driverapp.driverservice.dto.response.NearbyDriverResponse;
 import com.driverapp.driverservice.models.enums.VehicleType;
 import com.driverapp.driverservice.service.DriverLocationService;
@@ -46,5 +47,14 @@ public class DriverLocationController {
             @RequestParam(value = "limit", defaultValue = "40") Integer limit) {
         List<NearbyDriverResponse> nearbyDrivers = locationService.findNearbyDrivers(lat, lng, radiusKm, vehicleType, limit);
         return ResponseEntity.ok(nearbyDrivers);
+    }
+
+    /**
+     * Khách hàng hoặc hệ thống lấy vị trí GPS realtime của tài xế từ Redis
+     */
+    @GetMapping("/{driverId}/location")
+    public ResponseEntity<DriverLocationResponse> getDriverLocation(@PathVariable("driverId") UUID driverId) {
+        DriverLocationResponse location = locationService.getDriverLocation(driverId);
+        return ResponseEntity.ok(location);
     }
 }

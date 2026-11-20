@@ -29,8 +29,10 @@ public class UserFeedback {
     private String tripId;
 
     @Column(name = "rating", nullable = false)
-
     private Double rating;
+
+    @Column(name = "tags", columnDefinition = "TEXT")
+    private String tags;
 
     @Column(name = "comment", columnDefinition = "TEXT")
     private String comment;

@@ -1,5 +1,6 @@
 package com.driverapp.driverservice.event;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.*;
 import java.time.Instant;
 import java.util.UUID;
@@ -8,6 +9,7 @@ import java.util.UUID;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class DomainEvent<T> {
     private String eventId;
     private String eventType;
