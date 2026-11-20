@@ -20,6 +20,7 @@ import { ThemedView } from '@/components/themed-view';
 import { StatusBar } from 'expo-status-bar';
 import { tripService, TRIP_STATUS } from '@/services/trip.service';
 import { paymentService, PAYMENT_METHOD, PAYMENT_STATUS } from '@/services/payment.service';
+import { navigationHelper } from '@/utils/navigation';
 import { driverTripStyles as styles } from '@/styles/screens/driver-active-trip.styles';
 
 export default function DriverActiveTripScreen() {
@@ -28,28 +29,42 @@ export default function DriverActiveTripScreen() {
   const tripId = params.tripId;
 
   const [trip, setTrip] = useState(() => {
+    let initial = null;
     try {
       if (params.tripData) {
-        return JSON.parse(params.tripData);
+        initial = JSON.parse(params.tripData);
       }
     } catch {
       // Bỏ qua lỗi parse
     }
+    const foodsList = initial?.foods || (() => {
+      try {
+        return params.foodsData ? JSON.parse(params.foodsData) : [];
+      } catch {
+        return [];
+      }
+    })();
+
     return {
-      id: tripId || 'TRIP-DEMO',
-      status: TRIP_STATUS.DRIVER_ASSIGNED,
-      pickUpAddress: params.pickUpAddress || 'Hồ Hoàn Kiếm, Hoàn Kiếm, Hà Nội',
-      pickUpLatitude: Number(params.pickUpLatitude || params.pickUpLat) || 21.028511,
-      pickUpLongitude: Number(params.pickUpLongitude || params.pickUpLon) || 105.854444,
-      destinationAddress: params.destinationAddress || 'Đại học Bách Khoa, Hai Bà Trưng, Hà Nội',
-      destinationLatitude: Number(params.destinationLatitude || params.destLat) || 21.00705,
-      destinationLongitude: Number(params.destinationLongitude || params.destLon) || 105.84318,
-      shippFare: Number(params.shippFare) || 24000,
-      vehicleType: params.vehicleType || 'MOTORBIKE',
-      customerName: params.customerName || 'Nguyễn Văn An',
-      customerPhone: params.customerPhone || '0988123456',
-      customerRating: '4.9',
-      distanceKm: params.distanceKm || '2.5',
+      id: tripId || initial?.id || 'TRIP-DEMO',
+      status: initial?.status || TRIP_STATUS.DRIVER_ASSIGNED,
+      shippingType: initial?.shippingType || params.shippingType || 'PASSENGER',
+      totalFoodPrice: initial?.totalFoodPrice != null ? Number(initial.totalFoodPrice) : (params.totalFoodPrice ? Number(params.totalFoodPrice) : null),
+      foods: Array.isArray(foodsList) ? foodsList : [],
+      restaurantName: initial?.restaurantName || params.restaurantName || 'Nhà hàng đối tác',
+      restaurantPhone: initial?.restaurantPhone || params.restaurantPhone || '0988123456',
+      pickUpAddress: initial?.pickUpAddress || params.pickUpAddress || 'Hồ Hoàn Kiếm, Hoàn Kiếm, Hà Nội',
+      pickUpLatitude: Number(initial?.pickUpLatitude || params.pickUpLatitude || params.pickUpLat) || 21.028511,
+      pickUpLongitude: Number(initial?.pickUpLongitude || params.pickUpLongitude || params.pickUpLon) || 105.854444,
+      destinationAddress: initial?.destinationAddress || params.destinationAddress || 'Đại học Bách Khoa, Hai Bà Trưng, Hà Nội',
+      destinationLatitude: Number(initial?.destinationLatitude || params.destinationLatitude || params.destLat) || 21.00705,
+      destinationLongitude: Number(initial?.destinationLongitude || params.destinationLongitude || params.destLon) || 105.84318,
+      shippFare: Number(initial?.shippFare || params.shippFare) || 24000,
+      vehicleType: initial?.vehicleType || params.vehicleType || 'MOTORBIKE',
+      customerName: initial?.customerName || params.customerName || 'Nguyễn Văn An',
+      customerPhone: initial?.customerPhone || params.customerPhone || '0988123456',
+      customerRating: initial?.customerRating || '4.9',
+      distanceKm: initial?.distanceKm || params.distanceKm || '2.5',
     };
   });
 
@@ -63,15 +78,30 @@ export default function DriverActiveTripScreen() {
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
 
   // Vị trí GPS hiện tại của tài xế
+  const initialDriverLat = Number(trip.driverLatitude || params.driverLatitude) || (trip.pickUpLatitude ? trip.pickUpLatitude + 0.005 : 21.0335);
+  const initialDriverLon = Number(trip.driverLongitude || params.driverLongitude) || (trip.pickUpLongitude ? trip.pickUpLongitude - 0.004 : 105.8504);
+
   const [driverLocation, setDriverLocation] = useState({
-    latitude: trip.pickUpLatitude ? trip.pickUpLatitude + 0.005 : 21.0335,
-    longitude: trip.pickUpLongitude ? trip.pickUpLongitude - 0.004 : 105.8504,
+    latitude: initialDriverLat,
+    longitude: initialDriverLon,
   });
   const driverLocationRef = useRef(driverLocation);
-  driverLocationRef.current = driverLocation;
+  useEffect(() => {
+    driverLocationRef.current = driverLocation;
+  }, [driverLocation]);
+
+  const driverWebViewRef = useRef(null);
 
   // Tuyến đường thực tế & khoảng cách từ OSRM
-  const [routeCoordinates, setRouteCoordinates] = useState([]);
+  const [routeCoordinates, setRouteCoordinates] = useState(() => {
+    if (params.routeCoords) {
+      try {
+        const parsed = JSON.parse(params.routeCoords);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    return [];
+  });
   const [navDistanceKm, setNavDistanceKm] = useState(trip.distanceKm || 2.5);
   const [navDurationMin, setNavDurationMin] = useState(null);
   const [isLoadingRoute, setIsLoadingRoute] = useState(true);
@@ -218,7 +248,7 @@ export default function DriverActiveTripScreen() {
             Alert.alert(
               'Cuốc xe kết thúc',
               'Chuyến đi đã bị khách hủy.',
-              [{ text: 'Về trang chủ', onPress: () => router.replace('/(tabs)/driver') }]
+              [{ text: 'Về trang chủ', onPress: () => navigationHelper.resetToDriverHome() }]
             );
           } else if (updated.status === TRIP_STATUS.COMPLETED) {
             // Đã hoàn thành (đã có alert khi bấm nút hoàn thành, tránh hiện lặp 2 lần)
@@ -239,20 +269,31 @@ export default function DriverActiveTripScreen() {
   const handleAdvanceStatus = () => {
     let nextStatus = null;
     let confirmMsg = '';
+    const isFood = trip.shippingType === 'FOOD_DELIVERY';
 
     if (trip.status === TRIP_STATUS.DRIVER_ASSIGNED) {
       nextStatus = TRIP_STATUS.DRIVER_ARRIVING;
-      confirmMsg = 'Xác nhận bạn đã đến điểm đón khách?';
+      confirmMsg = isFood
+        ? 'Xác nhận bạn đã đến quán ăn và chuẩn bị lấy món?'
+        : 'Xác nhận bạn đã đến điểm đón khách?';
     } else if (trip.status === TRIP_STATUS.DRIVER_ARRIVING) {
       nextStatus = TRIP_STATUS.IN_PROGRESS;
-      confirmMsg = 'Khách đã lên xe. Bắt đầu đưa khách đến điểm đến?';
+      confirmMsg = isFood
+        ? 'Xác nhận bạn đã nhận đủ món ăn từ quán và bắt đầu đi giao cho khách?'
+        : 'Khách đã lên xe. Bắt đầu đưa khách đến điểm đến?';
     } else if (trip.status === TRIP_STATUS.IN_PROGRESS) {
       // Khi tài xế bấm đến điểm trả khách (thu tiền), cập nhật ngay sang COMPLETED trên BookingService
       // để phía khách hàng lập tức hiển thị thông tin chuyến đi hoàn tất và yêu cầu trả tiền
-      Alert.alert('Đến điểm trả khách', 'Xác nhận bạn đã đưa khách đến nơi an toàn và tiến hành thu cước phí?', [
+      const alertTitle = isFood ? 'Đến điểm giao món' : 'Đến điểm trả khách';
+      const alertMsg = isFood
+        ? 'Xác nhận bạn đã đến nơi an toàn và giao đồ ăn cho khách hàng?'
+        : 'Xác nhận bạn đã đưa khách đến nơi an toàn và tiến hành thu cước phí?';
+      const btnActionText = isFood ? 'Giao món & Thu tiền' : 'Thu tiền';
+
+      Alert.alert(alertTitle, alertMsg, [
         { text: 'Hủy', style: 'cancel' },
         {
-          text: 'Thu tiền',
+          text: btnActionText,
           onPress: async () => {
             setIsUpdatingStatus(true);
             try {
@@ -300,7 +341,7 @@ export default function DriverActiveTripScreen() {
                 [
                   {
                     text: 'Về trang chủ tài xế',
-                    onPress: () => router.replace('/(tabs)/driver'),
+                    onPress: () => navigationHelper.resetToDriverHome(),
                   },
                 ]
               );
@@ -413,7 +454,7 @@ export default function DriverActiveTripScreen() {
         [
           {
             text: 'Về trang chủ tài xế',
-            onPress: () => router.replace('/(tabs)/driver'),
+            onPress: () => navigationHelper.resetToDriverHome(),
           },
         ]
       );
@@ -453,6 +494,13 @@ export default function DriverActiveTripScreen() {
     });
   };
 
+  const handleCallRestaurant = () => {
+    const phone = trip.restaurantPhone || '0988123456';
+    Linking.openURL(`tel:${phone}`).catch(() => {
+      Alert.alert('Thông tin quán ăn', `Số điện thoại quán: ${phone}`);
+    });
+  };
+
   const handleMessageCustomer = () => {
     const phone = trip.customerPhone || '0988123456';
     Linking.openURL(`sms:${phone}`).catch(() => {
@@ -461,6 +509,20 @@ export default function DriverActiveTripScreen() {
   };
 
   const getStatusText = () => {
+    if (trip.shippingType === 'FOOD_DELIVERY') {
+      switch (trip.status) {
+        case TRIP_STATUS.DRIVER_ASSIGNED:
+          return 'Đang đến quán lấy món';
+        case TRIP_STATUS.DRIVER_ARRIVING:
+          return 'Đang tại quán lấy món';
+        case TRIP_STATUS.IN_PROGRESS:
+          return 'Đang giao đến khách';
+        case TRIP_STATUS.COMPLETED:
+          return 'Đã hoàn thành giao món';
+        default:
+          return 'Đang giao đồ ăn';
+      }
+    }
     switch (trip.status) {
       case TRIP_STATUS.DRIVER_ASSIGNED:
         return 'Đang đến điểm đón';
@@ -476,6 +538,20 @@ export default function DriverActiveTripScreen() {
   };
 
   const getButtonActionLabel = () => {
+    if (trip.shippingType === 'FOOD_DELIVERY') {
+      switch (trip.status) {
+        case TRIP_STATUS.DRIVER_ASSIGNED:
+          return '1. TÔI ĐÃ ĐẾN QUÁN ĂN';
+        case TRIP_STATUS.DRIVER_ARRIVING:
+          return '2. ĐÃ LẤY ĐỦ MÓN, BẮT ĐẦU GIAO';
+        case TRIP_STATUS.IN_PROGRESS:
+          return '3. ĐÃ ĐẾN NƠI & GIAO MÓN (THU TIỀN)';
+        case TRIP_STATUS.COMPLETED:
+          return 'MỞ LẠI BẢNG THU TIỀN';
+        default:
+          return 'CẬP NHẬT TIẾN TRÌNH';
+      }
+    }
     switch (trip.status) {
       case TRIP_STATUS.DRIVER_ASSIGNED:
         return '1. TÔI ĐÃ ĐẾN ĐIỂM ĐÓN';
@@ -565,6 +641,7 @@ export default function DriverActiveTripScreen() {
         <div id="map"></div>
         <script>
           var map = L.map('map', { zoomControl: false }).setView([${drvLat}, ${drvLon}], 15);
+          window.map = map;
           
           L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
             maxZoom: 19,
@@ -578,7 +655,7 @@ export default function DriverActiveTripScreen() {
             iconSize: [36, 36],
             iconAnchor: [18, 18]
           });
-          var driverMarker = L.marker([${drvLat}, ${drvLon}], { icon: driverIcon, zIndexOffset: 1000 }).addTo(map);
+          window.driverMarker = L.marker([${drvLat}, ${drvLon}], { icon: driverIcon, zIndexOffset: 1000 }).addTo(map);
 
           // 2. Icon Điểm đón khách (Xanh ngọc T&M)
           var pickupIcon = L.divIcon({
@@ -587,7 +664,7 @@ export default function DriverActiveTripScreen() {
             iconSize: [30, 30],
             iconAnchor: [15, 15]
           });
-          var pickupMarker = L.marker([${pLat}, ${pLon}], { icon: pickupIcon }).addTo(map);
+          window.pickupMarker = L.marker([${pLat}, ${pLon}], { icon: pickupIcon }).addTo(map);
 
           // 3. Icon Điểm trả khách (Cam)
           var destIcon = L.divIcon({
@@ -596,12 +673,12 @@ export default function DriverActiveTripScreen() {
             iconSize: [30, 30],
             iconAnchor: [15, 15]
           });
-          var destMarker = L.marker([${dLat}, ${dLon}], { icon: destIcon }).addTo(map);
+          window.destMarker = L.marker([${dLat}, ${dLon}], { icon: destIcon }).addTo(map);
 
           // 4. Tuyến đường thực tế bám sát mặt đường
           var routeCoords = ${coordsJson};
 
-          L.polyline(routeCoords, {
+          window.routePolylineBackground = L.polyline(routeCoords, {
             color: '#1E40AF',
             weight: 7,
             opacity: 0.5,
@@ -609,7 +686,7 @@ export default function DriverActiveTripScreen() {
             lineCap: 'round'
           }).addTo(map);
 
-          var activeLine = L.polyline(routeCoords, {
+          window.routePolyline = L.polyline(routeCoords, {
             color: '#3B82F6',
             weight: 5,
             opacity: 0.95,
@@ -618,21 +695,67 @@ export default function DriverActiveTripScreen() {
           }).addTo(map);
 
           // Tự động căn chỉnh bao quát tài xế và điểm cần đến
-          map.fitBounds(activeLine.getBounds(), { padding: [50, 50] });
+          map.fitBounds(window.routePolyline.getBounds(), { padding: [50, 50] });
+
+          // Cung cấp hàm cập nhật vị trí xe không reload map
+          window.updateDriverPosition = function(lat, lng) {
+            try {
+              if (window.driverMarker) {
+                window.driverMarker.setLatLng([lat, lng]);
+              }
+            } catch(e) {}
+          };
+
+          // Cung cấp hàm cập nhật tuyến đường OSRM không reload map
+          window.updateRouteCoordinates = function(coords) {
+            try {
+              if (coords && coords.length > 0) {
+                if (window.routePolyline) window.routePolyline.setLatLngs(coords);
+                if (window.routePolylineBackground) window.routePolylineBackground.setLatLngs(coords);
+                if (window.map) {
+                  window.map.fitBounds(window.routePolyline.getBounds(), { padding: [50, 50] });
+                }
+              }
+            } catch(e) {}
+          };
         </script>
       </body>
       </html>
     `;
   }, [
+    trip.id,
     trip.pickUpLatitude,
     trip.pickUpLongitude,
     trip.destinationLatitude,
     trip.destinationLongitude,
     trip.vehicleType,
-    driverLocation.latitude,
-    driverLocation.longitude,
-    routeCoordinates,
   ]);
+
+  // Cập nhật vị trí tài xế mượt mà trên bản đồ không reload WebView
+  useEffect(() => {
+    if (driverLocation?.latitude && driverLocation?.longitude && driverWebViewRef.current) {
+      const js = `
+        if (typeof window.updateDriverPosition === 'function') {
+          window.updateDriverPosition(${driverLocation.latitude}, ${driverLocation.longitude});
+        }
+        true;
+      `;
+      driverWebViewRef.current.injectJavaScript(js);
+    }
+  }, [driverLocation?.latitude, driverLocation?.longitude]);
+
+  // Cập nhật tuyến đường thực tế mượt mà không reload WebView
+  useEffect(() => {
+    if (routeCoordinates && routeCoordinates.length > 0 && driverWebViewRef.current) {
+      const js = `
+        if (typeof window.updateRouteCoordinates === 'function') {
+          window.updateRouteCoordinates(${JSON.stringify(routeCoordinates)});
+        }
+        true;
+      `;
+      driverWebViewRef.current.injectJavaScript(js);
+    }
+  }, [routeCoordinates]);
 
   return (
     <ThemedView style={styles.container}>
@@ -640,7 +763,8 @@ export default function DriverActiveTripScreen() {
       {/* 1. NỬA TRÊN: BẢN ĐỒ THỰC TẾ ĐIỀU HƯỚNG TÀI XẾ & KHÁCH */}
       <View style={styles.mapContainer}>
         <WebView
-          key={`driver-webview-${routeCoordinates.length}`}
+          key="driver-active-trip-webview"
+          ref={driverWebViewRef}
           originWhitelist={['*']}
           source={{ html: mapHtml }}
           style={styles.mapWebView}
@@ -657,7 +781,7 @@ export default function DriverActiveTripScreen() {
               if (router.canGoBack()) {
                 router.back();
               } else {
-                router.replace('/(tabs)/driver');
+                navigationHelper.resetToDriverHome();
               }
             }}
             hitSlop={8}
@@ -689,20 +813,64 @@ export default function DriverActiveTripScreen() {
         <View style={styles.dragHandle} />
 
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {/* Thẻ khách hàng */}
+          {/* Huy hiệu loại đơn giao đồ ăn */}
+          {trip.shippingType === 'FOOD_DELIVERY' && (
+            <View style={styles.foodDeliveryBadge}>
+              <Ionicons name="fast-food-outline" size={14} color="#EA580C" />
+              <ThemedText style={styles.foodDeliveryBadgeText}>ĐƠN GIAO ĐỒ ĂN</ThemedText>
+            </View>
+          )}
+
+          {/* Thẻ khách hàng / Nhà hàng */}
           <View style={styles.customerCard}>
             <View style={styles.customerTopRow}>
-              <View style={styles.customerAvatar}>
-                <ThemedText style={styles.customerAvatarText}>
-                  {(trip.customerName || 'K').charAt(0).toUpperCase()}
-                </ThemedText>
+              <View
+                style={[
+                  styles.customerAvatar,
+                  trip.shippingType === 'FOOD_DELIVERY' &&
+                    (trip.status === TRIP_STATUS.DRIVER_ASSIGNED || trip.status === TRIP_STATUS.DRIVER_ARRIVING) && {
+                      backgroundColor: '#EA580C',
+                    },
+                ]}
+              >
+                {trip.shippingType === 'FOOD_DELIVERY' &&
+                (trip.status === TRIP_STATUS.DRIVER_ASSIGNED || trip.status === TRIP_STATUS.DRIVER_ARRIVING) ? (
+                  <Ionicons name="restaurant" size={18} color="#FFFFFF" />
+                ) : (
+                  <ThemedText style={styles.customerAvatarText}>
+                    {(trip.customerName || 'K').charAt(0).toUpperCase()}
+                  </ThemedText>
+                )}
               </View>
               <View style={styles.customerInfo}>
-                <ThemedText style={styles.customerName}>{trip.customerName || 'Nguyễn Văn An'}</ThemedText>
+                <ThemedText style={styles.customerName}>
+                  {trip.shippingType === 'FOOD_DELIVERY' &&
+                  (trip.status === TRIP_STATUS.DRIVER_ASSIGNED || trip.status === TRIP_STATUS.DRIVER_ARRIVING)
+                    ? trip.restaurantName || 'Quán ăn đối tác'
+                    : trip.customerName || 'Nguyễn Văn An'}
+                </ThemedText>
                 <View style={styles.customerRatingRow}>
-                  <Ionicons name="star" size={14} color="#FBBF24" />
+                  <Ionicons
+                    name={
+                      trip.shippingType === 'FOOD_DELIVERY' &&
+                      (trip.status === TRIP_STATUS.DRIVER_ASSIGNED || trip.status === TRIP_STATUS.DRIVER_ARRIVING)
+                        ? 'storefront-outline'
+                        : 'person-outline'
+                    }
+                    size={14}
+                    color={
+                      trip.shippingType === 'FOOD_DELIVERY' &&
+                      (trip.status === TRIP_STATUS.DRIVER_ASSIGNED || trip.status === TRIP_STATUS.DRIVER_ARRIVING)
+                        ? '#EA580C'
+                        : '#6B7280'
+                    }
+                  />
                   <ThemedText style={styles.customerRatingText}>
-                    {trip.customerRating || '4.9'} • Khách hàng thân thiết
+                    {trip.shippingType === 'FOOD_DELIVERY'
+                      ? trip.status === TRIP_STATUS.DRIVER_ASSIGNED || trip.status === TRIP_STATUS.DRIVER_ARRIVING
+                        ? 'Điểm lấy món ăn'
+                        : 'Khách nhận món'
+                      : 'Hành khách'}
                   </ThemedText>
                 </View>
               </View>
@@ -726,29 +894,108 @@ export default function DriverActiveTripScreen() {
               </Pressable>
             </View>
 
+            {/* Các nút gọi điện & liên hệ */}
             <View style={styles.customerActions}>
-              <Pressable style={styles.actionBtnCall} onPress={handleCallCustomer}>
-                <Ionicons name="call" size={16} color="#059669" />
-                <ThemedText style={styles.actionTextCall}>Gọi cho khách</ThemedText>
-              </Pressable>
-              <Pressable style={styles.actionBtnMsg} onPress={handleMessageCustomer}>
-                <Ionicons name="chatbubble-ellipses" size={16} color="#2563EB" />
-                <ThemedText style={styles.actionTextMsg}>Nhắn tin</ThemedText>
-              </Pressable>
+              {trip.shippingType === 'FOOD_DELIVERY' &&
+              (trip.status === TRIP_STATUS.DRIVER_ASSIGNED || trip.status === TRIP_STATUS.DRIVER_ARRIVING) ? (
+                <>
+                  <Pressable
+                    style={[styles.actionBtnCall, { backgroundColor: '#FFF7ED', borderColor: '#FED7AA' }]}
+                    onPress={handleCallRestaurant}
+                  >
+                    <Ionicons name="call" size={16} color="#EA580C" />
+                    <ThemedText style={[styles.actionTextCall, { color: '#EA580C' }]}>Gọi quán ăn</ThemedText>
+                  </Pressable>
+                  <Pressable style={styles.actionBtnCall} onPress={handleCallCustomer}>
+                    <Ionicons name="person-outline" size={16} color="#059669" />
+                    <ThemedText style={styles.actionTextCall}>Gọi khách hàng</ThemedText>
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  <Pressable style={styles.actionBtnCall} onPress={handleCallCustomer}>
+                    <Ionicons name="call" size={16} color="#059669" />
+                    <ThemedText style={styles.actionTextCall}>Gọi cho khách</ThemedText>
+                  </Pressable>
+                  <Pressable style={styles.actionBtnMsg} onPress={handleMessageCustomer}>
+                    <Ionicons name="chatbubble-ellipses" size={16} color="#2563EB" />
+                    <ThemedText style={styles.actionTextMsg}>Nhắn tin</ThemedText>
+                  </Pressable>
+                  {trip.shippingType === 'FOOD_DELIVERY' && (
+                    <Pressable
+                      style={[styles.actionBtnCall, { backgroundColor: '#FFF7ED', borderColor: '#FED7AA', flex: 0.8 }]}
+                      onPress={handleCallRestaurant}
+                    >
+                      <Ionicons name="storefront-outline" size={15} color="#EA580C" />
+                      <ThemedText style={[styles.actionTextCall, { color: '#EA580C', fontSize: 12 }]}>Quán</ThemedText>
+                    </Pressable>
+                  )}
+                </>
+              )}
             </View>
           </View>
 
+          {/* Khung kiểm tra danh sách món ăn dành cho đơn đồ ăn */}
+          {trip.shippingType === 'FOOD_DELIVERY' && Array.isArray(trip.foods) && trip.foods.length > 0 && (
+            <View style={styles.foodChecklistContainer}>
+              <View style={styles.foodChecklistHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="receipt-outline" size={18} color="#EA580C" />
+                  <ThemedText style={styles.foodChecklistTitle}>Món ăn cần lấy từ quán</ThemedText>
+                </View>
+                <View style={styles.foodChecklistCountBadge}>
+                  <ThemedText style={styles.foodChecklistCountText}>{trip.foods.length} món</ThemedText>
+                </View>
+              </View>
+
+              {trip.foods.map((food, idx) => (
+                <View key={idx} style={styles.foodItemRow}>
+                  <View style={styles.foodItemLeft}>
+                    <ThemedText style={styles.foodItemName} numberOfLines={1}>
+                      {food.quantity ? `${food.quantity}x ` : '1x '} {food.foodName || 'Món ăn'}
+                    </ThemedText>
+                    {food.size ? (
+                      <ThemedText style={styles.foodItemSize}>Kích cỡ: {food.size}</ThemedText>
+                    ) : null}
+                  </View>
+                  <ThemedText style={styles.foodItemPrice}>
+                    {Number(food.price).toLocaleString('vi-VN')} đ
+                  </ThemedText>
+                </View>
+              ))}
+
+              {trip.totalFoodPrice ? (
+                <View style={styles.foodChecklistTotalRow}>
+                  <ThemedText style={styles.foodChecklistTotalLabel}>Tổng tiền món ăn:</ThemedText>
+                  <ThemedText style={styles.foodChecklistTotalValue}>
+                    {Number(trip.totalFoodPrice).toLocaleString('vi-VN')} đ
+                  </ThemedText>
+                </View>
+              ) : null}
+            </View>
+          )}
+
           {/* Thẻ lộ trình di chuyển */}
           <View style={styles.routeCard}>
-            <ThemedText style={styles.sectionTitle}>Lộ trình cuốc xe</ThemedText>
+            <ThemedText style={styles.sectionTitle}>
+              {trip.shippingType === 'FOOD_DELIVERY' ? 'Lộ trình giao đồ ăn' : 'Lộ trình cuốc xe'}
+            </ThemedText>
 
             <View style={styles.routeRow}>
               <View style={styles.routeDotCol}>
-                <Ionicons name="radio-button-on" size={16} color="#00B5B8" />
+                <Ionicons
+                  name={trip.shippingType === 'FOOD_DELIVERY' ? 'restaurant-outline' : 'radio-button-on'}
+                  size={16}
+                  color={trip.shippingType === 'FOOD_DELIVERY' ? '#EA580C' : '#00B5B8'}
+                />
                 <View style={styles.routeLine} />
               </View>
               <View style={styles.routeTextCol}>
-                <ThemedText style={styles.routeLabel}>Điểm đón khách</ThemedText>
+                <ThemedText
+                  style={[styles.routeLabel, trip.shippingType === 'FOOD_DELIVERY' && { color: '#EA580C' }]}
+                >
+                  {trip.shippingType === 'FOOD_DELIVERY' ? 'Điểm lấy món (Quán ăn)' : 'Điểm đón khách'}
+                </ThemedText>
                 <ThemedText style={styles.routeAddress} numberOfLines={2}>
                   {trip.pickUpAddress}
                 </ThemedText>
@@ -757,10 +1004,16 @@ export default function DriverActiveTripScreen() {
 
             <View style={[styles.routeRow, { marginTop: 2 }]}>
               <View style={styles.routeDotCol}>
-                <Ionicons name="radio-button-on" size={16} color="#F97316" />
+                <Ionicons
+                  name={trip.shippingType === 'FOOD_DELIVERY' ? 'location-outline' : 'radio-button-on'}
+                  size={16}
+                  color="#F97316"
+                />
               </View>
               <View style={styles.routeTextCol}>
-                <ThemedText style={styles.routeLabel}>Điểm trả khách</ThemedText>
+                <ThemedText style={[styles.routeLabel, { color: '#EA580C' }]}>
+                  {trip.shippingType === 'FOOD_DELIVERY' ? 'Điểm giao món (Khách nhận)' : 'Điểm trả khách'}
+                </ThemedText>
                 <ThemedText style={styles.routeAddress} numberOfLines={2}>
                   {trip.destinationAddress}
                 </ThemedText>
@@ -771,11 +1024,36 @@ export default function DriverActiveTripScreen() {
           {/* Thẻ cước phí */}
           <View style={styles.detailCard}>
             <View style={styles.fareHighlightRow}>
-              <ThemedText style={styles.fareLabel}>Tiền cước thu khách</ThemedText>
+              <ThemedText style={styles.fareLabel}>
+                {trip.shippingType === 'FOOD_DELIVERY' ? 'Tổng thu khách (COD)' : 'Tiền cước thu khách'}
+              </ThemedText>
               <ThemedText style={styles.fareAmount}>
-                {Number(trip.shippFare || 24000).toLocaleString('vi-VN')} đ
+                {Number(
+                  trip.shippingType === 'FOOD_DELIVERY'
+                    ? (trip.shippFare || 25000) + (trip.totalFoodPrice || 0)
+                    : trip.shippFare || 24000
+                ).toLocaleString('vi-VN')} đ
               </ThemedText>
             </View>
+
+            {trip.shippingType === 'FOOD_DELIVERY' && (
+              <>
+                <View style={styles.detailRow}>
+                  <ThemedText style={styles.detailItemLabel}>Cước vận chuyển:</ThemedText>
+                  <ThemedText style={styles.detailItemValue}>
+                    {Number(trip.shippFare || 25000).toLocaleString('vi-VN')} đ
+                  </ThemedText>
+                </View>
+                {trip.totalFoodPrice ? (
+                  <View style={styles.detailRow}>
+                    <ThemedText style={styles.detailItemLabel}>Tiền món ăn:</ThemedText>
+                    <ThemedText style={[styles.detailItemValue, { color: '#EA580C', fontWeight: '700' }]}>
+                      {Number(trip.totalFoodPrice).toLocaleString('vi-VN')} đ
+                    </ThemedText>
+                  </View>
+                ) : null}
+              </>
+            )}
 
             <View style={styles.detailRow}>
               <ThemedText style={styles.detailItemLabel}>Khoảng cách chuyến đi:</ThemedText>
@@ -795,12 +1073,17 @@ export default function DriverActiveTripScreen() {
                 style={[
                   styles.detailItemValue,
                   {
-                    color: trip.status === TRIP_STATUS.COMPLETED || paymentInfo?.status === 'COMPLETED' ? '#10B981' : '#EF4444',
+                    color:
+                      trip.status === TRIP_STATUS.COMPLETED || paymentInfo?.status === 'COMPLETED'
+                        ? '#10B981'
+                        : '#EF4444',
                     fontWeight: '700',
                   },
                 ]}
               >
-                {trip.status === TRIP_STATUS.COMPLETED || paymentInfo?.status === 'COMPLETED' ? 'Đã thanh toán' : 'Chưa thanh toán'}
+                {trip.status === TRIP_STATUS.COMPLETED || paymentInfo?.status === 'COMPLETED'
+                  ? 'Đã thanh toán'
+                  : 'Chưa thanh toán'}
               </ThemedText>
             </View>
           </View>
@@ -858,7 +1141,7 @@ export default function DriverActiveTripScreen() {
                   </ThemedText>
                   <Pressable
                     style={[styles.modalConfirmBtn, { width: '100%', marginTop: 24 }]}
-                    onPress={() => router.replace('/(tabs)/driver')}
+                    onPress={() => navigationHelper.resetToDriverHome()}
                   >
                     <ThemedText style={styles.modalConfirmBtnText}>VỀ TRANG CHỦ TÀI XẾ</ThemedText>
                   </Pressable>
@@ -868,11 +1151,38 @@ export default function DriverActiveTripScreen() {
                   {/* Phiếu chi tiết cước phí (NẾU CHƯA THANH TOÁN MỚI HIỆN PHƯƠNG THỨC & SỐ TIỀN) */}
                   <View style={styles.fareReceiptBox}>
                     <View style={styles.fareReceiptHeader}>
-                      <ThemedText style={styles.fareReceiptTitle}>Tổng tiền cước cần thu</ThemedText>
+                      <ThemedText style={styles.fareReceiptTitle}>
+                        {trip.shippingType === 'FOOD_DELIVERY' ? 'Tổng tiền thu khách (COD)' : 'Tổng tiền cước cần thu'}
+                      </ThemedText>
                       <ThemedText style={styles.fareReceiptAmount}>
-                        {Number(paymentInfo?.finalAmount || trip.shippFare || 24000).toLocaleString('vi-VN')} đ
+                        {Number(
+                          paymentInfo?.finalAmount ||
+                            (trip.shippingType === 'FOOD_DELIVERY'
+                              ? (trip.shippFare || 25000) + (trip.totalFoodPrice || 0)
+                              : trip.shippFare || 24000)
+                        ).toLocaleString('vi-VN')}{' '}
+                        đ
                       </ThemedText>
                     </View>
+
+                    {trip.shippingType === 'FOOD_DELIVERY' && (
+                      <>
+                        <View style={styles.receiptInfoRow}>
+                          <ThemedText style={styles.receiptLabel}>Cước vận chuyển:</ThemedText>
+                          <ThemedText style={styles.receiptValue}>
+                            {Number(trip.shippFare || 25000).toLocaleString('vi-VN')} đ
+                          </ThemedText>
+                        </View>
+                        {trip.totalFoodPrice ? (
+                          <View style={styles.receiptInfoRow}>
+                            <ThemedText style={styles.receiptLabel}>Tiền món ăn:</ThemedText>
+                            <ThemedText style={[styles.receiptValue, { color: '#EA580C', fontWeight: '800' }]}>
+                              {Number(trip.totalFoodPrice).toLocaleString('vi-VN')} đ
+                            </ThemedText>
+                          </View>
+                        ) : null}
+                      </>
+                    )}
 
                     <View style={styles.receiptInfoRow}>
                       <ThemedText style={styles.receiptLabel}>Hành khách:</ThemedText>
@@ -926,7 +1236,10 @@ export default function DriverActiveTripScreen() {
                                 uri:
                                   paymentInfo?.qrInfo?.qrDataURL ||
                                   `https://img.vietqr.io/image/970422-0399888999-compact2.png?amount=${
-                                    paymentInfo?.finalAmount || trip.shippFare || 24000
+                                    paymentInfo?.finalAmount ||
+                                    (trip.shippingType === 'FOOD_DELIVERY'
+                                      ? (trip.shippFare || 25000) + (trip.totalFoodPrice || 0)
+                                      : trip.shippFare || 24000)
                                   }&addInfo=THANH+TOAN+${trip.id}&accountName=TAI+XE+DRIVER+APP`,
                               }}
                               style={{ width: '100%', height: '100%' }}
@@ -943,7 +1256,14 @@ export default function DriverActiveTripScreen() {
                           STK: {paymentInfo?.qrInfo?.bankAccountNumber || '0399888999'} • {paymentInfo?.qrInfo?.bankAccountName || 'TAI XE DRIVER APP'}
                         </ThemedText>
                         <ThemedText style={{ fontSize: 16, fontWeight: '900', color: '#0F172A', marginTop: 6 }}>
-                          Số tiền: {Number(trip.shippFare || 24000).toLocaleString('vi-VN')} đ
+                          Số tiền:{' '}
+                          {Number(
+                            paymentInfo?.finalAmount ||
+                              (trip.shippingType === 'FOOD_DELIVERY'
+                                ? (trip.shippFare || 25000) + (trip.totalFoodPrice || 0)
+                                : trip.shippFare || 24000)
+                          ).toLocaleString('vi-VN')}{' '}
+                          đ
                         </ThemedText>
                         <ThemedText style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>
                           Nội dung: THANH TOAN {trip.id}
@@ -959,7 +1279,14 @@ export default function DriverActiveTripScreen() {
                             Khách trả tiền mặt trực tiếp
                           </ThemedText>
                           <ThemedText style={styles.paymentMethodDesc}>
-                            Vui lòng thu đúng {Number(trip.shippFare || 24000).toLocaleString('vi-VN')} đ tiền mặt từ khách hàng trước khi bấm xác nhận.
+                            Vui lòng thu đúng{' '}
+                            {Number(
+                              paymentInfo?.finalAmount ||
+                                (trip.shippingType === 'FOOD_DELIVERY'
+                                  ? (trip.shippFare || 25000) + (trip.totalFoodPrice || 0)
+                                  : trip.shippFare || 24000)
+                            ).toLocaleString('vi-VN')}{' '}
+                            đ tiền mặt (gồm cước vận chuyển và tiền món ăn) từ khách hàng trước khi bấm xác nhận.
                           </ThemedText>
                         </View>
                       </View>
