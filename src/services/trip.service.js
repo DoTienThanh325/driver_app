@@ -45,6 +45,20 @@ export const tripService = {
   },
 
   /**
+   * Khách hàng lấy danh sách lịch sử các chuyến đi của mình
+   * GET /api/trips/customer/history?page={page}&size={size}
+   */
+  getCustomerTripHistory: async (page = 0, size = 20) => {
+    try {
+      const res = await apiClient.get(`/api/trips/customer/history?page=${page}&size=${size}`);
+      return res;
+    } catch (err) {
+      console.warn('Lỗi gọi API lịch sử cuốc xe khách hàng:', err?.message);
+      return { content: [], totalElements: 0, totalPages: 0 };
+    }
+  },
+
+  /**
    * Lấy chi tiết cuốc xe theo ID
    * GET /api/trips/{tripId}
    */
@@ -126,6 +140,20 @@ export const tripService = {
         heading: Number(heading) || 0,
         speed: Number(speed) || 0,
       });
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Lấy vị trí GPS realtime của tài xế từ Redis
+   * GET /api/drivers/{driverId}/location
+   * @param {string} driverId
+   */
+  getDriverLocation: async (driverId) => {
+    if (!driverId) return null;
+    try {
+      return await apiClient.get(`/api/drivers/${driverId}/location`);
     } catch {
       return null;
     }

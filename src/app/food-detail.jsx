@@ -17,6 +17,8 @@ import { foodService } from '@/services/food.service';
 import { voucherService } from '@/services/voucher.service';
 import { normalizeImageUrl, DEFAULT_FOOD_IMAGE } from '@/utils/image-url';
 import { foodDetailStyles as styles } from '@/styles/screens/food-detail.styles';
+import * as Location from 'expo-location';
+import { reverseGeocodeCoords } from '@/utils/geocoding';
 
 export default function FoodDetailScreen() {
   const insets = useSafeAreaInsets();
@@ -24,9 +26,11 @@ export default function FoodDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [quantity, setQuantity] = useState(1);
   const [imageError, setImageError] = useState(false);
   const [claimingVoucherId, setClaimingVoucherId] = useState(null);
   const [claimedVoucherIds, setClaimedVoucherIds] = useState(new Set());
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
 
   const handleClaimVoucher = async (voucher) => {
     if (!voucher?.id || claimedVoucherIds.has(voucher.id)) return;
@@ -114,6 +118,70 @@ export default function FoodDetailScreen() {
 
   const formatVND = (price) =>
     new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
+
+  const handleOrderFood = async () => {
+    if (!food || !currentOption) return;
+    setIsSubmittingOrder(true);
+    try {
+      // 1. Lấy vị trí GPS hiện tại của khách làm Điểm nhận món
+      let custLat = 21.028511;
+      let custLon = 105.854444;
+      let custAddress = 'Vị trí hiện tại của bạn';
+
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          if (loc?.coords) {
+            custLat = loc.coords.latitude;
+            custLon = loc.coords.longitude;
+            const resolvedAddr = await reverseGeocodeCoords(custLat, custLon);
+            if (resolvedAddr) custAddress = resolvedAddr;
+          }
+        }
+      } catch (locErr) {
+        console.warn('Lỗi lấy vị trí GPS khách khi đặt món:', locErr);
+      }
+
+      // 2. Điểm lấy món (Nhà hàng)
+      const restAddress = restaurant?.locationAddress || 'Nhà hàng đối tác T&M';
+      const restLat = restaurant?.locationLatitude || 20.9806;
+      const restLon = restaurant?.locationLongitude || 105.7874;
+
+      // 3. Chuẩn bị món ăn
+      const foodItem = {
+        foodId: food.id,
+        foodName: food.name,
+        size: currentOption.size || 'Tiêu chuẩn',
+        price: currentPrice,
+        quantity: quantity,
+        totalPrice: currentPrice * quantity,
+        imageUrl: heroUri,
+      };
+
+      // 4. Chuyển sang màn hình xác nhận đơn món
+      router.push({
+        pathname: '/trip-confirm',
+        params: {
+          shippingType: 'FOOD_DELIVERY',
+          restaurantId: restaurant?.id || food.restaurantId || '',
+          restaurantName: restaurant?.name || 'Nhà hàng đối tác',
+          pickUpAddress: restAddress,
+          pickUpLat: restLat,
+          pickUpLon: restLon,
+          destinationAddress: custAddress,
+          destLat: custLat,
+          destLon: custLon,
+          foodsJson: JSON.stringify([foodItem]),
+          totalFoodPrice: currentPrice * quantity,
+        },
+      });
+    } catch (err) {
+      Alert.alert('Không thể tiếp tục', err.message || 'Có lỗi xảy ra khi chuẩn bị đơn đặt món.');
+    } finally {
+      setIsSubmittingOrder(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -207,7 +275,7 @@ export default function FoodDetailScreen() {
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.voucherList}
               >
-                {vouchers.map((v) => {
+                {vouchers.map((v, idx) => {
                   const salePercent = v.discount
                     ? (v.discount <= 100 ? `${Math.round(v.discount)}%` : `${Math.round(v.discount / 1000)}k`)
                     : 'Ưu đãi';
@@ -225,7 +293,7 @@ export default function FoodDetailScreen() {
                   );
 
                   return (
-                    <View key={v.id || String(Math.random())} style={styles.voucherCard}>
+                    <View key={v.id || `voucher-item-${idx}`} style={styles.voucherCard}>
                       {/* 1. Phần trăm Sale */}
                       <View style={styles.voucherBadge}>
                         <Text style={styles.voucherBadgeText}>{salePercent}</Text>
@@ -315,6 +383,63 @@ export default function FoodDetailScreen() {
             })}
           </ScrollView>
         </View>
+
+        {/* 5. Chọn số lượng món (Chỉ hiển thị cho khách đặt mua) */}
+        {isOwner !== 'true' && (
+          <View style={[styles.section, { marginTop: 20 }]}>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="cart-outline" size={18} color="#00B5B8" />
+              <Text style={styles.sectionTitle}>Số lượng món</Text>
+            </View>
+            <View style={styles.quantityCard}>
+              {/* Hàng 1: Tên món ăn và kích cỡ / đơn giá */}
+              <View style={styles.quantityFoodInfo}>
+                <Text style={styles.quantityFoodName} numberOfLines={2}>
+                  {food.name}
+                </Text>
+                <Text style={styles.quantityFoodOption}>
+                  {currentOption.size ? `Size: ${currentOption.size}` : 'Tiêu chuẩn'} • {formatVND(currentPrice)} / phần
+                </Text>
+              </View>
+
+              {/* Đường gạch phân chia */}
+              <View style={styles.quantityDivider} />
+
+              {/* Hàng 2: Nhãn số lượng + Tạm tính bên trái, bộ đếm [-] 1 [+] bên phải */}
+              <View style={styles.quantityActionRow}>
+                <View style={{ flex: 1, paddingRight: 10 }}>
+                  <Text style={styles.quantityActionLabel}>Số lượng đặt</Text>
+                  <Text style={styles.quantitySubTotal}>
+                    Tạm tính: <Text style={{ color: '#00B5B8', fontWeight: '800' }}>{formatVND(currentPrice * quantity)}</Text>
+                  </Text>
+                </View>
+
+                <View style={styles.quantityCounterBox}>
+                  <TouchableOpacity
+                    style={[styles.counterBtn, quantity <= 1 && styles.counterBtnDisabled]}
+                    disabled={quantity <= 1}
+                    onPress={() => setQuantity((prev) => Math.max(1, prev - 1))}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="remove" size={16} color={quantity <= 1 ? '#9CA3AF' : '#008B8D'} />
+                  </TouchableOpacity>
+
+                  <Text style={styles.counterValue}>
+                    {quantity}
+                  </Text>
+
+                  <TouchableOpacity
+                    style={styles.counterBtn}
+                    onPress={() => setQuantity((prev) => prev + 1)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="add" size={16} color="#00B5B8" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </View>
+        )}
       </ScrollView>
 
       {/* 6. Sticky Bottom Checkout Bar or Owner Action Bar */}
@@ -322,9 +447,11 @@ export default function FoodDetailScreen() {
         <View style={styles.bottomBar}>
           <View style={styles.totalBlock}>
             <Text style={styles.totalLabel}>
-              {isOwner === 'true' ? 'Đang quản lý' : `Tổng cộng ${currentOption.size ? `(${currentOption.size})` : ''}`}
+              {isOwner === 'true'
+                ? 'Đang quản lý'
+                : `Tổng cộng ${quantity > 1 ? `(${quantity} phần)` : ''}`}
             </Text>
-            <Text style={styles.totalPrice}>{formatVND(currentPrice)}</Text>
+            <Text style={styles.totalPrice}>{formatVND(currentPrice * quantity)}</Text>
           </View>
           {isOwner === 'true' ? (
             <TouchableOpacity
@@ -336,16 +463,16 @@ export default function FoodDetailScreen() {
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
-              style={styles.orderButton}
+              style={[styles.orderButton, isSubmittingOrder && { opacity: 0.7 }]}
               activeOpacity={0.85}
-              onPress={() => {
-                Alert.alert(
-                  'Đặt món thành công',
-                  `Đã thêm ${food.name} - ${currentOption.size || 'Mặc định'} (${formatVND(currentPrice)}) vào giỏ hàng.`
-                );
-              }}
+              disabled={isSubmittingOrder}
+              onPress={handleOrderFood}
             >
-              <Text style={styles.orderButtonText}>Đặt món</Text>
+              {isSubmittingOrder ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={styles.orderButtonText}>Đặt giao ngay</Text>
+              )}
             </TouchableOpacity>
           )}
         </View>

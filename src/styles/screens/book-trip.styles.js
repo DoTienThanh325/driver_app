@@ -1130,4 +1130,51 @@ export const bookTripStyles = StyleSheet.create({
     fontWeight: '700',
     color: '#00B5B8',
   },
+  // Food Order Card Styles in tracking
+  foodTrackingCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  foodTrackingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  foodTrackingHeaderText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginLeft: 6,
+    flex: 1,
+  },
+  foodTrackingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  foodTrackingItemName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#334155',
+    flex: 1,
+  },
+  foodTrackingItemQty: {
+    fontSize: 12,
+    color: '#64748B',
+    marginHorizontal: 8,
+  },
+  foodTrackingItemPrice: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#00B5B8',
+  },
 });

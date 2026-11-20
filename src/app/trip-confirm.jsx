@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   ScrollView,
@@ -7,6 +7,7 @@ import {
   Alert,
   Modal,
   TextInput,
+  Image,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
@@ -19,115 +20,183 @@ import { StatusBar } from 'expo-status-bar';
 import { tripService, VEHICLE_TYPE } from '@/services/trip.service';
 import { paymentService } from '@/services/payment.service';
 import { voucherService } from '@/services/voucher.service';
+import { HanoiMapPicker } from '@/components/ui/hanoi-map-picker';
 import { tripConfirmStyles as styles } from '@/styles/screens/trip-confirm.styles';
 
 export default function TripConfirmScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
 
-  const pickUpAddress = params.pickUpAddress || 'Hồ Hoàn Kiếm, Hoàn Kiếm, Hà Nội';
-  const destinationAddress = params.destinationAddress || 'Đại học Bách Khoa, Hai Bà Trưng, Hà Nội';
-  const pickUpLat = Number(params.pickUpLat) || 21.028511;
-  const pickUpLon = Number(params.pickUpLon) || 105.854444;
-  const destLat = Number(params.destLat) || 21.00705;
-  const destLon = Number(params.destLon) || 105.84318;
+  const isFoodDelivery = params.shippingType === 'FOOD_DELIVERY';
+  const restaurantId = params.restaurantId || '';
+  const restaurantName = params.restaurantName || 'Nhà hàng đối tác T&M';
+
+  const [pickUpAddress, setPickUpAddress] = useState(params.pickUpAddress || 'Hồ Hoàn Kiếm, Hoàn Kiếm, Hà Nội');
+  const [destinationAddress, setDestinationAddress] = useState(params.destinationAddress || 'Đại học Bách Khoa, Hai Bà Trưng, Hà Nội');
+  const [pickUpLat, setPickUpLat] = useState(Number(params.pickUpLat) || 21.028511);
+  const [pickUpLon, setPickUpLon] = useState(Number(params.pickUpLon) || 105.854444);
+  const [destLat, setDestLat] = useState(Number(params.destLat) || 21.00705);
+  const [destLon, setDestLon] = useState(Number(params.destLon) || 105.84318);
   const initialDistanceKm = Number(params.distanceKm) || 2.5;
+
+  const mapPickerRef = useRef(null);
+
+  // Danh sách món ăn đặt
+  const foodItems = useMemo(() => {
+    if (!isFoodDelivery || !params.foodsJson) return [];
+    try {
+      const parsed = typeof params.foodsJson === 'string' ? JSON.parse(params.foodsJson) : params.foodsJson;
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, [isFoodDelivery, params.foodsJson]);
+
+  const totalFoodPrice = useMemo(() => {
+    if (!isFoodDelivery) return 0;
+    if (params.totalFoodPrice) return Number(params.totalFoodPrice);
+    return foodItems.reduce((sum, item) => sum + (Number(item.totalPrice) || (Number(item.price) * (Number(item.quantity) || 1))), 0);
+  }, [isFoodDelivery, params.totalFoodPrice, foodItems]);
 
   const [vehicleType, setVehicleType] = useState(VEHICLE_TYPE.MOTORBIKE);
   const [preferredPayMethod, setPreferredPayMethod] = useState('PAY_DIRECTLY'); // 'PAY_DIRECTLY' (Tiền mặt) | 'PAY_BEFORE' (VietQR)
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Quản lý Voucher ưu đãi chuyến đi
+  // Quản lý Voucher ưu đãi chuyến đi & món ăn
   const [vouchers, setVouchers] = useState([]);
   const [selectedVoucher, setSelectedVoucher] = useState(null);
   const [isVoucherModalVisible, setIsVoucherModalVisible] = useState(false);
   const [customVoucherCode, setCustomVoucherCode] = useState('');
   const [isLoadingVouchers, setIsLoadingVouchers] = useState(false);
 
-  // Tải danh sách Voucher TRANSIT từ Database và API
+  // Tải danh sách Voucher từ Database và API
   useEffect(() => {
     let isMounted = true;
-    async function loadTransitVouchers() {
+    async function loadAllVouchers() {
       setIsLoadingVouchers(true);
       try {
-        const [appTransitVouchers, appAllVouchers, myVouchers] = await Promise.all([
-          voucherService.getAppVouchers('TRANSIT').catch(() => []),
-          voucherService.getAppVouchers(null).catch(() => []),
-          voucherService.getMyVouchers().catch(() => []),
-        ]);
+        let appTypeVouchers = [];
+        let restVouchers = [];
 
-        const list = [];
-        const seen = new Set();
-
-        [...(myVouchers || []), ...(appTransitVouchers || []), ...(appAllVouchers || [])].forEach((v) => {
-          if (v && v.id && !seen.has(v.id)) {
-            seen.add(v.id);
-            list.push(v);
-          }
-        });
-
-        // Seed fallback nếu DB chưa có hoặc đang offline
-        if (list.length === 0) {
-          list.push(
-            {
-              id: 'VOUCHER-TRANSIT-50PCT',
-              discount: 50,
-              maxDiscount: 30000,
-              minValue: 0,
-              type: 'TRANSIT',
-              providerType: 'APP',
-              expiredAt: '2027-12-31T23:59:59',
-            },
-            {
-              id: 'VOUCHER-TRANSIT-10K',
-              discount: 10000,
-              maxDiscount: 10000,
-              minValue: 0,
-              type: 'TRANSIT',
-              providerType: 'APP',
-              expiredAt: '2027-12-31T23:59:59',
-            },
-            {
-              id: 'VOUCHER-TRANSIT-20PCT',
-              discount: 20,
-              maxDiscount: 25000,
-              minValue: 0,
-              type: 'TRANSIT',
-              providerType: 'APP',
-              expiredAt: '2027-12-31T23:59:59',
-            },
-            {
-              id: 'VOUCHER-TRANSIT-15K',
-              discount: 15000,
-              maxDiscount: 15000,
-              minValue: 0,
-              type: 'TRANSIT',
-              providerType: 'APP',
-              expiredAt: '2027-12-31T23:59:59',
-            },
-            {
-              id: 'VOUCHER-TRANSIT-100K-MIN',
-              discount: 30000,
-              maxDiscount: 30000,
-              minValue: 100000,
-              type: 'TRANSIT',
-              providerType: 'APP',
-              expiredAt: '2027-12-31T23:59:59',
-            },
-            {
-              id: 'VOUCHER-FOOD-25K',
-              discount: 25000,
-              maxDiscount: 25000,
-              minValue: 0,
-              type: 'FOOD',
-              providerType: 'APP',
-              expiredAt: '2027-12-31T23:59:59',
+        if (isFoodDelivery) {
+          const [appFood, myV, restV] = await Promise.all([
+            voucherService.getAppVouchers('FOOD').catch(() => []),
+            voucherService.getMyVouchers().catch(() => []),
+            restaurantId ? voucherService.getRestaurantVouchers(restaurantId).catch(() => []) : Promise.resolve([]),
+          ]);
+          appTypeVouchers = appFood;
+          restVouchers = restV;
+          
+          const list = [];
+          const seen = new Set();
+          [...(myV || []), ...(restVouchers || []), ...(appTypeVouchers || [])].forEach((v) => {
+            if (v && v.id && !seen.has(v.id)) {
+              seen.add(v.id);
+              list.push(v);
             }
-          );
-        }
+          });
 
-        if (isMounted) {
-          setVouchers(list);
+          if (list.length === 0) {
+            list.push(
+              {
+                id: 'VOUCHER-FOOD-25K',
+                discount: 25000,
+                maxDiscount: 25000,
+                minValue: 0,
+                type: 'FOOD',
+                providerType: 'APP',
+                expiredAt: '2027-12-31T23:59:59',
+              },
+              {
+                id: 'VOUCHER-FOOD-20PCT',
+                discount: 20,
+                maxDiscount: 40000,
+                minValue: 50000,
+                type: 'FOOD',
+                providerType: 'APP',
+                expiredAt: '2027-12-31T23:59:59',
+              },
+              {
+                id: 'VOUCHER-REST-15K',
+                discount: 15000,
+                maxDiscount: 15000,
+                minValue: 0,
+                type: 'FOOD',
+                providerType: 'RESTAURANT',
+                expiredAt: '2027-12-31T23:59:59',
+              }
+            );
+          }
+
+          if (isMounted) setVouchers(list);
+        } else {
+          const [appTransitVouchers, appAllVouchers, myVouchers] = await Promise.all([
+            voucherService.getAppVouchers('TRANSIT').catch(() => []),
+            voucherService.getAppVouchers(null).catch(() => []),
+            voucherService.getMyVouchers().catch(() => []),
+          ]);
+
+          const list = [];
+          const seen = new Set();
+          [...(myVouchers || []), ...(appTransitVouchers || []), ...(appAllVouchers || [])].forEach((v) => {
+            if (v && v.id && !seen.has(v.id)) {
+              seen.add(v.id);
+              list.push(v);
+            }
+          });
+
+          // Seed fallback nếu DB chưa có hoặc đang offline
+          if (list.length === 0) {
+            list.push(
+              {
+                id: 'VOUCHER-TRANSIT-50PCT',
+                discount: 50,
+                maxDiscount: 30000,
+                minValue: 0,
+                type: 'TRANSIT',
+                providerType: 'APP',
+                expiredAt: '2027-12-31T23:59:59',
+              },
+              {
+                id: 'VOUCHER-TRANSIT-10K',
+                discount: 10000,
+                maxDiscount: 10000,
+                minValue: 0,
+                type: 'TRANSIT',
+                providerType: 'APP',
+                expiredAt: '2027-12-31T23:59:59',
+              },
+              {
+                id: 'VOUCHER-TRANSIT-20PCT',
+                discount: 20,
+                maxDiscount: 25000,
+                minValue: 0,
+                type: 'TRANSIT',
+                providerType: 'APP',
+                expiredAt: '2027-12-31T23:59:59',
+              },
+              {
+                id: 'VOUCHER-TRANSIT-15K',
+                discount: 15000,
+                maxDiscount: 15000,
+                minValue: 0,
+                type: 'TRANSIT',
+                providerType: 'APP',
+                expiredAt: '2027-12-31T23:59:59',
+              },
+              {
+                id: 'VOUCHER-TRANSIT-100K-MIN',
+                discount: 30000,
+                maxDiscount: 30000,
+                minValue: 100000,
+                type: 'TRANSIT',
+                providerType: 'APP',
+                expiredAt: '2027-12-31T23:59:59',
+              }
+            );
+          }
+
+          if (isMounted) setVouchers(list);
         }
       } catch (err) {
         console.warn('Lỗi tải danh sách voucher:', err);
@@ -136,9 +205,9 @@ export default function TripConfirmScreen() {
       }
     }
 
-    loadTransitVouchers();
+    loadAllVouchers();
     return () => { isMounted = false; };
-  }, []);
+  }, [isFoodDelivery, restaurantId]);
 
   // Parse tọa độ lộ trình từ params nếu đã được tải trước từ book-trip
   const initialRouteCoords = useMemo(() => {
@@ -264,41 +333,53 @@ export default function TripConfirmScreen() {
     return Math.round(raw / 1000) * 1000;
   }, [actualDistanceKm, CAR_BASE_PRICE, CAR_PER_KM]);
 
-  const selectedFare = vehicleType === VEHICLE_TYPE.MOTORBIKE ? motorbikeFare : carFare;
+  // Với Food delivery, phương tiện cố định là xe máy
+  const selectedFare = isFoodDelivery ? motorbikeFare : (vehicleType === VEHICLE_TYPE.MOTORBIKE ? motorbikeFare : carFare);
 
   // Tính số tiền được giảm theo voucher
-  const calculateDiscount = (voucher, fare) => {
-    if (!voucher || !fare) return 0;
+  const calculateDiscount = (voucher, baseFare, foodPrice = 0) => {
+    if (!voucher) return 0;
+    const isFoodVoucher = voucher.type && String(voucher.type).toUpperCase() === 'FOOD';
+    // Nếu là voucher FOOD, giảm trên tiền món ăn. Nếu là voucher TRANSIT, giảm trên cước ship
+    const targetAmount = isFoodVoucher ? (foodPrice > 0 ? foodPrice : baseFare) : baseFare;
+    if (!targetAmount || targetAmount <= 0) return 0;
+
     const isPercent = Number(voucher.discount) < 100;
     let disc = 0;
     if (isPercent) {
-      disc = Math.round((fare * Number(voucher.discount)) / 100);
+      disc = Math.round((targetAmount * Number(voucher.discount)) / 100);
       if (voucher.maxDiscount && voucher.maxDiscount > 0) {
         disc = Math.min(disc, Number(voucher.maxDiscount));
       }
     } else {
-      disc = Math.min(Number(voucher.discount), fare);
+      disc = Math.min(Number(voucher.discount), targetAmount);
     }
     return disc;
   };
 
   // Kiểm tra tính khả dụng của voucher với giá cước chuyến đi hiện tại
-  const checkVoucherEligibility = (v, fare) => {
+  const checkVoucherEligibility = (v, fare, foodPrice = 0, currentTimestamp = 0) => {
     if (!v) return { isEligible: false, reason: 'Voucher không tồn tại' };
 
-    // 1. Kiểm tra loại dịch vụ: Chỉ áp dụng TRANSIT hoặc voucher chung
-    if (v.type && String(v.type).toUpperCase() === 'FOOD') {
+    // 1. Kiểm tra loại dịch vụ
+    if (!isFoodDelivery && v.type && String(v.type).toUpperCase() === 'FOOD') {
       return {
         isEligible: false,
         reason: 'Chỉ áp dụng cho đặt món T&M Meal (Đồ ăn), không dùng cho gọi xe',
       };
     }
+    if (isFoodDelivery && v.type && String(v.type).toUpperCase() === 'TRANSIT') {
+      return {
+        isEligible: false,
+        reason: 'Chỉ áp dụng cho dịch vụ gọi xe T&M Transit, không dùng cho giao món',
+      };
+    }
 
     // 2. Kiểm tra hạn sử dụng
-    if (v.expiredAt) {
+    if (v.expiredAt && currentTimestamp > 0) {
       try {
         const exp = new Date(v.expiredAt).getTime();
-        if (exp < Date.now()) {
+        if (exp < currentTimestamp) {
           return {
             isEligible: false,
             reason: 'Mã ưu đãi này đã hết hạn sử dụng',
@@ -307,25 +388,34 @@ export default function TripConfirmScreen() {
       } catch (e) {}
     }
 
-    // 3. Kiểm tra điều kiện giá cước tối thiểu
+    // 3. Kiểm tra điều kiện giá tối thiểu (so với foodPrice nếu là FOOD voucher, so với fare nếu là TRANSIT voucher)
+    const isFoodVoucher = v.type && String(v.type).toUpperCase() === 'FOOD';
+    const compareAmount = isFoodVoucher ? (foodPrice > 0 ? foodPrice : fare) : fare;
     const minVal = Number(v.minValue) || 0;
-    if (minVal > 0 && fare < minVal) {
-      const diff = minVal - fare;
+    if (minVal > 0 && compareAmount < minVal) {
+      const diff = minVal - compareAmount;
       return {
         isEligible: false,
-        reason: `Cần cước tối thiểu ${Number(minVal).toLocaleString('vi-VN')} đ (còn thiếu ${Number(diff).toLocaleString('vi-VN')} đ)`,
+        reason: `Cần đơn tối thiểu ${Number(minVal).toLocaleString('vi-VN')} đ (còn thiếu ${Number(diff).toLocaleString('vi-VN')} đ)`,
       };
     }
 
     return { isEligible: true, reason: '' };
   };
 
+  // Thời gian tham chiếu cố định khi nạp voucher để kiểm tra hạn sử dụng mà không gọi Date.now() trong render
+  const [nowTimestamp, setNowTimestamp] = useState(0);
+
+  useEffect(() => {
+    setNowTimestamp(Date.now());
+  }, []);
+
   // Phân loại thành 2 danh sách: Khả dụng (sáng) và Không khả dụng (xám đi)
   const { eligibleVouchers, ineligibleVouchers } = useMemo(() => {
     const eligible = [];
     const ineligible = [];
     vouchers.forEach((v) => {
-      const status = checkVoucherEligibility(v, selectedFare);
+      const status = checkVoucherEligibility(v, selectedFare, totalFoodPrice, nowTimestamp);
       if (status.isEligible) {
         eligible.push({ ...v, ...status });
       } else {
@@ -333,12 +423,12 @@ export default function TripConfirmScreen() {
       }
     });
     return { eligibleVouchers: eligible, ineligibleVouchers: ineligible };
-  }, [vouchers, selectedFare]);
+  }, [vouchers, selectedFare, totalFoodPrice, isFoodDelivery, nowTimestamp]);
 
   // Nếu đã chọn voucher nhưng đổi phương tiện làm cước thấp hơn minValue -> tự động hủy voucher
   useEffect(() => {
     if (selectedVoucher) {
-      const status = checkVoucherEligibility(selectedVoucher, selectedFare);
+      const status = checkVoucherEligibility(selectedVoucher, selectedFare, totalFoodPrice, Date.now());
       if (!status.isEligible) {
         setSelectedVoucher(null);
         Alert.alert(
@@ -347,13 +437,16 @@ export default function TripConfirmScreen() {
         );
       }
     }
-  }, [selectedFare]);
+  }, [selectedFare, totalFoodPrice]);
 
   const discountAmount = useMemo(() => {
-    return calculateDiscount(selectedVoucher, selectedFare);
-  }, [selectedVoucher, selectedFare]);
+    return calculateDiscount(selectedVoucher, selectedFare, totalFoodPrice);
+  }, [selectedVoucher, selectedFare, totalFoodPrice]);
 
-  const finalFare = Math.max(0, selectedFare - discountAmount);
+  // Tổng thanh toán: Với Food Delivery = Tiền món + Phí ship - Giảm giá
+  const finalFare = isFoodDelivery
+    ? Math.max(0, totalFoodPrice + selectedFare - discountAmount)
+    : Math.max(0, selectedFare - discountAmount);
 
   const handleApplyCustomCode = () => {
     if (!customVoucherCode.trim()) {
@@ -363,11 +456,11 @@ export default function TripConfirmScreen() {
     const code = customVoucherCode.trim().toUpperCase();
     const found = vouchers.find((v) => v.id.toUpperCase() === code);
     if (found) {
-      const eligibility = checkVoucherEligibility(found, selectedFare);
+      const eligibility = checkVoucherEligibility(found, selectedFare, totalFoodPrice, Date.now());
       if (!eligibility.isEligible) {
         Alert.alert(
           'Chưa đủ điều kiện',
-          `Voucher "${found.id}" chưa thể áp dụng cho chuyến xe này:\n\n${eligibility.reason}`
+          `Voucher "${found.id}" chưa thể áp dụng cho đơn này:\n\n${eligibility.reason}`
         );
         return;
       }
@@ -475,7 +568,7 @@ export default function TripConfirmScreen() {
     `;
   }, [pickUpLat, pickUpLon, destLat, destLon, routeCoordinates]);
 
-  // Hành động đặt chuyến
+  // Hành động đặt chuyến / đặt món
   const handleConfirmBooking = async () => {
     setIsSubmitting(true);
     try {
@@ -486,10 +579,22 @@ export default function TripConfirmScreen() {
         destinationLatitude: destLat,
         destinationLongitude: destLon,
         destinationAddress: destinationAddress.trim(),
-        shippingType: 'PASSENGER',
-        vehicleType,
-        shippFare: finalFare,
+        shippingType: isFoodDelivery ? 'FOOD_DELIVERY' : 'PASSENGER',
+        vehicleType: VEHICLE_TYPE.MOTORBIKE,
+        shippFare: selectedFare, // Cước vận chuyển
+        ...(isFoodDelivery && {
+          foods: foodItems.map((f) => ({
+            foodId: String(f.foodId || f.id),
+            size: String(f.size || 'Tiêu chuẩn'),
+            quantity: Number(f.quantity) || 1,
+          })),
+        }),
       };
+
+      if (!isFoodDelivery) {
+        payload.vehicleType = vehicleType;
+        payload.shippFare = finalFare;
+      }
 
       const res = await tripService.createTrip(payload);
       const newTripId = res?.tripId || res?.id;
@@ -505,26 +610,32 @@ export default function TripConfirmScreen() {
         destinationLatitude: destLat,
         destinationLongitude: destLon,
         destinationAddress: destinationAddress.trim(),
-        shippingType: 'PASSENGER',
-        vehicleType,
-        shippFare: finalFare,
+        shippingType: isFoodDelivery ? 'FOOD_DELIVERY' : 'PASSENGER',
+        vehicleType: isFoodDelivery ? VEHICLE_TYPE.MOTORBIKE : vehicleType,
+        shippFare: selectedFare,
+        totalFoodPrice: isFoodDelivery ? totalFoodPrice : null,
+        finalTotal: finalFare,
         originalFare: selectedFare,
         voucherId: selectedVoucher?.id || null,
         discountAmount: discountAmount || 0,
         status: 'REQUESTED',
         distanceKm: actualDistanceKm,
+        foodSelectedsList: isFoodDelivery ? foodItems : null,
+        restaurantName: isFoodDelivery ? restaurantName : null,
+        restaurantId: isFoodDelivery ? restaurantId : null,
       };
 
-      const voucherMsg = discountAmount > 0
-        ? `\nCước gốc: ${Number(selectedFare).toLocaleString('vi-VN')} đ\nƯu đãi (${selectedVoucher?.id}): -${Number(discountAmount).toLocaleString('vi-VN')} đ\nThanh toán thực tế: ${Number(finalFare).toLocaleString('vi-VN')} đ`
-        : `\nCước phí: ${Number(selectedFare).toLocaleString('vi-VN')} đ`;
+      const titleSuccess = isFoodDelivery ? 'Đặt món thành công 🎉' : 'Đặt chuyến thành công 🎉';
+      const descSuccess = isFoodDelivery
+        ? `Đơn món đang được chuyển tới quán & hệ thống điều phối tài xế giao món!\nLộ trình giao: ${actualDistanceKm} km\nTổng thanh toán: ${Number(finalFare).toLocaleString('vi-VN')} đ\nThanh toán: ${preferredPayMethod === 'PAY_BEFORE' ? 'Chuyển khoản VietQR' : 'Tiền mặt'}`
+        : `Hệ thống đang điều phối tài xế gần bạn nhất!\nLộ trình thực tế: ${actualDistanceKm} km\nThanh toán: ${preferredPayMethod === 'PAY_BEFORE' ? 'Chuyển khoản VietQR' : 'Tiền mặt'}`;
 
       Alert.alert(
-        'Đặt chuyến thành công 🎉',
-        `Hệ thống đang điều phối tài xế gần bạn nhất!\nLộ trình thực tế: ${actualDistanceKm} km${voucherMsg}\nThanh toán: ${preferredPayMethod === 'PAY_BEFORE' ? 'Chuyển khoản VietQR' : 'Tiền mặt'}`,
+        titleSuccess,
+        descSuccess,
         [
           {
-            text: 'Theo dõi chuyến đi',
+            text: isFoodDelivery ? 'Theo dõi đơn món' : 'Theo dõi chuyến đi',
             onPress: () =>
               router.navigate({
                 pathname: '/book-trip',
@@ -533,13 +644,17 @@ export default function TripConfirmScreen() {
                   preferredPayMethod,
                   tripData: JSON.stringify(createdTripData),
                   routeCoords: JSON.stringify(routeCoordinates),
+                  shippingType: isFoodDelivery ? 'FOOD_DELIVERY' : 'PASSENGER',
                 },
               }),
           },
         ]
       );
     } catch (err) {
-      Alert.alert('Không thể đặt chuyến', err.message || 'Đang có cuốc xe chưa hoàn thành.');
+      Alert.alert(
+        isFoodDelivery ? 'Không thể đặt món' : 'Không thể đặt chuyến',
+        err.message || 'Đang có cuốc xe hoặc đơn giao chưa hoàn thành.'
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -584,7 +699,9 @@ export default function TripConfirmScreen() {
         <View style={styles.dragHandle} />
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 10 }}>
         <View style={styles.sheetHeaderRow}>
-          <ThemedText style={styles.sheetTitle}>Chọn phương tiện di chuyển</ThemedText>
+          <ThemedText style={styles.sheetTitle}>
+            {isFoodDelivery ? 'Xác nhận đơn món ăn' : 'Chọn phương tiện di chuyển'}
+          </ThemedText>
           <View style={[styles.peakHourBadge, isPeakHour ? styles.peakHourBadgePeak : styles.peakHourBadgeNormal]}>
             <Ionicons name={isPeakHour ? 'flame' : 'sunny'} size={12} color={isPeakHour ? '#EA580C' : '#16A34A'} />
             <ThemedText style={isPeakHour ? styles.peakHourTextPeak : styles.peakHourTextNormal}>
@@ -593,62 +710,117 @@ export default function TripConfirmScreen() {
           </View>
         </View>
 
-        {/* Danh sách xe & giá tính theo khoảng cách thực tế */}
-        <View style={styles.vehicleListRow}>
-          {/* Xe máy */}
-          <Pressable
-            style={[
-              styles.vehicleCard,
-              vehicleType === VEHICLE_TYPE.MOTORBIKE && styles.vehicleCardActive,
-            ]}
-            onPress={() => setVehicleType(VEHICLE_TYPE.MOTORBIKE)}
-          >
-            <View style={styles.vehicleIconBox}>
-              <Ionicons
-                name="bicycle"
-                size={24}
-                color={vehicleType === VEHICLE_TYPE.MOTORBIKE ? '#00B5B8' : '#6B7280'}
-              />
-            </View>
-            <View style={styles.vehicleInfoCol}>
-              <ThemedText style={styles.vehicleNameText}>Xe máy</ThemedText>
-              <ThemedText style={styles.vehiclePriceText}>
-                {Number(motorbikeFare).toLocaleString('vi-VN')} đ
+        {/* NẾU LÀ ĐƠN GIAO MÓN: HIỂN THỊ CHI TIẾT MÓN ĂN & NHÀ HÀNG */}
+        {isFoodDelivery ? (
+          <View style={styles.foodOrderCard}>
+            <View style={styles.restaurantBadge}>
+              <Ionicons name="storefront" size={18} color="#00B5B8" />
+              <ThemedText style={styles.restaurantBadgeText} numberOfLines={1}>
+                {restaurantName}
               </ThemedText>
             </View>
-          </Pressable>
 
-          {/* Ô tô */}
-          <Pressable
-            style={[
-              styles.vehicleCard,
-              vehicleType === VEHICLE_TYPE.CAR && styles.vehicleCardActive,
-            ]}
-            onPress={() => setVehicleType(VEHICLE_TYPE.CAR)}
-          >
-            <View style={styles.vehicleIconBox}>
-              <Ionicons
-                name="car"
-                size={24}
-                color={vehicleType === VEHICLE_TYPE.CAR ? '#00B5B8' : '#6B7280'}
-              />
-            </View>
-            <View style={styles.vehicleInfoCol}>
-              <ThemedText style={styles.vehicleNameText}>Ô tô</ThemedText>
-              <ThemedText style={styles.vehiclePriceText}>
-                {Number(carFare).toLocaleString('vi-VN')} đ
-              </ThemedText>
-            </View>
-          </Pressable>
-        </View>
+            {foodItems.map((item, idx) => (
+              <View key={`${item.foodId || idx}`} style={[styles.foodItemRow, idx > 0 && { marginTop: 10 }]}>
+                {item.imageUrl ? (
+                  <Image source={{ uri: item.imageUrl }} style={styles.foodThumb} />
+                ) : (
+                  <View style={[styles.foodThumb, { alignItems: 'center', justifyContent: 'center' }]}>
+                    <Ionicons name="fast-food-outline" size={20} color="#9CA3AF" />
+                  </View>
+                )}
+                <View style={styles.foodItemInfo}>
+                  <ThemedText style={styles.foodItemName} numberOfLines={1}>
+                    {item.foodName || 'Món ăn'}
+                  </ThemedText>
+                  <ThemedText style={styles.foodItemOption}>
+                    Size: {item.size || 'Tiêu chuẩn'} • SL: {item.quantity || 1}
+                  </ThemedText>
+                </View>
+                <ThemedText style={styles.foodItemPrice}>
+                  {Number(item.totalPrice || item.price * (item.quantity || 1)).toLocaleString('vi-VN')} đ
+                </ThemedText>
+              </View>
+            ))}
+          </View>
+        ) : (
+          /* Danh sách xe & giá tính theo khoảng cách thực tế (cho Passenger) */
+          <View style={styles.vehicleListRow}>
+            {/* Xe máy */}
+            <Pressable
+              style={[
+                styles.vehicleCard,
+                vehicleType === VEHICLE_TYPE.MOTORBIKE && styles.vehicleCardActive,
+              ]}
+              onPress={() => setVehicleType(VEHICLE_TYPE.MOTORBIKE)}
+            >
+              <View style={styles.vehicleIconBox}>
+                <Ionicons
+                  name="bicycle"
+                  size={24}
+                  color={vehicleType === VEHICLE_TYPE.MOTORBIKE ? '#00B5B8' : '#6B7280'}
+                />
+              </View>
+              <View style={styles.vehicleInfoCol}>
+                <ThemedText style={styles.vehicleNameText}>Xe máy</ThemedText>
+                <ThemedText style={styles.vehiclePriceText}>
+                  {Number(motorbikeFare).toLocaleString('vi-VN')} đ
+                </ThemedText>
+              </View>
+            </Pressable>
 
-        {/* Tóm tắt đón - trả */}
+            {/* Ô tô */}
+            <Pressable
+              style={[
+                styles.vehicleCard,
+                vehicleType === VEHICLE_TYPE.CAR && styles.vehicleCardActive,
+              ]}
+              onPress={() => setVehicleType(VEHICLE_TYPE.CAR)}
+            >
+              <View style={styles.vehicleIconBox}>
+                <Ionicons
+                  name="car"
+                  size={24}
+                  color={vehicleType === VEHICLE_TYPE.CAR ? '#00B5B8' : '#6B7280'}
+                />
+              </View>
+              <View style={styles.vehicleInfoCol}>
+                <ThemedText style={styles.vehicleNameText}>Ô tô</ThemedText>
+                <ThemedText style={styles.vehiclePriceText}>
+                  {Number(carFare).toLocaleString('vi-VN')} đ
+                </ThemedText>
+              </View>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Tóm tắt lộ trình */}
         <View style={styles.summaryRouteBox}>
-          <Ionicons name="location" size={16} color="#00B5B8" />
+          <Ionicons name={isFoodDelivery ? 'restaurant' : 'location'} size={16} color="#00B5B8" />
           <ThemedText style={styles.summaryRouteText} numberOfLines={1}>
-            {pickUpAddress} ➜ {destinationAddress}
+            {isFoodDelivery ? `Lấy tại: ${pickUpAddress}` : `${pickUpAddress} ➜ ${destinationAddress}`}
           </ThemedText>
+          {isFoodDelivery && (
+            <Pressable
+              style={{ paddingLeft: 6, paddingVertical: 2 }}
+              onPress={() => mapPickerRef.current?.openModal()}
+              hitSlop={6}
+            >
+              <ThemedText style={{ fontSize: 11, color: '#00B5B8', fontWeight: '700' }}>
+                Đổi nơi nhận
+              </ThemedText>
+            </Pressable>
+          )}
         </View>
+
+        {isFoodDelivery && (
+          <View style={[styles.summaryRouteBox, { marginTop: -4 }]}>
+            <Ionicons name="home" size={16} color="#EA580C" />
+            <ThemedText style={[styles.summaryRouteText, { color: '#1F2937', fontWeight: '600' }]} numberOfLines={1}>
+              Giao đến: {destinationAddress}
+            </ThemedText>
+          </View>
+        )}
 
         {/* Khách hàng chọn trước hình thức thanh toán */}
         <View style={{ marginBottom: 12 }}>
@@ -726,7 +898,7 @@ export default function TripConfirmScreen() {
         <View style={{ marginBottom: 14 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <ThemedText style={{ fontSize: 13, fontWeight: '700', color: '#374151' }}>
-              Mã giảm giá & Khuyến mãi:
+              {isFoodDelivery ? 'Mã ưu đãi món & giao hàng:' : 'Mã giảm giá & Khuyến mãi:'}
             </ThemedText>
             {selectedVoucher && (
               <Pressable onPress={() => setSelectedVoucher(null)} hitSlop={6}>
@@ -764,7 +936,7 @@ export default function TripConfirmScreen() {
                 }}
               >
                 <Ionicons
-                  name="pricetag"
+                  name={isFoodDelivery ? 'fast-food' : 'pricetag'}
                   size={18}
                   color={selectedVoucher ? '#FFFFFF' : '#6B7280'}
                 />
@@ -812,7 +984,41 @@ export default function TripConfirmScreen() {
           </Pressable>
         </View>
 
-        {/* Nút đặt chuyến */}
+        {/* Khối Bóc tách chi phí đối với Đặt Món Ăn */}
+        {isFoodDelivery && (
+          <View style={styles.priceBreakdownBox}>
+            <View style={styles.priceRow}>
+              <ThemedText style={styles.priceRowLabel}>Tiền món ăn ({foodItems.reduce((acc, i) => acc + (Number(i.quantity) || 1), 0)} phần):</ThemedText>
+              <ThemedText style={styles.priceRowValue}>
+                {Number(totalFoodPrice).toLocaleString('vi-VN')} đ
+              </ThemedText>
+            </View>
+            <View style={styles.priceRow}>
+              <ThemedText style={styles.priceRowLabel}>Phí giao hàng ({actualDistanceKm} km):</ThemedText>
+              <ThemedText style={styles.priceRowValue}>
+                {Number(selectedFare).toLocaleString('vi-VN')} đ
+              </ThemedText>
+            </View>
+            {discountAmount > 0 && (
+              <View style={styles.priceRow}>
+                <ThemedText style={[styles.priceRowLabel, { color: '#059669', fontWeight: '700' }]}>
+                  Mã ưu đãi ({selectedVoucher?.id}):
+                </ThemedText>
+                <ThemedText style={[styles.priceRowValue, { color: '#059669', fontWeight: '700' }]}>
+                  -{Number(discountAmount).toLocaleString('vi-VN')} đ
+                </ThemedText>
+              </View>
+            )}
+            <View style={styles.priceRowTotal}>
+              <ThemedText style={styles.priceTotalLabel}>Tổng thanh toán:</ThemedText>
+              <ThemedText style={styles.priceTotalValue}>
+                {Number(finalFare).toLocaleString('vi-VN')} đ
+              </ThemedText>
+            </View>
+          </View>
+        )}
+
+        {/* Nút đặt chuyến / đặt món */}
         <Pressable
           style={[styles.bookBtn, isSubmitting && styles.bookBtnDisabled]}
           onPress={handleConfirmBooking}
@@ -823,7 +1029,8 @@ export default function TripConfirmScreen() {
           ) : (
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
               <ThemedText style={styles.bookBtnText}>
-                ĐẶT XE • {Number(finalFare).toLocaleString('vi-VN')} đ
+                {isFoodDelivery ? 'ĐẶT MÓN NGAY • ' : 'ĐẶT XE • '}
+                {Number(finalFare).toLocaleString('vi-VN')} đ
               </ThemedText>
               {discountAmount > 0 && (
                 <ThemedText
@@ -834,7 +1041,7 @@ export default function TripConfirmScreen() {
                     marginLeft: 8,
                   }}
                 >
-                  {Number(selectedFare).toLocaleString('vi-VN')} đ
+                  {Number(isFoodDelivery ? totalFoodPrice + selectedFare : selectedFare).toLocaleString('vi-VN')} đ
                 </ThemedText>
               )}
             </View>
@@ -1223,6 +1430,23 @@ export default function TripConfirmScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Map Picker Modal để đổi địa chỉ nhận món */}
+      <HanoiMapPicker
+        ref={mapPickerRef}
+        modalOnly={true}
+        initialCoords={{ latitude: destLat, longitude: destLon }}
+        currentAddress={destinationAddress}
+        onLocationChange={(coords) => {
+          if (coords?.latitude && coords?.longitude) {
+            setDestLat(Number(coords.latitude));
+            setDestLon(Number(coords.longitude));
+          }
+        }}
+        onAddressResolved={(addr) => {
+          if (addr) setDestinationAddress(addr);
+        }}
+      />
     </ThemedView>
   );
 }

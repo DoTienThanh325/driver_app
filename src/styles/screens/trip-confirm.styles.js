@@ -199,4 +199,100 @@ export const tripConfirmStyles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
   },
+
+  // Food delivery styles
+  foodOrderCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    padding: 12,
+    marginBottom: 12,
+  },
+  restaurantBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  restaurantBadgeText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginLeft: 6,
+    flex: 1,
+  },
+  foodItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  foodThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    backgroundColor: '#E5E7EB',
+    marginRight: 10,
+  },
+  foodItemInfo: {
+    flex: 1,
+  },
+  foodItemName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  foodItemOption: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  foodItemPrice: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#00B5B8',
+  },
+  priceBreakdownBox: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginBottom: 12,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  priceRowLabel: {
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  priceRowValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  priceRowTotal: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 8,
+    marginTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  priceTotalLabel: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  priceTotalValue: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#00B5B8',
+  },
 });

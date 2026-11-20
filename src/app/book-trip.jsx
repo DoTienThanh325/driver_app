@@ -3,10 +3,12 @@ import {
   View,
   ScrollView,
   Pressable,
+  TouchableOpacity,
   TextInput,
   ActivityIndicator,
   Alert,
   Modal,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -22,7 +24,9 @@ import { paymentService, PAYMENT_METHOD, PAYMENT_STATUS } from '@/services/payme
 import { SubHeader } from '@/components/ui/sub-header';
 import * as Location from 'expo-location';
 import { HanoiMapPicker } from '@/components/ui/hanoi-map-picker';
+import { RatingModal } from '@/components/ui/rating-modal';
 import { geocodeAddress, reverseGeocodeCoords } from '@/utils/geocoding';
+import { navigationHelper } from '@/utils/navigation';
 import {
   tripService,
   TRIP_STATUS,
@@ -199,6 +203,7 @@ export default function BookTripScreen() {
 
   // Trạng thái chuyến đi & Polling
   const dismissedTripIdRef = useRef(null);
+  const trackingWebViewRef = useRef(null);
   const [activeTrip, setActiveTrip] = useState(() => {
     if (params.tripData) {
       try {
@@ -214,6 +219,7 @@ export default function BookTripScreen() {
   // Bộ đếm giây tìm kiếm cho UX (Expanding Ring Search)
   const [searchSeconds, setSearchSeconds] = useState(0);
   const [driverProfile, setDriverProfile] = useState(null);
+  const [driverLocation, setDriverLocation] = useState(null); // { latitude, longitude, heading, speed }
   const [trackingRouteCoords, setTrackingRouteCoords] = useState(() => {
     if (params.routeCoords) {
       try {
@@ -230,6 +236,11 @@ export default function BookTripScreen() {
   const [qrLoadError, setQrLoadError] = useState(false);
   const [isLoadingPayment, setIsLoadingPayment] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [ratingTarget, setRatingTarget] = useState('DRIVER'); // 'DRIVER' | 'RESTAURANT'
+  const [hasRatedTrip, setHasRatedTrip] = useState(false);
+  const [hasRatedRestaurant, setHasRatedRestaurant] = useState(false);
+  const autoPromptedRatingRef = useRef(false);
 
   // Tổng hợp thông tin tài khoản ngân hàng và mã VietQR thanh toán cho tài xế
   const driverQrInfo = useMemo(() => {
@@ -313,6 +324,7 @@ export default function BookTripScreen() {
     setActiveTrip(null);
     setTripPayment(null);
     setDriverProfile(null);
+    setDriverLocation(null);
     setTrackingRouteCoords([]);
     setSearchSeconds(0);
     setIsSubmitting(false);
@@ -320,22 +332,50 @@ export default function BookTripScreen() {
     setBookingStep(1);
     setSelectedVehicle(null);
     hasUserEditedPickupRef.current = false;
+    setHasRatedTrip(false);
+    autoPromptedRatingRef.current = false;
 
-    // Thay thế route hiện tại bằng /book-trip sạch, xóa bỏ mọi query params (tripId, tripData...)
-    router.replace('/book-trip');
+    // Xóa sạch query params trên route hiện tại mà không đẩy hay nhân đôi stack
+    router.setParams({
+      tripId: '',
+      tripData: '',
+      routeCoords: '',
+      preferredPayMethod: '',
+    });
   };
 
   // Lựa chọn 2: Về giao diện chính (Trang chủ) - Xóa sạch stack và trở về Tabs
   const handleGoHome = () => {
+    if (activeTrip?.id) {
+      dismissedTripIdRef.current = String(activeTrip.id);
+    }
     setActiveTrip(null);
     setTripPayment(null);
     setDriverProfile(null);
+    setDriverLocation(null);
     setTrackingRouteCoords([]);
+    setSearchSeconds(0);
     setIsSubmitting(false);
     setIsCancelling(false);
+    setBookingStep(1);
+    setSelectedVehicle(null);
+    hasUserEditedPickupRef.current = false;
+    setHasRatedTrip(false);
+    autoPromptedRatingRef.current = false;
 
-    router.replace('/(tabs)');
+    navigationHelper.resetToHome();
   };
+
+  // Tự động mở popup đánh giá khi chuyến đi COMPLETED
+  useEffect(() => {
+    if (activeTrip?.status === TRIP_STATUS.COMPLETED && !hasRatedTrip && !autoPromptedRatingRef.current) {
+      autoPromptedRatingRef.current = true;
+      const timer = setTimeout(() => {
+        setShowRatingModal(true);
+      }, 700);
+      return () => clearTimeout(timer);
+    }
+  }, [activeTrip?.status, hasRatedTrip]);
 
   // Quản lý quy trình từng bước: 1: Điểm đón/đến -> 2: Chọn xe -> 3: Xem giá & Đặt
   const [bookingStep, setBookingStep] = useState(1); // 1 | 2 | 3
@@ -589,11 +629,19 @@ export default function BookTripScreen() {
         TRIP_STATUS.IN_PROGRESS,
       ].includes(trip.status)
     ) {
-      setActiveTrip((prev) => ({
-        ...prev,
-        ...trip,
-        distanceKm: trip.distanceKm || prev?.distanceKm,
-      }));
+      if (dismissedTripIdRef.current && String(trip.id) === dismissedTripIdRef.current) {
+        return;
+      }
+      setActiveTrip((prev) => {
+        if (prev?.id === trip.id && prev?.status === trip.status && prev?.driverId === trip.driverId) {
+          return prev;
+        }
+        return {
+          ...prev,
+          ...trip,
+          distanceKm: trip.distanceKm || prev?.distanceKm,
+        };
+      });
     }
   }, []);
 
@@ -826,9 +874,9 @@ export default function BookTripScreen() {
     const dLat = activeTrip.destinationLatitude || 21.00705;
     const dLon = activeTrip.destinationLongitude || 105.84318;
 
-    // Ước lượng vị trí tài xế: cách điểm đón ~0.005 độ nếu đang di chuyển tới đón
-    const drvLat = pLat + 0.0042;
-    const drvLon = pLon - 0.0035;
+    // Vị trí tài xế: ưu tiên tọa độ realtime nhận từ Redis qua API, nếu chưa có thì ước tính
+    const drvLat = driverLocation?.latitude || (pLat + 0.0042);
+    const drvLon = driverLocation?.longitude || (pLon - 0.0035);
 
     const coordsJson = JSON.stringify(
       trackingRouteCoords.length > 0
@@ -878,6 +926,7 @@ export default function BookTripScreen() {
         <div id="map"></div>
         <script>
           var map = L.map('map', { zoomControl: false }).setView([${pLat}, ${pLon}], 14);
+          window.map = map;
           L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
             maxZoom: 19,
             subdomains: ['0', '1', '2', '3']
@@ -906,8 +955,24 @@ export default function BookTripScreen() {
               iconSize: [32, 32],
               iconAnchor: [16, 16]
             });
-            L.marker([${drvLat}, ${drvLon}], { icon: driverIcon, zIndexOffset: 1000 }).addTo(map);
-          ` : ''}
+            window.driverMarker = L.marker([${drvLat}, ${drvLon}], { icon: driverIcon, zIndexOffset: 1000 }).addTo(map);
+          ` : 'window.driverMarker = null;'}
+
+          window.updateDriverPosition = function(lat, lng) {
+            try {
+              if (window.driverMarker) {
+                window.driverMarker.setLatLng([lat, lng]);
+              } else if (window.map) {
+                var dIcon = L.divIcon({
+                  className: 'driver-pin',
+                  html: '<div style="width:32px; height:32px; border-radius:16px; display:flex; align-items:center; justify-content:center;">${vehicleSvg}</div>',
+                  iconSize: [32, 32],
+                  iconAnchor: [16, 16]
+                });
+                window.driverMarker = L.marker([lat, lng], { icon: dIcon, zIndexOffset: 1000 }).addTo(window.map);
+              }
+            } catch(e) {}
+          };
 
           var routeCoords = ${coordsJson};
           var routeLine = L.polyline(routeCoords, {
@@ -933,6 +998,19 @@ export default function BookTripScreen() {
     trackingRouteCoords,
   ]);
 
+  // Cập nhật vị trí marker tài xế mượt mà trên bản đồ không reload WebView
+  useEffect(() => {
+    if (driverLocation?.latitude && driverLocation?.longitude && trackingWebViewRef.current) {
+      const js = `
+        if (typeof window.updateDriverPosition === 'function') {
+          window.updateDriverPosition(${driverLocation.latitude}, ${driverLocation.longitude});
+        }
+        true;
+      `;
+      trackingWebViewRef.current.injectJavaScript(js);
+    }
+  }, [driverLocation?.latitude, driverLocation?.longitude]);
+
   // Polling trạng thái chuyến đi nếu đang trong tiến trình tìm/nhận tài xế hoặc đang theo dõi thanh toán
   useEffect(() => {
     if (!activeTrip?.id) return;
@@ -955,6 +1033,33 @@ export default function BookTripScreen() {
             }
             return updated;
           });
+        }
+
+        // Cập nhật vị trí GPS realtime của tài xế từ Redis
+        const currentDriverId = updated?.driverId || activeTrip.driverId;
+        const currentStatus = updated?.status || activeTrip.status;
+        if (
+          currentDriverId &&
+          [TRIP_STATUS.DRIVER_ASSIGNED, TRIP_STATUS.DRIVER_ARRIVING, TRIP_STATUS.IN_PROGRESS].includes(currentStatus)
+        ) {
+          try {
+            const loc = await tripService.getDriverLocation(currentDriverId);
+            if (loc?.latitude && loc?.longitude) {
+              setDriverLocation((prev) => {
+                const newLat = Number(loc.latitude);
+                const newLng = Number(loc.longitude);
+                if (prev?.latitude === newLat && prev?.longitude === newLng) {
+                  return prev;
+                }
+                return {
+                  latitude: newLat,
+                  longitude: newLng,
+                  heading: Number(loc.heading) || 0,
+                  speed: Number(loc.speed) || 0,
+                };
+              });
+            }
+          } catch {}
         }
 
         // Cập nhật trạng thái payment từ PaymentService để đồng bộ giữa khách và tài xế
@@ -1037,32 +1142,89 @@ export default function BookTripScreen() {
     }
   };
 
-  // Hành động hủy chuyến
+  // Hành động hủy chuyến / hủy tìm tài xế
   const handleCancelTrip = () => {
     if (!activeTrip?.id) return;
 
-    Alert.alert('Hủy chuyến', 'Bạn có chắc chắn muốn hủy chuyến đi này?', [
+    const isFindingDriver =
+      activeTrip.status === TRIP_STATUS.REQUESTED ||
+      activeTrip.status === TRIP_STATUS.SEARCHING_DRIVER;
+
+    const title = isFindingDriver ? 'Hủy tìm tài xế' : 'Hủy chuyến xe';
+    const message = isFindingDriver
+      ? 'Bạn có chắc chắn muốn dừng tìm kiếm tài xế cho chuyến đi này không?'
+      : 'Bạn có chắc chắn muốn hủy chuyến đi này?';
+
+    Alert.alert(title, message, [
       { text: 'Không', style: 'cancel' },
       {
         text: 'Đồng ý hủy',
         style: 'destructive',
         onPress: async () => {
           setIsCancelling(true);
+          const canceledTripId = String(activeTrip.id);
           try {
-            await tripService.cancelTrip(activeTrip.id, 'Khách hàng thay đổi kế hoạch');
-            Alert.alert('Thông báo', 'Đã hủy chuyến đi thành công.');
+            await tripService.cancelTrip(
+              canceledTripId,
+              isFindingDriver ? 'Khách hàng hủy khi tìm kiếm tài xế' : 'Khách hàng thay đổi kế hoạch'
+            );
+
+            // Đánh dấu id chuyến đã hủy để ngăn useEffect/polling tự nạp lại
+            dismissedTripIdRef.current = canceledTripId;
+
+            // Xóa sạch trạng thái chuyến đi
             setActiveTrip(null);
+            setTripPayment(null);
+            setDriverProfile(null);
+            setTrackingRouteCoords([]);
+            setSearchSeconds(0);
+            setIsSubmitting(false);
+            setIsCancelling(false);
+            setBookingStep(1);
+            setSelectedVehicle(null);
+            hasUserEditedPickupRef.current = false;
+
+            // Hiển thị lựa chọn chuyển tiếp giao diện sau khi hủy
+            Alert.alert(
+              isFindingDriver ? 'Đã hủy tìm tài xế' : 'Đã hủy chuyến đi',
+              'Chuyến đi đã được hủy thành công. Bạn muốn tìm chuyến khác hay quay về trang chủ?',
+              [
+                {
+                  text: 'Về trang chủ',
+                  onPress: () => {
+                    handleGoHome();
+                  },
+                },
+                {
+                  text: 'Tìm chuyến khác',
+                  style: 'default',
+                  onPress: () => {
+                    handleBookNewTrip();
+                  },
+                },
+              ]
+            );
           } catch (err) {
-            // Khi gặp lỗi 403 (không cùng quyền sở hữu do test nhiều acc) hoặc chuyến đã kết thúc/hủy trên server
+            // Khi gặp lỗi 403 hoặc chuyến đã hủy/thay đổi trên server
             Alert.alert(
               'Không thể hủy trên máy chủ',
-              `${err.message || 'Lỗi phân quyền hoặc chuyến đã thay đổi.'}\n\nBạn có muốn gỡ chuyến này khỏi màn hình để đặt chuyến mới không?`,
+              `${err.message || 'Lỗi kết nối hoặc trạng thái chuyến đã thay đổi.'}\n\nBạn có muốn gỡ chuyến này khỏi màn hình để tiếp tục không?`,
               [
                 { text: 'Đóng', style: 'cancel' },
                 {
+                  text: 'Về trang chủ',
+                  onPress: () => {
+                    dismissedTripIdRef.current = canceledTripId;
+                    handleGoHome();
+                  },
+                },
+                {
                   text: 'Gỡ & Đặt mới',
                   style: 'destructive',
-                  onPress: () => setActiveTrip(null),
+                  onPress: () => {
+                    dismissedTripIdRef.current = canceledTripId;
+                    handleBookNewTrip();
+                  },
                 },
               ]
             );
@@ -1114,26 +1276,41 @@ export default function BookTripScreen() {
   const currentRound = activeTrip?.searchRound || (searchSeconds <= 10 ? 1 : searchSeconds <= 25 ? 2 : 3);
   const currentRadius = activeTrip?.searchRadiusKm || (currentRound === 1 ? 3 : currentRound === 2 ? 5 : 8);
 
+  // Kiểm tra loại chuyến: Đặt món (FOOD_DELIVERY) hay Chở khách (PASSENGER)
+  const isFoodTrip = useMemo(() => {
+    return (
+      activeTrip?.shippingType === SHIPPING_TYPE.FOOD_DELIVERY ||
+      params.shippingType === 'FOOD_DELIVERY' ||
+      Boolean(activeTrip?.foodSelectedsList?.length) ||
+      Boolean(activeTrip?.totalFoodPrice)
+    );
+  }, [activeTrip?.shippingType, activeTrip?.foodSelectedsList, activeTrip?.totalFoodPrice, params.shippingType]);
+
   // Tiêu đề trạng thái
   const getStatusLabel = () => {
     switch (activeTrip?.status) {
       case TRIP_STATUS.REQUESTED:
       case TRIP_STATUS.SEARCHING_DRIVER:
+        if (isFoodTrip) {
+          if (currentRound === 1) return 'Vòng 1: Tìm tài xế giao món gần quán (< 3km)';
+          if (currentRound === 2) return 'Vòng 2: Mở rộng bán kính tìm tài xế giao món (5km)';
+          return 'Vòng 3: Mở rộng tìm kiếm & cuốc gối đầu (8km)';
+        }
         if (currentRound === 1) return 'Vòng 1: Tìm tài xế gần bạn nhất (< 3km)';
         if (currentRound === 2) return 'Vòng 2: Mở rộng bán kính tìm kiếm (5km)';
         return 'Vòng 3: Mở rộng & Tìm cuốc gối đầu (8km)';
       case TRIP_STATUS.DRIVER_ASSIGNED:
-        return 'Tài xế đã nhận chuyến!';
+        return isFoodTrip ? 'Tài xế đã nhận đơn giao món!' : 'Tài xế đã nhận chuyến!';
       case TRIP_STATUS.DRIVER_ARRIVING:
-        return 'Tài xế đang đến điểm đón';
+        return isFoodTrip ? 'Tài xế đang đến quán lấy món' : 'Tài xế đang đến điểm đón';
       case TRIP_STATUS.IN_PROGRESS:
-        return 'Chuyến đi đang diễn ra';
+        return isFoodTrip ? 'Tài xế đang giao món đến bạn' : 'Chuyến đi đang diễn ra';
       case TRIP_STATUS.COMPLETED:
-        return 'Chuyến đi đã hoàn thành!';
+        return isFoodTrip ? 'Giao món hoàn tất!' : 'Chuyến đi đã hoàn thành!';
       case TRIP_STATUS.CANCELLED:
-        return 'Chuyến đi đã bị hủy';
+        return isFoodTrip ? 'Đơn món ăn đã bị hủy' : 'Chuyến đi đã bị hủy';
       case TRIP_STATUS.NO_DRIVER_FOUND:
-        return 'Chưa tìm thấy tài xế sau 3 vòng quét';
+        return isFoodTrip ? 'Chưa tìm thấy tài xế giao món phù hợp' : 'Chưa tìm thấy tài xế sau 3 vòng quét';
       default:
         return 'Đang xử lý...';
     }
@@ -1142,6 +1319,9 @@ export default function BookTripScreen() {
   // Mô tả trạng thái
   const getStatusDescription = () => {
     if (activeTrip?.status === TRIP_STATUS.SEARCHING_DRIVER || activeTrip?.status === TRIP_STATUS.REQUESTED) {
+      if (isFoodTrip) {
+        return 'Quán đang chuẩn bị món. Hệ thống đang điều phối tài xế gần quán nhất để nhận đơn.';
+      }
       if (currentRound === 1) {
         return 'Hệ thống AI Matching đang quét các tài xế có thời gian tiếp cận nhanh nhất quanh bạn.';
       }
@@ -1151,15 +1331,27 @@ export default function BookTripScreen() {
       return 'Đang quét toàn diện khu vực 8km và các tài xế sắp hoàn thành chuyến đi gần bạn (Cuốc gối đầu).';
     }
     if (activeTrip?.status === TRIP_STATUS.DRIVER_ASSIGNED || activeTrip?.status === TRIP_STATUS.DRIVER_ARRIVING) {
+      if (isFoodTrip) {
+        return 'Tài xế đang di chuyển tới nhà hàng để nhận món. Vui lòng để ý điện thoại.';
+      }
       return 'Tài xế đang di chuyển tới điểm đón của bạn. Vui lòng giữ liên lạc điện thoại.';
     }
     if (activeTrip?.status === TRIP_STATUS.IN_PROGRESS) {
+      if (isFoodTrip) {
+        return 'Tài xế đã lấy món và đang trên đường giao tới bạn. Chúc bạn ngon miệng!';
+      }
       return 'Chúc bạn có một chuyến đi an toàn và thoải mái cùng T&M!';
     }
     if (activeTrip?.status === TRIP_STATUS.COMPLETED) {
+      if (isFoodTrip) {
+        return 'Cảm ơn bạn đã đặt món cùng T&M Meal. Chúc bạn có bữa ăn thật ngon miệng!';
+      }
       return 'Cảm ơn bạn đã sử dụng dịch vụ gọi xe của T&M Transit.';
     }
     if (activeTrip?.status === TRIP_STATUS.NO_DRIVER_FOUND) {
+      if (isFoodTrip) {
+        return 'Các tài xế giao đồ ăn quanh quán hiện đang bận. Bạn có thể nhấn tìm lại ngay.';
+      }
       return 'Các tài xế trong bán kính 8km hiện đang bận hoặc chưa kịp phản hồi. Bạn có thể nhấn thử lại ngay.';
     }
     return 'Cuốc xe này đã kết thúc.';
@@ -1169,22 +1361,60 @@ export default function BookTripScreen() {
     activeTrip?.status === TRIP_STATUS.REQUESTED ||
     activeTrip?.status === TRIP_STATUS.SEARCHING_DRIVER;
 
+  // Xử lý nút Back (trên thanh Header và phím cứng Android)
+  const handleBackAction = useCallback(() => {
+    if (isSearching) {
+      Alert.alert(
+        'Dừng tìm tài xế?',
+        'Bạn đang trong quá trình tìm tài xế. Bạn có muốn hủy tìm kiếm để quay lại không?',
+        [
+          { text: 'Tiếp tục tìm', style: 'cancel' },
+          {
+            text: 'Hủy & Quay lại',
+            style: 'destructive',
+            onPress: async () => {
+              if (activeTrip?.id) {
+                try {
+                  await tripService.cancelTrip(activeTrip.id, 'Khách hàng hủy khi tìm kiếm');
+                } catch {}
+              }
+              handleGoHome();
+            },
+          },
+        ]
+      );
+      return;
+    }
+    if (
+      activeTrip?.status === TRIP_STATUS.COMPLETED ||
+      activeTrip?.status === TRIP_STATUS.CANCELLED ||
+      activeTrip?.status === TRIP_STATUS.NO_DRIVER_FOUND
+    ) {
+      handleGoHome();
+    } else if (bookingStep > 1) {
+      setBookingStep((prev) => prev - 1);
+    } else {
+      // Khi ở màn hình chọn vị trí ban đầu (không có activeTrip hoặc step 1),
+      // luôn quay về Trang chủ để tránh quay lại màn hình giá/chuyến cũ trong navigation stack
+      handleGoHome();
+    }
+  }, [isSearching, activeTrip?.id, activeTrip?.status, bookingStep]);
+
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBackAction();
+      return true;
+    };
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [handleBackAction]);
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={{ flex: 1 }}>
         <SubHeader
           title={activeTrip ? 'Theo dõi chuyến đi' : 'Đặt chuyến xe T&M'}
-          onBack={() => {
-            if (activeTrip?.status === TRIP_STATUS.COMPLETED ||
-                activeTrip?.status === TRIP_STATUS.CANCELLED ||
-                activeTrip?.status === TRIP_STATUS.NO_DRIVER_FOUND) {
-              handleGoHome();
-            } else if (router.canGoBack()) {
-              router.back();
-            } else {
-              router.replace('/(tabs)');
-            }
-          }}
+          onBack={handleBackAction}
         />
 
         {params.tripId && !activeTrip ? (
@@ -1203,6 +1433,7 @@ export default function BookTripScreen() {
             <View style={styles.trackingSplitMapBox}>
               <WebView
                 key="tracking-split-map-webview"
+                ref={trackingWebViewRef}
                 source={{ html: trackingMapHtml }}
                 style={styles.trackingSplitMapWebView}
                 scrollEnabled={false}
@@ -1232,9 +1463,10 @@ export default function BookTripScreen() {
             <View style={styles.trackingSplitSheet}>
               <ScrollView
                 showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
                 contentContainerStyle={[
                   styles.trackingSplitScroll,
-                  { paddingBottom: Math.max(insets.bottom + 16, 28) },
+                  { paddingBottom: Math.max(insets.bottom + 32, 48) },
                 ]}
               >
                 <View style={styles.trackingSplitHandle} />
@@ -1312,26 +1544,61 @@ export default function BookTripScreen() {
                   </View>
                 )}
 
+                {/* Danh sách món ăn đã đặt nếu là đơn Food Delivery */}
+                {isFoodTrip && (activeTrip?.foodSelectedsList?.length > 0 || params.foodsJson) && (
+                  <View style={styles.foodTrackingCard}>
+                    <View style={styles.foodTrackingHeader}>
+                      <Ionicons name="fast-food" size={16} color="#00B5B8" />
+                      <ThemedText style={styles.foodTrackingHeaderText}>
+                        Món đã đặt ({activeTrip?.restaurantName || params.restaurantName || 'Nhà hàng'})
+                      </ThemedText>
+                    </View>
+                    {(activeTrip?.foodSelectedsList || (params.foodsJson ? JSON.parse(params.foodsJson) : [])).map((item, idx) => (
+                      <View key={`${item.foodId || idx}`} style={styles.foodTrackingItem}>
+                        <ThemedText style={styles.foodTrackingItemName} numberOfLines={1}>
+                          • {item.foodName || 'Món ăn'} ({item.size || 'Tiêu chuẩn'})
+                        </ThemedText>
+                        <ThemedText style={styles.foodTrackingItemQty}>x{item.quantity || 1}</ThemedText>
+                        <ThemedText style={styles.foodTrackingItemPrice}>
+                          {Number(item.totalPrice || item.price * (item.quantity || 1)).toLocaleString('vi-VN')} đ
+                        </ThemedText>
+                      </View>
+                    ))}
+                    {activeTrip?.totalFoodPrice ? (
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: '#E2E8F0' }}>
+                        <ThemedText style={{ fontSize: 12, fontWeight: '700', color: '#475569' }}>Tiền món:</ThemedText>
+                        <ThemedText style={{ fontSize: 13, fontWeight: '800', color: '#00B5B8' }}>
+                          {Number(activeTrip.totalFoodPrice).toLocaleString('vi-VN')} đ
+                        </ThemedText>
+                      </View>
+                    ) : null}
+                  </View>
+                )}
+
                 {/* Chi tiết lộ trình & Cước phí */}
                 <View style={styles.tripSummaryBox}>
                   <View style={styles.summaryRow}>
-                    <Ionicons name="location" size={18} color="#10B981" />
+                    <Ionicons name={isFoodTrip ? 'storefront' : 'location'} size={18} color="#10B981" />
                     <ThemedText style={styles.summaryText} numberOfLines={2}>
-                      Đón: {activeTrip.pickUpAddress}
+                      {isFoodTrip ? 'Lấy tại quán: ' : 'Đón: '}{activeTrip.pickUpAddress}
                     </ThemedText>
                   </View>
 
                   <View style={styles.summaryRow}>
-                    <Ionicons name="flag" size={18} color="#EF4444" />
+                    <Ionicons name={isFoodTrip ? 'home' : 'flag'} size={18} color="#EF4444" />
                     <ThemedText style={styles.summaryText} numberOfLines={2}>
-                      Đến: {activeTrip.destinationAddress}
+                      {isFoodTrip ? 'Giao tới bạn: ' : 'Đến: '}{activeTrip.destinationAddress}
                     </ThemedText>
                   </View>
 
                   <View style={[styles.summaryRow, { marginTop: 4, marginBottom: 0 }]}>
                     <Ionicons name="wallet-outline" size={18} color="#00B5B8" />
                     <ThemedText style={[styles.summaryText, { fontWeight: '700', color: '#00B5B8' }]}>
-                      Cước phí: {Number(activeTrip.shippFare || shippFare).toLocaleString('vi-VN')} đ
+                      {isFoodTrip
+                        ? `Tổng cộng: ${Number(
+                            (Number(activeTrip.shippFare) || 0) + (Number(activeTrip.totalFoodPrice) || 0)
+                          ).toLocaleString('vi-VN')} đ (Gồm phí ship ${Number(activeTrip.shippFare || shippFare).toLocaleString('vi-VN')} đ)`
+                        : `Cước phí: ${Number(activeTrip.shippFare || shippFare).toLocaleString('vi-VN')} đ`}
                     </ThemedText>
                   </View>
                 </View>
@@ -1443,60 +1710,160 @@ export default function BookTripScreen() {
                             {selectedPayMethod === PAYMENT_METHOD.PAY_BEFORE ? 'Chuyển khoản VietQR 24/7' : 'Thanh toán tiền mặt'}
                           </ThemedText>
                           <ThemedText style={[styles.paymentSubtitle, { color: '#00B5B8', fontWeight: '800', fontSize: 16 }]}>
-                            {Number(activeTrip.shippFare || shippFare).toLocaleString('vi-VN')} đ
+                            {Number(
+                              isFoodTrip
+                                ? (Number(activeTrip.shippFare || 0) + Number(activeTrip.totalFoodPrice || 0))
+                                : (activeTrip.shippFare || shippFare)
+                            ).toLocaleString('vi-VN')} đ
                           </ThemedText>
                         </View>
                       </View>
 
-                      {/* Thông báo thanh toán hoàn tất gọn gàng (Đã bỏ khối Phóng to / QR rườm rà) */}
+                      {/* Thông báo thanh toán hoàn tất gọn gàng */}
                       <View style={styles.paymentStatusNotice}>
                         <Ionicons name="checkmark-circle" size={20} color="#059669" />
                         <ThemedText style={styles.paymentStatusNoticeText}>
                           {selectedPayMethod === PAYMENT_METHOD.PAY_BEFORE
-                            ? `Đã hoàn tất thanh toán ${Number(activeTrip.shippFare || shippFare).toLocaleString('vi-VN')} đ qua Chuyển khoản VietQR.`
-                            : `Đã hoàn tất thanh toán ${Number(activeTrip.shippFare || shippFare).toLocaleString('vi-VN')} đ tiền mặt cho tài xế.`}
+                            ? `Đã hoàn tất thanh toán ${Number(
+                                isFoodTrip
+                                  ? (Number(activeTrip.shippFare || 0) + Number(activeTrip.totalFoodPrice || 0))
+                                  : (activeTrip.shippFare || shippFare)
+                              ).toLocaleString('vi-VN')} đ qua Chuyển khoản VietQR.`
+                            : `Đã hoàn tất thanh toán ${Number(
+                                isFoodTrip
+                                  ? (Number(activeTrip.shippFare || 0) + Number(activeTrip.totalFoodPrice || 0))
+                                  : (activeTrip.shippFare || shippFare)
+                              ).toLocaleString('vi-VN')} đ tiền mặt cho tài xế.`}
                         </ThemedText>
                       </View>
                     </View>
 
                     {/* 2 LỰA CHỌN SAU KHI HOÀN THÀNH CHUYẾN: 1. ĐẶT TIẾP, 2. VỀ GIAO DIỆN CHÍNH */}
                     <View style={styles.completedActionsContainer}>
-                      <Pressable
+                      {/* NÚT ĐÁNH GIÁ CHUYẾN ĐI (1-5 SAO) CHO TÀI XẾ */}
+                      {!hasRatedTrip ? (
+                        <TouchableOpacity
+                          style={[styles.bookButton, { backgroundColor: '#F59E0B', marginBottom: 6 }]}
+                          onPress={() => {
+                            setRatingTarget('DRIVER');
+                            setShowRatingModal(true);
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <Ionicons name="star" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                          <ThemedText style={styles.bookButtonText}>ĐÁNH GIÁ TÀI XẾ (1-5 SAO)</ThemedText>
+                        </TouchableOpacity>
+                      ) : (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ECFDF5', padding: 10, borderRadius: 12, marginBottom: 6, borderWidth: 1, borderColor: '#A7F3D0' }}>
+                          <Ionicons name="checkmark-circle" size={16} color="#10B981" style={{ marginRight: 6 }} />
+                          <ThemedText style={{ color: '#065F46', fontWeight: '700', fontSize: 13 }}>Bạn đã đánh giá tài xế</ThemedText>
+                        </View>
+                      )}
+
+                      {/* NÚT ĐÁNH GIÁ QUÁN ĂN NẾU LÀ ĐƠN GIAO MÓN */}
+                      {isFoodTrip && (
+                        !hasRatedRestaurant ? (
+                          <TouchableOpacity
+                            style={[styles.bookButton, { backgroundColor: '#EA580C', marginBottom: 10 }]}
+                            onPress={() => {
+                              setRatingTarget('RESTAURANT');
+                              setShowRatingModal(true);
+                            }}
+                            activeOpacity={0.8}
+                          >
+                            <Ionicons name="restaurant" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                            <ThemedText style={styles.bookButtonText}>ĐÁNH GIÁ NHÀ HÀNG & MÓN ĂN</ThemedText>
+                          </TouchableOpacity>
+                        ) : (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFF7ED', padding: 10, borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: '#FED7AA' }}>
+                            <Ionicons name="checkmark-circle" size={16} color="#EA580C" style={{ marginRight: 6 }} />
+                            <ThemedText style={{ color: '#9A3412', fontWeight: '700', fontSize: 13 }}>Bạn đã đánh giá nhà hàng</ThemedText>
+                          </View>
+                        )
+                      )}
+
+                      <TouchableOpacity
                         style={[styles.bookButton, styles.primaryCompletedBtn]}
                         onPress={handleBookNewTrip}
+                        activeOpacity={0.8}
                       >
                         <Ionicons name="refresh-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                        <ThemedText style={styles.bookButtonText}>ĐẶT CHUYẾN MỚI (ĐẶT TIẾP)</ThemedText>
-                      </Pressable>
+                        <ThemedText style={styles.bookButtonText}>
+                          {isFoodTrip ? 'ĐẶT ĐƠN MÓN MỚI' : 'ĐẶT CHUYẾN MỚI (ĐẶT TIẾP)'}
+                        </ThemedText>
+                      </TouchableOpacity>
 
-                      <Pressable
+                      <TouchableOpacity
                         style={styles.secondaryCompletedBtn}
                         onPress={handleGoHome}
+                        activeOpacity={0.8}
                       >
                         <Ionicons name="home-outline" size={18} color="#00B5B8" style={{ marginRight: 6 }} />
                         <ThemedText style={styles.secondaryCompletedBtnText}>VỀ GIAO DIỆN CHÍNH</ThemedText>
-                      </Pressable>
+                      </TouchableOpacity>
                     </View>
                   </>
 
                 ) : activeTrip.status === TRIP_STATUS.CANCELLED || activeTrip.status === TRIP_STATUS.NO_DRIVER_FOUND ? (
-                  <View style={styles.completedActionsContainer}>
-                    <Pressable
-                      style={[styles.bookButton, styles.primaryCompletedBtn]}
-                      onPress={handleBookNewTrip}
-                    >
-                      <Ionicons name="refresh-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                      <ThemedText style={styles.bookButtonText}>ĐẶT LẠI CHUYẾN XE</ThemedText>
-                    </Pressable>
+                  <>
+                    <View style={{
+                      backgroundColor: activeTrip.status === TRIP_STATUS.CANCELLED ? '#FEF2F2' : '#FFFBEB',
+                      borderColor: activeTrip.status === TRIP_STATUS.CANCELLED ? '#FCA5A5' : '#FCD34D',
+                      borderWidth: 1,
+                      borderRadius: 14,
+                      padding: 14,
+                      marginBottom: 14,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                    }}>
+                      <Ionicons
+                        name={activeTrip.status === TRIP_STATUS.CANCELLED ? 'close-circle' : 'alert-circle'}
+                        size={28}
+                        color={activeTrip.status === TRIP_STATUS.CANCELLED ? '#EF4444' : '#D97706'}
+                        style={{ marginRight: 10 }}
+                      />
+                      <View style={{ flex: 1 }}>
+                        <ThemedText style={{
+                          fontSize: 15,
+                          fontWeight: '700',
+                          color: activeTrip.status === TRIP_STATUS.CANCELLED ? '#991B1B' : '#92400E',
+                        }}>
+                          {activeTrip.status === TRIP_STATUS.CANCELLED
+                            ? 'Chuyến đi đã bị hủy'
+                            : 'Chưa tìm thấy tài xế phù hợp'}
+                        </ThemedText>
+                        <ThemedText style={{
+                          fontSize: 13,
+                          color: activeTrip.status === TRIP_STATUS.CANCELLED ? '#B91C1C' : '#B45309',
+                          marginTop: 2,
+                        }}>
+                          {activeTrip.status === TRIP_STATUS.CANCELLED
+                            ? 'Chuyến đi này đã được hủy. Bạn có thể đặt lại chuyến mới hoặc quay về trang chủ.'
+                            : 'Khu vực hiện chưa có tài xế phản hồi sau 3 vòng quét. Bạn có thể thử tìm lại ngay.'}
+                        </ThemedText>
+                      </View>
+                    </View>
 
-                    <Pressable
-                      style={styles.secondaryCompletedBtn}
-                      onPress={handleGoHome}
-                    >
-                      <Ionicons name="home-outline" size={18} color="#00B5B8" style={{ marginRight: 6 }} />
-                      <ThemedText style={styles.secondaryCompletedBtnText}>VỀ GIAO DIỆN CHÍNH</ThemedText>
-                    </Pressable>
-                  </View>
+                    <View style={styles.completedActionsContainer}>
+                      <TouchableOpacity
+                        style={[styles.bookButton, styles.primaryCompletedBtn]}
+                        onPress={handleBookNewTrip}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="refresh-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                        <ThemedText style={styles.bookButtonText}>TÌM CHUYẾN KHÁC</ThemedText>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.secondaryCompletedBtn}
+                        onPress={handleGoHome}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="home-outline" size={18} color="#00B5B8" style={{ marginRight: 6 }} />
+                        <ThemedText style={styles.secondaryCompletedBtnText}>VỀ GIAO DIỆN CHÍNH</ThemedText>
+                      </TouchableOpacity>
+                    </View>
+                  </>
                 ) : null}
               </ScrollView>
             </View>
@@ -1792,9 +2159,9 @@ export default function BookTripScreen() {
                     </View>
 
                     <View style={[styles.fareBreakdownRow, { marginBottom: 0 }]}>
-                      <ThemedText style={styles.fareBreakdownLabel}>Đơn giá cước:</ThemedText>
+                      <ThemedText style={styles.fareBreakdownLabel}>Đơn giá cước tiếp theo:</ThemedText>
                       <ThemedText style={styles.fareBreakdownValue}>
-                        {Number(ratePerKm).toLocaleString('vi-VN')} đ/km
+                        {Number(selectedVehicle === VEHICLE_TYPE.CAR ? CAR_PER_KM : BIKE_PER_KM).toLocaleString('vi-VN')} đ/km
                       </ThemedText>
                     </View>
                   </View>
@@ -1961,7 +2328,25 @@ export default function BookTripScreen() {
         </View>
       </Modal>
 
-      
+      {/* Modal đánh giá tài xế hoặc nhà hàng */}
+      <RatingModal
+        visible={showRatingModal}
+        onClose={() => setShowRatingModal(false)}
+        onSuccess={() => {
+          if (ratingTarget === 'DRIVER') {
+            setHasRatedTrip(true);
+          } else {
+            setHasRatedRestaurant(true);
+          }
+          setShowRatingModal(false);
+        }}
+        targetType={ratingTarget}
+        tripId={activeTrip?.id}
+        driverId={activeTrip?.driverId}
+        orderId={activeTrip?.id}
+        restaurantId={activeTrip?.restaurantId || params.restaurantId}
+        title={ratingTarget === 'RESTAURANT' ? 'Đánh giá nhà hàng & món ăn' : 'Đánh giá tài xế giao món'}
+      />
     </ThemedView>
   );
 }
