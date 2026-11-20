@@ -44,11 +44,24 @@ export default function RootLayout() {
                 animation: 'slide_from_right',
               }}
             >
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen
+                name="(tabs)"
+                options={{
+                  headerShown: false,
+                  gestureEnabled: false,
+                }}
+              />
+              <Stack.Screen
+                name="login"
+                options={{
+                  title: 'Đăng nhập',
+                  headerShown: false,
+                  gestureEnabled: false,
+                }}
+              />
               <Stack.Screen name="notifications" options={{ title: 'Thông báo', headerShown: false }} />
               <Stack.Screen name="book-trip" options={{ title: 'Chọn điểm đi', headerShown: false }} />
               <Stack.Screen name="trip-confirm" options={{ title: 'Xác nhận chuyến xe', headerShown: false }} />
-              <Stack.Screen name="login" options={{ title: 'Đăng nhập', headerShown: false }} />
               <Stack.Screen name="register" options={{ title: 'Đăng ký', headerShown: false }} />
               <Stack.Screen name="driver-register" options={{ title: 'Đăng ký Tài xế', headerShown: false }} />
               <Stack.Screen name="driver-profile" options={{ title: 'Hồ sơ Tài xế', headerShown: false }} />

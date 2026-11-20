@@ -11,6 +11,7 @@ import { businessService } from '@/services/business.service';
 import { driverService } from '@/services/driver.service';
 import { paymentService } from '@/services/payment.service';
 import { userStorage } from '@/services/storage/user.storage';
+import { navigationHelper } from '@/utils/navigation';
 import { accountStyles as styles } from '@/styles/screens/account.styles';
 
 export default function AccountScreen() {
@@ -118,7 +119,7 @@ export default function AccountScreen() {
         style: 'destructive',
         onPress: async () => {
           await authService.logout();
-          router.replace('/login');
+          navigationHelper.resetToLogin();
         },
       },
     ]);
