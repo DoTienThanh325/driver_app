@@ -22,6 +22,7 @@ public class DriverOfferResponse {
     private double etaMinutes; // Thời gian tài xế tiếp cận điểm đón
     private double shippFare;  // Cước phí tài xế nhận
     private Double totalFoodPrice;
+    private java.util.List<DriverTripResponse.FoodItemDetail> foods;
     private ShippingType shippingType;
     private VehicleType vehicleType;
     private int aiRank;        // Thứ hạng tiềm năng mà AI đánh giá

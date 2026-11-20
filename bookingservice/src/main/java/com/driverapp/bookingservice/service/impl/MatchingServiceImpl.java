@@ -58,6 +58,7 @@ public class MatchingServiceImpl implements MatchingService {
     private final NotificationClient notificationClient;
     private final MatchingEventPublisher matchingEventPublisher;
     private final MongoTemplate mongoTemplate;
+    private final com.driverapp.bookingservice.repository.FoodRepository foodRepository;
     private final io.micrometer.core.instrument.MeterRegistry meters;
 
     @Value("${matching.shadow-logging:true}")
@@ -551,6 +552,26 @@ public class MatchingServiceImpl implements MatchingService {
                     }
                 }
 
+                List<com.driverapp.bookingservice.dto.response.DriverTripResponse.FoodItemDetail> foodDetails = null;
+                if (trip.getShippingType() == com.driverapp.bookingservice.models.enums.ShippingType.FOOD_DELIVERY
+                        && trip.getFoodSelectedsList() != null
+                        && !trip.getFoodSelectedsList().isEmpty()) {
+                    foodDetails = trip.getFoodSelectedsList().stream().map(item -> {
+                        String foodName = item.getFoodName();
+                        if (foodName == null && item.getFoodId() != null) {
+                            foodName = foodRepository.findById(item.getFoodId())
+                                    .map(com.driverapp.bookingservice.models.Food::getName)
+                                    .orElse("Món ăn");
+                        }
+                        return new com.driverapp.bookingservice.dto.response.DriverTripResponse.FoodItemDetail(
+                                foodName != null ? foodName : "Món ăn",
+                                item.getSize(),
+                                item.getQuantity() != null ? item.getQuantity() : 1,
+                                item.getPrice()
+                        );
+                    }).toList();
+                }
+
                 result.add(com.driverapp.bookingservice.dto.response.DriverOfferResponse.builder()
                         .offerId(offer.getId())
                         .tripId(trip.getId())
@@ -564,6 +585,7 @@ public class MatchingServiceImpl implements MatchingService {
                         .etaMinutes(etaMinutes)
                         .shippFare(trip.getShippFare())
                         .totalFoodPrice(trip.getTotalFoodPrice())
+                        .foods(foodDetails)
                         .shippingType(trip.getShippingType())
                         .vehicleType(trip.getVehicleType())
                         .aiRank(rank)

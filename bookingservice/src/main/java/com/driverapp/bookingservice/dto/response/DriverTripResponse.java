@@ -42,6 +42,11 @@ public record DriverTripResponse(
     public record FoodItemDetail(
             String foodName,
             String size,
+            Integer quantity,
             double price
-    ) {}
+    ) {
+        public FoodItemDetail(String foodName, String size, double price) {
+            this(foodName, size, 1, price);
+        }
+    }
 }

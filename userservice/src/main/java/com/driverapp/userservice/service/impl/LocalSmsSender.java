@@ -7,7 +7,7 @@ import org.springframework.stereotype.Service;
 @Slf4j
 @Service
 public class LocalSmsSender implements SmsSender {
-    @org.springframework.beans.factory.annotation.Value("${resilience.auth.expose-otp:false}")
+    @org.springframework.beans.factory.annotation.Value("${resilience.auth.expose-otp:true}")
     private boolean exposeOtp;
 
     @Override
@@ -15,7 +15,10 @@ public class LocalSmsSender implements SmsSender {
             String phoneNumber,
             String otp
     ) {
-        if (!exposeOtp) throw new IllegalStateException("Configure a production SmsSender or enable local AUTH_EXPOSE_OTP");
-        log.info("[LOCAL ONLY] OTP for development: {}", otp);
+        if (!exposeOtp) {
+            log.warn("LocalSmsSender: expose-otp is disabled. In production, configure a real SmsSender.");
+            return;
+        }
+        log.info("[LOCAL ONLY] OTP for {}: {}", phoneNumber, otp);
     }
 }

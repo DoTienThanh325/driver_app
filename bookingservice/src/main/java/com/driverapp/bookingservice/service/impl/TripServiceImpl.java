@@ -105,10 +105,13 @@ public class TripServiceImpl implements TripService {
                                 double itemTotalPrice = matchedOption.getPrice() * qty;
                                 calculatedTotalPrice += itemTotalPrice;
                                 // 3. Thêm vào danh sách FoodSelected
-                                FoodSelected selected = new FoodSelected();
-                                selected.setFoodId(food.getId().toString());
-                                selected.setSize(matchedOption.getSize());
-                                selected.setPrice(itemTotalPrice);
+                                FoodSelected selected = FoodSelected.builder()
+                                                .foodId(food.getId().toString())
+                                                .foodName(food.getName())
+                                                .size(matchedOption.getSize())
+                                                .quantity(qty)
+                                                .price(itemTotalPrice)
+                                                .build();
                                 foodSelectedList.add(selected);
                         }
                         totalFoodPrice = calculatedTotalPrice;
@@ -554,5 +557,11 @@ public class TripServiceImpl implements TripService {
                 }).toList();
 
                 return new PageImpl<>(responses, pageable, tripPage.getTotalElements());
+        }
+
+        @Override
+        public Page<Trip> getCustomerTripHistory(UUID customerId, int page, int size) {
+                Pageable pageable = PageRequest.of(page, size);
+                return tripRepository.findByCustomerIdOrderByCreatedAtDesc(customerId, pageable);
         }
 }

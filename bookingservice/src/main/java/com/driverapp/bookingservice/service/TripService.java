@@ -22,6 +22,7 @@ public interface TripService {
     com.driverapp.bookingservice.dto.response.TripPriceDto getTripPrice(String tripId);
     Trip getTripById(String tripId);
     Trip getCurrentTrip(UUID customerId);
+    Page<Trip> getCustomerTripHistory(UUID customerId, int page, int size);
     java.util.Map<String, Object> simulateMatchingForDriver(UUID driverUserId, double lat, double lng, com.driverapp.bookingservice.models.enums.VehicleType vehicleType);
     Page<DriverTripResponse> getDriverTripHistory(UUID driverUserId, List<TripStatus> statuses, int page, int size);
 }
