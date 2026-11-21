@@ -45,23 +45,33 @@ public class PaymentServiceClient {
 
     /**
      * Lấy danh sách voucher của nhà hàng từ paymentservice
+     * Bọc try-catch chống sập nếu paymentservice chưa khởi động hoặc không tìm thấy instance
      */
     public List<RestaurantVoucherDto> getRestaurantVouchers(String restaurantId) {
-        List<RestaurantVoucherDto> vouchers = restClient.get()
-                .uri("/api/vouchers/restaurants/{restaurantId}", restaurantId)
-                .retrieve()
-                .body(new ParameterizedTypeReference<List<RestaurantVoucherDto>>() {});
-        return vouchers != null ? vouchers : Collections.emptyList();
+        try {
+            List<RestaurantVoucherDto> vouchers = restClient.get()
+                    .uri("/api/vouchers/restaurants/{restaurantId}", restaurantId)
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<List<RestaurantVoucherDto>>() {});
+            return vouchers != null ? vouchers : Collections.emptyList();
+        } catch (Exception ex) {
+            log.warn("Không thể lấy voucher từ paymentservice cho restaurantId={}: {}", restaurantId, ex.getMessage());
+            return Collections.emptyList();
+        }
     }
 
     /**
      * Gọi sang paymentservice để hoàn tất thanh toán tiền mặt (PAY_AFTER) khi chuyến đi hoàn thành
      */
     public void completeTripPayment(String tripId) {
-        restClient.patch()
-                .uri("/api/payments/trip/internal/{tripId}/complete", tripId)
-                .retrieve()
-                .toBodilessEntity();
-        log.info("Đã thông báo hoàn tất thanh toán tiền mặt cho tripId={}", tripId);
+        try {
+            restClient.patch()
+                    .uri("/api/payments/trip/internal/{tripId}/complete", tripId)
+                    .retrieve()
+                    .toBodilessEntity();
+            log.info("Đã thông báo hoàn tất thanh toán tiền mặt cho tripId={}", tripId);
+        } catch (Exception ex) {
+            log.warn("Không thể thông báo hoàn tất thanh toán sang paymentservice cho tripId={}: {}", tripId, ex.getMessage());
+        }
     }
 }

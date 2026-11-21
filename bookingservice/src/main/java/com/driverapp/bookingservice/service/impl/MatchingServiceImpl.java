@@ -41,7 +41,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class MatchingServiceImpl implements MatchingService {
 
-    private static final int OFFER_TIMEOUT_SECONDS = 12;
+    public static final int OFFER_TIMEOUT_SECONDS = 25; // 25 giây cho tài xế xem và nhận cuốc
     private static final double[] SEARCH_ROUNDS_RADIUS = {3.0, 5.0, 8.0};
     private static final int MAX_SEARCH_ROUNDS = 3;
     private static final int RETRY_DELAY_SECONDS = 5;
@@ -58,6 +58,7 @@ public class MatchingServiceImpl implements MatchingService {
     private final NotificationClient notificationClient;
     private final MatchingEventPublisher matchingEventPublisher;
     private final MongoTemplate mongoTemplate;
+    private final com.driverapp.bookingservice.repository.FoodRepository foodRepository;
     private final io.micrometer.core.instrument.MeterRegistry meters;
 
     @Value("${matching.shadow-logging:true}")
@@ -468,7 +469,7 @@ public class MatchingServiceImpl implements MatchingService {
         Update update = new Update().set("status", MatchingOfferStatus.EXPIRED).set("updatedAt", LocalDateTime.now());
         mongoTemplate.findAndModify(query, update, FindAndModifyOptions.options().returnNew(true), MatchingOffer.class);
 
-        // Cập nhật nhãn isAccepted = 0 cho bản ghi log (Quá hạn 12s)
+        // Cập nhật nhãn isAccepted = 0 cho bản ghi log (Quá hạn 25s)
         if (shadowLogging) {
             try {
                 matchingOfferLogRepository.findByOfferId(offerId).ifPresent(logEntry -> {
@@ -481,7 +482,7 @@ public class MatchingServiceImpl implements MatchingService {
             }
         }
 
-        log.info("[Matching] Offer #{} cho Trip {} đã hết hạn 12s. Chuyển sang tài xế kế tiếp.", rank, tripId);
+        log.info("[Matching] Offer #{} cho Trip {} đã hết hạn 25s. Chuyển sang tài xế kế tiếp.", rank, tripId);
 
         MatchingSession session = matchingSessionRepository.findById(tripId).orElse(null);
         if (session != null && (offer.getSearchRound() == null || offer.getSearchRound() == session.getSearchRound())) {
@@ -551,6 +552,26 @@ public class MatchingServiceImpl implements MatchingService {
                     }
                 }
 
+                List<com.driverapp.bookingservice.dto.response.DriverTripResponse.FoodItemDetail> foodDetails = null;
+                if (trip.getShippingType() == com.driverapp.bookingservice.models.enums.ShippingType.FOOD_DELIVERY
+                        && trip.getFoodSelectedsList() != null
+                        && !trip.getFoodSelectedsList().isEmpty()) {
+                    foodDetails = trip.getFoodSelectedsList().stream().map(item -> {
+                        String foodName = item.getFoodName();
+                        if (foodName == null && item.getFoodId() != null) {
+                            foodName = foodRepository.findById(item.getFoodId())
+                                    .map(com.driverapp.bookingservice.models.Food::getName)
+                                    .orElse("Món ăn");
+                        }
+                        return new com.driverapp.bookingservice.dto.response.DriverTripResponse.FoodItemDetail(
+                                foodName != null ? foodName : "Món ăn",
+                                item.getSize(),
+                                item.getQuantity() != null ? item.getQuantity() : 1,
+                                item.getPrice()
+                        );
+                    }).toList();
+                }
+
                 result.add(com.driverapp.bookingservice.dto.response.DriverOfferResponse.builder()
                         .offerId(offer.getId())
                         .tripId(trip.getId())
@@ -564,6 +585,7 @@ public class MatchingServiceImpl implements MatchingService {
                         .etaMinutes(etaMinutes)
                         .shippFare(trip.getShippFare())
                         .totalFoodPrice(trip.getTotalFoodPrice())
+                        .foods(foodDetails)
                         .shippingType(trip.getShippingType())
                         .vehicleType(trip.getVehicleType())
                         .aiRank(rank)

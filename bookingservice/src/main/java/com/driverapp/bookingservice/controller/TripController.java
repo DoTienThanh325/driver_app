@@ -109,6 +109,20 @@ public class TripController {
     }
 
     /**
+     * GET /api/trips/customer/history
+     * Lấy danh sách lịch sử cuốc xe của khách hàng.
+     */
+    @GetMapping("/customer/history")
+    public Page<Trip> getCustomerTripHistory(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        UUID customerId = UUID.fromString(jwt.getSubject());
+        return tripService.getCustomerTripHistory(customerId, page, size);
+    }
+
+    /**
      * GET /api/trips/driver/history
      * Lấy danh sách các chuyến đi mà tài xế đã hoàn thành, các chuyến đi bị hủy.
      * Tuyệt đối không lấy id.

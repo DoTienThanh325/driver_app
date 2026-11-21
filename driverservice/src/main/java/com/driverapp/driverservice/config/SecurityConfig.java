@@ -22,6 +22,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/drivers/*/verification-status").permitAll()
                         .requestMatchers("/api/drivers/by-user/*").permitAll()
                         .requestMatchers("/api/drivers/nearby").permitAll()
+                        .requestMatchers("/api/drivers/*/location").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
                 .build();

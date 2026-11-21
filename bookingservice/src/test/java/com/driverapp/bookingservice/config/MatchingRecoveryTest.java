@@ -63,6 +63,6 @@ class MatchingRecoveryTest {
             MatchingSessionRepository sessions, MongoTemplate mongo, MatchingOfferRepository offers,
             NotificationClient notifications, MatchingEventPublisher publisher) {
         return new MatchingServiceImpl(drivers, mock(RoutingService.class), mock(AiMatchingClient.class), offers,
-                mock(MatchingOfferLogRepository.class), sessions, trips, notifications, publisher, mongo, new SimpleMeterRegistry());
+                mock(MatchingOfferLogRepository.class), sessions, trips, notifications, publisher, mongo, mock(com.driverapp.bookingservice.repository.FoodRepository.class), new SimpleMeterRegistry());
     }
 }

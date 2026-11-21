@@ -1,12 +1,17 @@
 package com.driverapp.bookingservice.config.rabbitmq;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.*;
+import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.amqp.rabbit.core.RabbitAdmin;
+import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.util.HashMap;
 import java.util.Map;
 
+@Slf4j
 @Configuration
 public class MatchingRabbitMQConfig {
 
@@ -18,6 +23,8 @@ public class MatchingRabbitMQConfig {
 
     public static final String MATCHING_OFFER_TIMEOUT_QUEUE = "matching.offer.timeout.queue";
     public static final String MATCHING_OFFER_TIMEOUT_ROUTING_KEY = "matching.offer.timeout";
+
+    public static final int OFFER_DELAY_TTL_MS = 25000; // 25 giây cho tài xế xem và nhận cuốc
 
     @Bean
     public DirectExchange matchingDirectExchange() {
@@ -37,11 +44,11 @@ public class MatchingRabbitMQConfig {
                 .with("trip.created");
     }
 
-    // 2. Queue Delay 12 giây (TTL = 12000ms + DLX → tự động đẩy sang timeout queue)
+    // 2. Queue Delay 25 giây (TTL = 25000ms + DLX → tự động đẩy sang timeout queue)
     @Bean
     public Queue matchingOfferDelayQueue() {
         Map<String, Object> args = new HashMap<>();
-        args.put("x-message-ttl", 12000);
+        args.put("x-message-ttl", OFFER_DELAY_TTL_MS);
         args.put("x-dead-letter-exchange", MATCHING_DIRECT_EXCHANGE);
         args.put("x-dead-letter-routing-key", MATCHING_OFFER_TIMEOUT_ROUTING_KEY);
         return QueueBuilder.durable(MATCHING_OFFER_DELAY_QUEUE)
@@ -56,7 +63,7 @@ public class MatchingRabbitMQConfig {
                 .with(MATCHING_OFFER_DELAY_ROUTING_KEY);
     }
 
-    // 3. Queue Timeout — nhận message sau khi hết TTL 12 giây (Dead Letter Queue)
+    // 3. Queue Timeout — nhận message sau khi hết TTL 25 giây (Dead Letter Queue)
     @Bean
     public Queue matchingOfferTimeoutQueue() {
         return QueueBuilder.durable(MATCHING_OFFER_TIMEOUT_QUEUE).build();
@@ -68,6 +75,28 @@ public class MatchingRabbitMQConfig {
                 .to(matchingDirectExchange)
                 .with(MATCHING_OFFER_TIMEOUT_ROUTING_KEY);
     }
+    @Bean
+    public RabbitAdmin rabbitAdmin(ConnectionFactory connectionFactory) {
+        RabbitAdmin admin = new RabbitAdmin(connectionFactory);
+        admin.setIgnoreDeclarationExceptions(true);
+        return admin;
+    }
+
+    @Bean
+    public ApplicationRunner recreateDelayQueueIfTtlMismatch(RabbitAdmin rabbitAdmin) {
+        return args -> {
+            try {
+                // Xóa queue delay cũ (nếu có TTL 12s) để RabbitMQ tái khởi tạo sạch sẽ với TTL 25s
+                rabbitAdmin.deleteQueue(MATCHING_OFFER_DELAY_QUEUE);
+                rabbitAdmin.declareQueue(matchingOfferDelayQueue());
+                rabbitAdmin.declareBinding(matchingOfferDelayBinding(matchingOfferDelayQueue(), matchingDirectExchange()));
+                log.info("[RabbitMQ] Đã thiết lập matching.offer.delay.queue với TTL 25s thành công.");
+            } catch (Exception e) {
+                log.warn("[RabbitMQ] Khởi tạo delay queue: {}", e.getMessage());
+            }
+        };
+    }
+
     @Bean
     public Declarables matchingRoundTopology() {
         var exchange = new DirectExchange("matching.round.exchange", true, false);

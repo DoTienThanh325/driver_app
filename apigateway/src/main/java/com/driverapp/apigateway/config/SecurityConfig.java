@@ -76,8 +76,8 @@ public class SecurityConfig {
                                                                 "/api/bookings/restaurants/**")
                                                 .hasRole("BUSINESS")
                                                 .pathMatchers(HttpMethod.PATCH, "/api/trips/status").hasRole("DRIVER")
-                                                .pathMatchers(HttpMethod.PATCH, "/api/trips/*/cancel")
-                                                .hasRole("CUSTOMER")
+                                                .pathMatchers(HttpMethod.PATCH, "/api/trips/{tripId}/cancel")
+                                                .hasAnyRole("CUSTOMER", "DRIVER")
                                                 .pathMatchers("/api/trips").hasAnyRole("CUSTOMER", "DRIVER")
                                                 .pathMatchers(HttpMethod.GET,
                                                                 "/api/businesses/registration/user/*",
@@ -93,6 +93,8 @@ public class SecurityConfig {
                                                 .pathMatchers("/api/drivers/candidates").hasRole("ADMIN")
                                                 .pathMatchers(HttpMethod.GET, "/api/drivers/{driverId}")
                                                 .hasAnyRole("ADMIN", "DRIVER", "CUSTOMER")
+                                                .pathMatchers(HttpMethod.GET, "/api/drivers/*/location")
+                                                .hasAnyRole("ADMIN", "DRIVER", "CUSTOMER")
                                                 .pathMatchers(HttpMethod.POST, "/api/vouchers/claim")
                                                 .hasRole("CUSTOMER")
                                                 .pathMatchers(HttpMethod.POST, "/api/vouchers", "/api/vouchers/**")
@@ -107,6 +109,7 @@ public class SecurityConfig {
                                                 .pathMatchers(HttpMethod.GET, "/api/payments/driver-payment-info").hasRole("DRIVER")
                                                 .pathMatchers(HttpMethod.PUT, "/api/payments/driver-payment-info").hasRole("DRIVER")
                                                 .pathMatchers(HttpMethod.POST, "/api/feedbacks", "/api/feedbacks/**").hasRole("CUSTOMER")
+                                                .pathMatchers(HttpMethod.GET, "/api/feedbacks/**").hasAnyRole("CUSTOMER", "DRIVER")
                                                 .pathMatchers(HttpMethod.GET, "/api/complaints", "/api/complaints/*").hasRole("ADMIN")
                                                 .pathMatchers(HttpMethod.PATCH, "/api/complaints/*/status").hasRole("ADMIN")
                                                 .pathMatchers(HttpMethod.POST, "/api/complaints", "/api/complaints/**").hasAnyRole("CUSTOMER", "DRIVER")

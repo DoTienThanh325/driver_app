@@ -105,10 +105,13 @@ public class TripServiceImpl implements TripService {
                                 double itemTotalPrice = matchedOption.getPrice() * qty;
                                 calculatedTotalPrice += itemTotalPrice;
                                 // 3. Thêm vào danh sách FoodSelected
-                                FoodSelected selected = new FoodSelected();
-                                selected.setFoodId(food.getId().toString());
-                                selected.setSize(matchedOption.getSize());
-                                selected.setPrice(itemTotalPrice);
+                                FoodSelected selected = FoodSelected.builder()
+                                                .foodId(food.getId().toString())
+                                                .foodName(food.getName())
+                                                .size(matchedOption.getSize())
+                                                .quantity(qty)
+                                                .price(itemTotalPrice)
+                                                .build();
                                 foodSelectedList.add(selected);
                         }
                         totalFoodPrice = calculatedTotalPrice;
@@ -168,14 +171,17 @@ public class TripServiceImpl implements TripService {
         @Override
         public AcceptTripResponse acceptTrip(String tripId, UUID driverUserId) {
 
-                // ── BƯỚC 1: Dùng trực tiếp driverUserId làm driverId ──
-                // Kiểm tra driver có tồn tại, APPROVED và đang AVAILABLE
-                driverServiceClient.checkDriverAvailable(driverUserId);
-
+                // ── BƯỚC 1: Kiểm tra cuốc gối đầu (Back-to-Back) & tính khả dụng của tài xế ──
                 // Kiểm tra xem lượt nhận này có phải là cuốc gối đầu (Back-to-Back) không
                 boolean isB2B = matchingOfferRepository.findByTripIdAndStatus(tripId, MatchingOfferStatus.PENDING)
                                 .map(o -> Boolean.TRUE.equals(o.getBackToBack()))
                                 .orElse(false);
+
+                // Nếu KHÔNG phải cuốc gối đầu (tài xế thông thường) thì bắt buộc tài xế phải đang AVAILABLE
+                // Nếu LÀ cuốc gối đầu, tài xế đang ở trạng thái ON_TRIP hoàn thành cuốc trước là hợp lệ
+                if (!isB2B) {
+                        driverServiceClient.checkDriverAvailable(driverUserId);
+                }
 
                 // ── BƯỚC 2: Cập nhật có điều kiện (Atomic update bằng Mongo findAndModify) ──
                 Query query = new Query(Criteria.where("id").is(tripId)
@@ -551,5 +557,11 @@ public class TripServiceImpl implements TripService {
                 }).toList();
 
                 return new PageImpl<>(responses, pageable, tripPage.getTotalElements());
+        }
+
+        @Override
+        public Page<Trip> getCustomerTripHistory(UUID customerId, int page, int size) {
+                Pageable pageable = PageRequest.of(page, size);
+                return tripRepository.findByCustomerIdOrderByCreatedAtDesc(customerId, pageable);
         }
 }

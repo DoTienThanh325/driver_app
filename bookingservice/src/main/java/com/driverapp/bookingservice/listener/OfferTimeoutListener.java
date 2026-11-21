@@ -17,7 +17,7 @@ public class OfferTimeoutListener {
 
     @RabbitListener(containerFactory = "resilienceRabbitListenerContainerFactory", queues = MatchingRabbitMQConfig.MATCHING_OFFER_TIMEOUT_QUEUE)
     public void onOfferTimeout(OfferTimeoutPayload payload) {
-        log.info("[RabbitMQ DLX] Timeout 12s kích hoạt cho OfferId={}, TripId={}",
+        log.info("[RabbitMQ DLX] Timeout 25s kích hoạt cho OfferId={}, TripId={}",
                 payload.getOfferId(), payload.getTripId());
         try {
             matchingService.handleOfferTimeout(payload);

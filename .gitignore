@@ -4,6 +4,7 @@
 docs/
 *.log
 document/
+.env
 
 # Scripts & Automation
 scripts/

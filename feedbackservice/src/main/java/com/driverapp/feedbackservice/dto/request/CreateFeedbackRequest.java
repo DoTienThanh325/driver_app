@@ -30,4 +30,6 @@ public class CreateFeedbackRequest {
 
     @Size(max = 500, message = "Nội dung nhận xét tối đa 500 ký tự")
     private String comment;
+
+    private String tags;
 }

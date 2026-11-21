@@ -1,7 +1,7 @@
 package com.driverapp.driverservice.listener;
 
 import com.driverapp.driverservice.event.DomainEvent;
-import com.driverapp.driverservice.event.FeedbackSubmittedPayload;
+import com.driverapp.driverservice.event.RatingUpdatedPayload;
 import com.driverapp.driverservice.models.ProcessedEvent;
 import com.driverapp.driverservice.repository.DriverRepository;
 import com.driverapp.driverservice.repository.ProcessedEventRepository;
@@ -23,23 +23,24 @@ public class FeedbackRatingUpdateListener {
 
     @RabbitListener(queues = "feedback.rating-update.queue")
     @Transactional
-    public void handleFeedbackSubmitted(DomainEvent<FeedbackSubmittedPayload> event) {
+    public void handleDriverRatingUpdated(DomainEvent<RatingUpdatedPayload> event) {
         if (processedEventRepository.existsById(event.getEventId())) {
             log.info("[Feedback] Bỏ qua event đã xử lý: {}", event.getEventId());
             return;
         }
 
-        FeedbackSubmittedPayload payload = event.getPayload();
-        if (payload.getDriverId() == null || payload.getRating() == null) {
+        RatingUpdatedPayload payload = event.getPayload();
+        if (payload == null || payload.getTargetId() == null || payload.getAverageRating() == null) {
             return;
         }
 
         try {
-            UUID driverUserId = UUID.fromString(payload.getDriverId());
-            driverRepository.updateAverageRating(driverUserId, payload.getRating().doubleValue());
-            log.info("[Feedback] Cập nhật rating thành công cho driverId={}: rating={}", driverUserId, payload.getRating());
+            UUID driverUserId = UUID.fromString(payload.getTargetId());
+            driverRepository.updateAverageRating(driverUserId, payload.getAverageRating());
+            log.info("[Feedback] Cập nhật average rating thành công cho driverId={}: averageRating={}, totalReviews={}",
+                    driverUserId, payload.getAverageRating(), payload.getTotalReviews());
         } catch (Exception e) {
-            log.error("[Feedback] Lỗi cập nhật rating cho driverId={}: {}", payload.getDriverId(), e.getMessage());
+            log.error("[Feedback] Lỗi cập nhật rating cho driverId={}: {}", payload.getTargetId(), e.getMessage());
         }
 
         processedEventRepository.save(ProcessedEvent.builder()
