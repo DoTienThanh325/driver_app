@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { DarkTheme, DefaultTheme, ThemeProvider, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
@@ -7,7 +8,6 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as SplashScreen from 'expo-splash-screen';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { offlineSyncService } from '@/services/offline-sync.service';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NotificationProvider } from '@/providers/notification-provider';
 
 SplashScreen.preventAutoHideAsync();
@@ -37,19 +37,35 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
           <NotificationProvider>
-            <StatusBar style="auto" />
+            <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
             <Stack
               screenOptions={{
                 headerShown: false,
-                animation: 'none',
+                animation: 'slide_from_right',
               }}
             >
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="notifications" options={{ title: 'Thông báo' }} />
-              <Stack.Screen name="login" options={{ title: 'Đăng nhập', headerShown: false }} />
+              <Stack.Screen
+                name="(tabs)"
+                options={{
+                  headerShown: false,
+                  gestureEnabled: false,
+                }}
+              />
+              <Stack.Screen
+                name="login"
+                options={{
+                  title: 'Đăng nhập',
+                  headerShown: false,
+                  gestureEnabled: false,
+                }}
+              />
+              <Stack.Screen name="notifications" options={{ title: 'Thông báo', headerShown: false }} />
+              <Stack.Screen name="book-trip" options={{ title: 'Chọn điểm đi', headerShown: false }} />
+              <Stack.Screen name="trip-confirm" options={{ title: 'Xác nhận chuyến xe', headerShown: false }} />
               <Stack.Screen name="register" options={{ title: 'Đăng ký', headerShown: false }} />
               <Stack.Screen name="driver-register" options={{ title: 'Đăng ký Tài xế', headerShown: false }} />
               <Stack.Screen name="driver-profile" options={{ title: 'Hồ sơ Tài xế', headerShown: false }} />
+              <Stack.Screen name="driver-active-trip" options={{ title: 'Chuyến xe đang chạy', headerShown: false }} />
               <Stack.Screen name="business-profile" options={{ title: 'Hồ sơ Nhà hàng', headerShown: false }} />
               <Stack.Screen name="edit-restaurant" options={{ title: 'Chỉnh sửa Nhà hàng', headerShown: false }} />
               <Stack.Screen name="bank-link" options={{ title: 'Liên kết ngân hàng', headerShown: false }} />

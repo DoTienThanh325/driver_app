@@ -15,6 +15,45 @@ import { FoodCard } from '@/components/ui/food-card';
 import { foodService } from '@/services/food.service';
 import { foodSearchStyles as styles } from '@/styles/screens/food-search.styles';
 
+const DEFAULT_FOODS = [
+  {
+    id: 'food-demo-1',
+    name: 'Cơm gà xối mỡ giòn rụm',
+    restaurantName: 'Cơm Gà Hải Nam',
+    minPrice: 45000,
+    averageRating: 4.9,
+    thumbnailUrl: 'https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?w=500',
+    options: [{ size: 'Đùi gà', price: 45000 }],
+  },
+  {
+    id: 'food-demo-2',
+    name: 'Cơm tấm sườn bì chả',
+    restaurantName: 'Cơm Tấm Ba Ghiền',
+    minPrice: 40000,
+    averageRating: 5.0,
+    thumbnailUrl: 'https://images.unsplash.com/photo-1594998893017-36147cbcae05?w=500',
+    options: [{ size: 'Dĩa thường', price: 40000 }],
+  },
+  {
+    id: 'food-demo-3',
+    name: 'Phở bò tái nạm Hà Nội',
+    restaurantName: 'Phở Gia Truyền Bát Đàn',
+    minPrice: 50000,
+    averageRating: 4.8,
+    thumbnailUrl: 'https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?w=500',
+    options: [{ size: 'Tô đầy đủ', price: 50000 }],
+  },
+  {
+    id: 'food-demo-4',
+    name: 'Bún chả Hà Nội truyền thống',
+    restaurantName: 'Bún Chả Hương Liên',
+    minPrice: 45000,
+    averageRating: 4.9,
+    thumbnailUrl: 'https://images.unsplash.com/photo-1541544741938-0af808871cc0?w=500',
+    options: [{ size: 'Suất đặc biệt', price: 45000 }],
+  },
+];
+
 export default function FoodSearchScreen() {
   const [keyword, setKeyword] = useState('');
   const [foods, setFoods] = useState([]);
@@ -28,14 +67,16 @@ export default function FoodSearchScreen() {
     try {
       if (query.trim()) {
         const res = await foodService.searchFoods(query.trim());
-        setFoods(res?.content || []);
+        const items = res?.content || (Array.isArray(res) ? res : []);
+        setFoods(items);
       } else {
         const res = await foodService.getAllFoods(0, 20);
-        setFoods(res?.content || []);
+        const items = res?.content || (Array.isArray(res) ? res : []);
+        setFoods(items.length > 0 ? items : DEFAULT_FOODS);
       }
     } catch (err) {
       console.warn('Lỗi tải danh sách món ăn:', err.message);
-      setFoods([]);
+      setFoods(DEFAULT_FOODS);
     } finally {
       setLoading(false);
     }
@@ -208,6 +249,7 @@ export default function FoodSearchScreen() {
           data={foods}
           keyExtractor={(item) => item.id || String(Math.random())}
           numColumns={2}
+          style={{ flex: 1, backgroundColor: '#F8F9FA' }}
           contentContainerStyle={styles.listContent}
           onScrollBeginDrag={() => setShowSuggestions(false)}
           renderItem={({ item }) => (

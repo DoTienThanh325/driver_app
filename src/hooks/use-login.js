@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import { authService } from '@/services/auth.service';
 import { notificationService } from '@/services/notification.service';
+import { navigationHelper } from '@/utils/navigation';
 
 export function useLogin() {
   // Trạng thái bước: 'CREDENTIALS' (Bước 1) hoặc 'OTP' (Bước 2)
@@ -140,8 +141,8 @@ export function useLogin() {
       // Lấy thông tin tài khoản người dùng và lưu vào userStorage
       await authService.getCurrentUser(tokenData.accessToken);
 
-      // Đăng nhập thành công -> Điều hướng thẳng về Trang chủ
-      router.replace('/');
+      // Đăng nhập thành công -> Reset stack và điều hướng thẳng về Trang chủ
+      navigationHelper.resetToHome();
     } catch (err) {
       setErrorMessage(err.message || 'Mã OTP không đúng hoặc đã hết hạn.');
     } finally {

@@ -334,4 +334,75 @@ export const foodDetailStyles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
+  // Khối chọn số lượng món
+  quantityCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  quantityFoodInfo: {
+    marginBottom: 10,
+  },
+  quantityFoodName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+    lineHeight: 20,
+  },
+  quantityFoodOption: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 4,
+  },
+  quantityDivider: {
+    height: 1,
+    backgroundColor: '#E5E7EB',
+    marginBottom: 12,
+  },
+  quantityActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  quantityActionLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  quantitySubTotal: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  quantityCounterBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    borderWidth: 1.5,
+    borderColor: '#CCFBF1',
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    gap: 10,
+  },
+  counterBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#E6F8F8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  counterBtnDisabled: {
+    backgroundColor: '#F3F4F6',
+  },
+  counterValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#111827',
+    minWidth: 24,
+    textAlign: 'center',
+  },
 });

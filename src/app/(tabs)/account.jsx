@@ -2,6 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useFocusEffect } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -10,6 +11,7 @@ import { businessService } from '@/services/business.service';
 import { driverService } from '@/services/driver.service';
 import { paymentService } from '@/services/payment.service';
 import { userStorage } from '@/services/storage/user.storage';
+import { navigationHelper } from '@/utils/navigation';
 import { accountStyles as styles } from '@/styles/screens/account.styles';
 
 export default function AccountScreen() {
@@ -117,7 +119,7 @@ export default function AccountScreen() {
         style: 'destructive',
         onPress: async () => {
           await authService.logout();
-          router.replace('/login');
+          navigationHelper.resetToLogin();
         },
       },
     ]);
@@ -176,6 +178,7 @@ export default function AccountScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      <StatusBar style="light" />
       {/* 1. Header Banner Teal */}
       <View style={styles.headerBanner}>
         <View style={styles.headerContent}>

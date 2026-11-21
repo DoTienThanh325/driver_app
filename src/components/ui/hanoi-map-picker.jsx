@@ -8,6 +8,7 @@ import {
   SafeAreaView,
   Alert,
   TextInput,
+  Keyboard,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -16,6 +17,27 @@ import * as Location from 'expo-location';
 import { ThemedText } from '@/components/themed-text';
 import { reverseGeocodeCoords, geocodeAddress } from '@/utils/geocoding';
 
+
+// Danh mục tra cứu nhanh địa điểm & tọa độ thực tế tại Hà Nội cho Autocomplete
+const POPULAR_AUTOCOMPLETE_DATABASE = [
+  { title: 'Hồ Hoàn Kiếm (Hồ Gươm)', address: 'Hồ Hoàn Kiếm, Hoàn Kiếm, Hà Nội', lat: 21.028511, lon: 105.854444, keywords: ['ho guom', 'hồ gươm', 'hoan kiem', 'hoàn kiếm', 'tràng tiền', 'đinh tiên hoàng'] },
+  { title: 'Đại học Bách Khoa Hà Nội', address: 'Số 1 Đại Cồ Việt, Hai Bà Trưng, Hà Nội', lat: 21.00705, lon: 105.84318, keywords: ['bach khoa', 'bách khoa', 'hust', 'đại cồ việt', 'tạ quang bửu'] },
+  { title: 'Học viện Công nghệ Bưu chính Viễn thông', address: 'Km10 Đường Nguyễn Trãi, Mộ Lao, Hà Đông', lat: 20.9808, lon: 105.7876, keywords: ['ptit', 'bưu chính', 'buu chinh', 'mộ lao', 'nguyễn trãi'] },
+  { title: 'Keangnam Landmark 72', address: 'Khu E6 Phạm Hùng, Mễ Trì, Nam Từ Liêm', lat: 21.0173, lon: 105.7838, keywords: ['keangnam', 'keang nam', 'landmark', 'phạm hùng', 'mễ trì'] },
+  { title: 'Lotte Center Liễu Giai', address: '54 Liễu Giai, Cống Vị, Ba Đình, Hà Nội', lat: 21.033333, lon: 105.814444, keywords: ['lotte', 'liễu giai', 'đào tấn', 'ba đình'] },
+  { title: 'Ngã tư Sở (Royal City)', address: '72A Nguyễn Trãi, Thượng Đình, Thanh Xuân', lat: 21.0016, lon: 105.8202, keywords: ['ngã tư sở', 'nga tu so', 'royal city', 'thanh xuân', 'nguyễn trãi'] },
+  { title: 'Sân bay Quốc tế Nội Bài', address: 'Xã Phú Minh, Huyện Sóc Sơn, Hà Nội', lat: 21.218715, lon: 105.804176, keywords: ['nội bài', 'noi bai', 'sân bay', 'san bay', 'sóc sơn'] },
+  { title: 'Aeon Mall Hà Đông', address: 'Khu dân cư Hoàng Văn Thụ, Dương Nội, Hà Đông', lat: 20.9786, lon: 105.7483, keywords: ['aeon', 'aeon hà đông', 'dương nội', 'ha dong'] },
+  { title: 'Aeon Mall Long Biên', address: '27 Cổ Linh, Long Biên, Hà Nội', lat: 21.0315, lon: 105.8924, keywords: ['aeon long biên', 'cổ linh', 'long biên'] },
+  { title: 'Hồ Tây (Chùa Trấn Quốc)', address: 'Đường Thanh Niên, Yên Phụ, Tây Hồ, Hà Nội', lat: 21.0558, lon: 105.8239, keywords: ['hồ tây', 'ho tay', 'thanh niên', 'yên phụ', 'trấn quốc'] },
+  { title: 'Văn Miếu - Quốc Tử Giám', address: '58 Quốc Tử Giám, Văn Miếu, Đống Đa', lat: 21.0274, lon: 105.8355, keywords: ['văn miếu', 'van mieu', 'quốc tử giám'] },
+  { title: 'Sân vận động Quốc gia Mỹ Đình', address: '1 Lê Đức Thọ, Mỹ Đình, Nam Từ Liêm', lat: 21.0205, lon: 105.7645, keywords: ['mỹ đình', 'my dinh', 'lê đức thọ', 'sân vận động'] },
+  { title: 'Đại học Kinh tế Quốc dân (NEU)', address: '207 Giải Phóng, Đồng Tâm, Hai Bà Trưng', lat: 21.0006, lon: 105.8427, keywords: ['neu', 'kinh tế quốc dân', 'giải phóng', 'trần đại nghĩa'] },
+  { title: 'Đại học Ngoại Thương (FTU)', address: '91 Chùa Láng, Láng Thượng, Đống Đa', lat: 21.0232, lon: 105.8052, keywords: ['ftu', 'ngoại thương', 'chùa láng'] },
+  { title: 'Bến xe Giáp Bát', address: 'Km6 Đường Giải Phóng, Hoàng Mai, Hà Nội', lat: 20.9818, lon: 105.8415, keywords: ['giáp bát', 'giap bat', 'bến xe'] },
+  { title: 'Bến xe Mỹ Đình', address: '20 Phạm Hùng, Mỹ Đình, Nam Từ Liêm', lat: 21.0282, lon: 105.7782, keywords: ['bến xe mỹ đình', 'ben xe my dinh'] },
+];
+
 // Tọa độ trung tâm Hà Nội (Khu vực Hoàn Kiếm / Phố Cổ)
 const HANOI_CENTER = {
   lat: 21.028511,
@@ -23,7 +45,7 @@ const HANOI_CENTER = {
 };
 
 export const HanoiMapPicker = forwardRef(function HanoiMapPicker(
-  { onLocationChange, onAddressResolved, initialCoords, currentAddress },
+  { onLocationChange, onAddressResolved, initialCoords, currentAddress, modalOnly = false },
   ref
 ) {
   const inlineWebviewRef = useRef(null);
@@ -34,6 +56,105 @@ export const HanoiMapPicker = forwardRef(function HanoiMapPicker(
   const [isLocatingGPS, setIsLocatingGPS] = useState(false);
   const [isSearchingModal, setIsSearchingModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [autocompleteSuggestions, setAutocompleteSuggestions] = useState([]);
+  const [isSearchingSuggestions, setIsSearchingSuggestions] = useState(false);
+  const searchDebounceTimerRef = useRef(null);
+  const isSelectingSuggestionRef = useRef(false);
+
+  // Debounce Autocomplete khi người dùng gõ vào ô tìm kiếm
+  useEffect(() => {
+    // Nếu vừa bấm chọn một gợi ý, không kích hoạt tìm kiếm lại
+    if (isSelectingSuggestionRef.current) {
+      isSelectingSuggestionRef.current = false;
+      return;
+    }
+
+    const text = searchQuery.trim().toLowerCase();
+    if (text.length < 2) {
+      setAutocompleteSuggestions([]);
+      return;
+    }
+
+    if (searchDebounceTimerRef.current) {
+      clearTimeout(searchDebounceTimerRef.current);
+    }
+
+    searchDebounceTimerRef.current = setTimeout(async () => {
+      setIsSearchingSuggestions(true);
+      try {
+        // 1. Tìm trong danh mục offline trước (siêu nhanh)
+        const localMatches = POPULAR_AUTOCOMPLETE_DATABASE.filter(item =>
+          item.keywords.some(k => text.includes(k) || k.includes(text)) ||
+          item.title.toLowerCase().includes(text) ||
+          item.address.toLowerCase().includes(text)
+        ).slice(0, 5);
+
+        // 2. Nếu có ít hơn 3 kết quả, gọi thêm Photon Geocoding API cho khu vực Hà Nội
+        let apiMatches = [];
+        if (localMatches.length < 3) {
+          try {
+            const encoded = encodeURIComponent(text);
+            const res = await fetch(`https://photon.komoot.io/api/?q=${encoded}&lat=21.028511&lon=105.854444&limit=4`);
+            if (res.ok) {
+              const data = await res.json();
+              if (data && data.features) {
+                apiMatches = data.features.map(f => {
+                  const props = f.properties || {};
+                  const coords = f.geometry?.coordinates || [105.854444, 21.028511];
+                  const title = props.name || props.street || text;
+                  const parts = [props.street, props.district || props.suburb, props.city || 'Hà Nội'].filter(Boolean);
+                  return {
+                    title,
+                    address: parts.length > 0 ? parts.join(', ') : 'Hà Nội, Việt Nam',
+                    lat: coords[1],
+                    lon: coords[0],
+                  };
+                });
+              }
+            }
+          } catch {
+            // bỏ qua lỗi API online
+          }
+        }
+
+        const combined = [...localMatches, ...apiMatches].slice(0, 5);
+        setAutocompleteSuggestions(combined);
+      } finally {
+        setIsSearchingSuggestions(false);
+      }
+    }, 320);
+
+    return () => {
+      if (searchDebounceTimerRef.current) {
+        clearTimeout(searchDebounceTimerRef.current);
+      }
+    };
+  }, [searchQuery]);
+
+  // Hành động khi chọn 1 địa điểm từ danh sách gợi ý
+  const handleSelectSuggestion = (item) => {
+    // Đánh dấu để useEffect debounce không kích hoạt lại
+    isSelectingSuggestionRef.current = true;
+
+    // 1. Tắt bàn phím ngay lập tức
+    Keyboard.dismiss();
+
+    // 2. Điền tên địa điểm vào thanh tìm kiếm và xóa danh sách gợi ý
+    setSearchQuery(item.title);
+    setAutocompleteSuggestions([]);
+
+    // 3. Cập nhật tọa độ và di chuyển bản đồ đến vị trí
+    setCurrentCoords({ latitude: item.lat, longitude: item.lon });
+    setLiveAddress(item.address || item.title);
+    flyTo(item.lat, item.lon);
+
+    if (onAddressResolved) {
+      onAddressResolved(item.address || item.title);
+    }
+    if (onLocationChange) {
+      onLocationChange(item.lat, item.lon);
+    }
+  };
   const [liveAddress, setLiveAddress] = useState(currentAddress || '');
   const [currentCoords, setCurrentCoords] = useState({
     latitude: initialCoords?.latitude || HANOI_CENTER.lat,
@@ -46,9 +167,20 @@ export const HanoiMapPicker = forwardRef(function HanoiMapPicker(
     }
   }, [currentAddress]);
 
-  // Đồng bộ khi initialCoords từ bên ngoài thay đổi
+  // Lưu lại tọa độ tương tác gần nhất từ bản đồ
+  const lastInternalCoordsRef = useRef({ lat: 0, lng: 0 });
+
+  // Đồng bộ khi initialCoords từ bên ngoài thay đổi (chỉ bay bản đồ khi đổi mục tiêu, không bay khi đang kéo ghim)
   useEffect(() => {
     if (initialCoords?.latitude && initialCoords?.longitude) {
+      const latDiff = Math.abs(initialCoords.latitude - lastInternalCoordsRef.current.lat);
+      const lngDiff = Math.abs(initialCoords.longitude - lastInternalCoordsRef.current.lng);
+      
+      // Nếu sự thay đổi là do bản đồ vừa gửi lên (< 0.00001), BỎ QUA flyTo để không bị giật hay reset mức zoom!
+      if (latDiff < 0.00001 && lngDiff < 0.00001) {
+        return;
+      }
+
       setCurrentCoords({
         latitude: initialCoords.latitude,
         longitude: initialCoords.longitude,
@@ -124,6 +256,8 @@ export const HanoiMapPicker = forwardRef(function HanoiMapPicker(
 
   // Expose các phương thức ra component cha qua ref
   useImperativeHandle(ref, () => ({
+    openModal: () => setIsFullscreen(true),
+    closeModal: () => setIsFullscreen(false),
     flyTo,
     zoomIn,
     zoomOut,
@@ -225,6 +359,10 @@ export const HanoiMapPicker = forwardRef(function HanoiMapPicker(
           );
 
           var map = L.map('map', {
+            zoomAnimation: true,
+            zoomDelta: 0.8,
+            zoomSnap: 0.2,
+            wheelPxPerZoomLevel: 120,
             zoomControl: false,
             maxBounds: hanoiBounds,
             maxBoundsViscosity: 0.8
@@ -258,7 +396,8 @@ export const HanoiMapPicker = forwardRef(function HanoiMapPicker(
 
           // Hàm bay bản đồ tới tọa độ được truyền từ React Native
           window.flyToCoords = function(lat, lng) {
-            map.flyTo([lat, lng], 17, { animate: true, duration: 1 });
+            var currentZoom = map.getZoom() || 16;
+            map.flyTo([lat, lng], currentZoom, { animate: true, duration: 0.8 });
           };
 
           window.zoomInMap = function() {
@@ -294,6 +433,12 @@ export const HanoiMapPicker = forwardRef(function HanoiMapPicker(
     `;
   };
 
+    // Giữ nguyên HTML bản đồ Modal khi mở ra, tránh bị reload giật/co zoom khi tọa độ cập nhật
+  const modalHtml = useMemo(
+    () => getHtmlContent(currentCoords.latitude, currentCoords.longitude),
+    [isFullscreen]
+  );
+
   const inlineHtml = useMemo(
     () => getHtmlContent(currentCoords.latitude, currentCoords.longitude),
     []
@@ -303,6 +448,7 @@ export const HanoiMapPicker = forwardRef(function HanoiMapPicker(
     try {
       const data = JSON.parse(event.nativeEvent.data);
       if (data.type === 'LOCATION_CHANGED' && data.latitude && data.longitude) {
+        lastInternalCoordsRef.current = { lat: data.latitude, lng: data.longitude };
         setCurrentCoords({ latitude: data.latitude, longitude: data.longitude });
         if (onLocationChange) {
           onLocationChange(data.latitude, data.longitude);
@@ -337,6 +483,150 @@ export const HanoiMapPicker = forwardRef(function HanoiMapPicker(
     }
     setIsFullscreen(false);
   };
+
+  if (modalOnly) {
+    return (
+      <Modal
+        visible={isFullscreen}
+        animationType="slide"
+        onRequestClose={() => setIsFullscreen(false)}
+      >
+        <SafeAreaView style={styles.fullscreenModalContainer}>
+          <View style={styles.fullscreenHeader}>
+            <Pressable
+              style={styles.fullscreenBackButton}
+              onPress={() => setIsFullscreen(false)}
+            >
+              <Ionicons name="close" size={22} color="#111827" />
+            </Pressable>
+
+            <View style={styles.fullscreenSearchWrapper}>
+              <Ionicons name="search" size={17} color="#00B5B8" style={{ marginLeft: 10 }} />
+              <TextInput
+                style={styles.fullscreenSearchInput}
+                placeholder="Tìm địa chỉ (VD: bưu chính viễn thông)..."
+                placeholderTextColor="#9CA3AF"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                onSubmitEditing={() => {
+                  setAutocompleteSuggestions([]);
+                  handleSearchInModal(searchQuery);
+                }}
+                returnKeyType="search"
+              />
+              {(isSearchingModal || isSearchingSuggestions) ? (
+                <ActivityIndicator size="small" color="#00B5B8" style={{ marginRight: 8 }} />
+              ) : searchQuery.length > 0 ? (
+                <Pressable
+                  onPress={() => {
+                    setSearchQuery('');
+                    setAutocompleteSuggestions([]);
+                  }}
+                  hitSlop={8}
+                  style={{ marginRight: 6 }}
+                >
+                  <Ionicons name="close-circle" size={17} color="#9CA3AF" />
+                </Pressable>
+              ) : null}
+              <Pressable
+                style={styles.fullscreenSearchBtn}
+                onPress={() => {
+                  setAutocompleteSuggestions([]);
+                  handleSearchInModal(searchQuery);
+                }}
+                disabled={isSearchingModal}
+              >
+                <ThemedText style={styles.fullscreenSearchBtnText}>Tìm</ThemedText>
+              </Pressable>
+
+              {/* Danh sách gợi ý Autocomplete thả xuống */}
+              {autocompleteSuggestions.length > 0 && (
+                <View style={styles.suggestionsDropdown}>
+                  {autocompleteSuggestions.map((item, idx) => (
+                    <Pressable
+                      key={idx}
+                      style={[
+                        styles.suggestionItem,
+                        idx === autocompleteSuggestions.length - 1 && { borderBottomWidth: 0 }
+                      ]}
+                      onPress={() => handleSelectSuggestion(item)}
+                    >
+                      <View style={styles.suggestionIconBox}>
+                        <Ionicons name="location-outline" size={16} color="#00B5B8" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <ThemedText style={styles.suggestionTitle} numberOfLines={1}>
+                          {item.title}
+                        </ThemedText>
+                        <ThemedText style={styles.suggestionSubtitle} numberOfLines={1}>
+                          {item.address}
+                        </ThemedText>
+                      </View>
+                      <Ionicons name="arrow-forward" size={14} color="#9CA3AF" />
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            <Pressable
+              style={styles.fullscreenGpsButton}
+              onPress={handleGetGPSLocation}
+              disabled={isLocatingGPS}
+            >
+              {isLocatingGPS ? (
+                <ActivityIndicator size="small" color="#00B5B8" />
+              ) : (
+                <Ionicons name="locate-outline" size={20} color="#00B5B8" />
+              )}
+            </Pressable>
+          </View>
+
+          <View style={styles.fullscreenAddressBanner}>
+            <Ionicons name="location" size={16} color="#00B5B8" style={{ marginTop: 2 }} />
+            <ThemedText style={styles.fullscreenAddressText} numberOfLines={2}>
+              {liveAddress || currentAddress || 'Kéo ghim hoặc nhập tìm kiếm để chọn vị trí'}
+            </ThemedText>
+          </View>
+
+          <View style={styles.fullscreenMapWrapper}>
+            <WebView
+              ref={modalWebviewRef}
+              originWhitelist={['*']}
+              source={{
+                html: modalHtml,
+              }}
+              onMessage={handleMessage}
+              scrollEnabled={false}
+              javaScriptEnabled={true}
+              domStorageEnabled={true}
+              mixedContentMode="always"
+              style={styles.webview}
+            />
+
+            <View style={styles.fullscreenZoomControls}>
+              <Pressable style={styles.controlButton} onPress={zoomIn}>
+                <Ionicons name="add-outline" size={22} color="#111827" />
+              </Pressable>
+              <Pressable style={styles.controlButton} onPress={zoomOut}>
+                <Ionicons name="remove-outline" size={22} color="#111827" />
+              </Pressable>
+            </View>
+          </View>
+
+          <View style={styles.fullscreenFooter}>
+            <Pressable
+              style={styles.fullscreenConfirmButton}
+              onPress={handleConfirmFullscreen}
+            >
+              <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+              <ThemedText style={styles.fullscreenConfirmText}>XÁC NHẬN VỊ TRÍ NÀY</ThemedText>
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      </Modal>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -479,7 +769,7 @@ export const HanoiMapPicker = forwardRef(function HanoiMapPicker(
               ref={modalWebviewRef}
               originWhitelist={['*']}
               source={{
-                html: getHtmlContent(currentCoords.latitude, currentCoords.longitude),
+                html: modalHtml,
               }}
               onMessage={handleMessage}
               scrollEnabled={false}
@@ -613,7 +903,54 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  
+  // Dropdown danh sách gợi ý Autocomplete
+  suggestionsDropdown: {
+    position: 'absolute',
+    top: 46,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 8,
+    zIndex: 9999,
+    overflow: 'hidden',
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  suggestionIconBox: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#E6F8F8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  suggestionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  suggestionSubtitle: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 1,
+  },
   fullscreenSearchWrapper: {
+    zIndex: 9999, // Cho phép dropdown hiển thị nổi lên trên bản đồ
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',

@@ -7,6 +7,27 @@ import { createSessionRefresher } from './refresh-session';
  * Tự động nhận diện IP máy chủ chạy Expo Metro qua Constants (để điện thoại thật truy cập được qua Wi-Fi)
  * hoặc qua biến môi trường EXPO_PUBLIC_API_URL nếu được thiết lập.
  */
+const fetchWithTimeout = async (url, options = {}, timeoutMs = 8000) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    return res;
+  } catch (err) {
+    if (
+      err.name === 'AbortError' ||
+      err.message?.toLowerCase().includes('cancel') ||
+      err.message?.toLowerCase().includes('abort')
+    ) {
+      const timeoutErr = new Error('Quá thời gian kết nối (8s). Máy chủ Gateway (Port 8080) chưa phản hồi.');
+      timeoutErr.isNetworkError = true;
+      throw timeoutErr;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
 const getFullUrl = (endpoint) => {
   const baseUrl = getGatewayUrl();
   const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
@@ -81,7 +102,7 @@ export const apiClient = {
     const fullUrl = getFullUrl(endpoint);
 
     try {
-      const response = await fetch(fullUrl, {
+      const response = await fetchWithTimeout(fullUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
@@ -103,9 +124,13 @@ export const apiClient = {
 
       return data;
     } catch (error) {
+      if (error.isNetworkError) {
+        throw error;
+      }
       if (
         error.message?.includes('Network request failed') ||
-        error.message?.includes('Failed to fetch')
+        error.message?.includes('Failed to fetch') ||
+        error.message?.toLowerCase().includes('cancel')
       ) {
         const netErr = new Error('Không thể kết nối tới hệ thống. Vui lòng kiểm tra kết nối mạng và thử lại.');
         netErr.isNetworkError = true;
@@ -132,7 +157,7 @@ export const apiClient = {
     const fullUrl = getFullUrl(endpoint);
 
     try {
-      const response = await fetch(fullUrl, {
+      const response = await fetchWithTimeout(fullUrl, {
         method: 'PATCH',
         headers,
         body: JSON.stringify(body),
@@ -154,9 +179,13 @@ export const apiClient = {
 
       return data;
     } catch (error) {
+      if (error.isNetworkError) {
+        throw error;
+      }
       if (
         error.message?.includes('Network request failed') ||
-        error.message?.includes('Failed to fetch')
+        error.message?.includes('Failed to fetch') ||
+        error.message?.toLowerCase().includes('cancel')
       ) {
         const netErr = new Error('Không thể kết nối tới hệ thống. Vui lòng kiểm tra kết nối mạng và thử lại.');
         netErr.isNetworkError = true;
@@ -183,7 +212,7 @@ export const apiClient = {
     const fullUrl = getFullUrl(endpoint);
 
     try {
-      const response = await fetch(fullUrl, {
+      const response = await fetchWithTimeout(fullUrl, {
         method: 'GET',
         headers,
       });
@@ -202,9 +231,13 @@ export const apiClient = {
       }
       return data;
     } catch (error) {
+      if (error.isNetworkError) {
+        throw error;
+      }
       if (
         error.message?.includes('Network request failed') ||
-        error.message?.includes('Failed to fetch')
+        error.message?.includes('Failed to fetch') ||
+        error.message?.toLowerCase().includes('cancel')
       ) {
         const netErr = new Error('Không thể kết nối tới hệ thống. Vui lòng kiểm tra kết nối mạng và thử lại.');
         netErr.isNetworkError = true;
@@ -230,7 +263,7 @@ export const apiClient = {
     const fullUrl = getFullUrl(endpoint);
 
     try {
-      const response = await fetch(fullUrl, {
+      const response = await fetchWithTimeout(fullUrl, {
         method: 'DELETE',
         headers,
       });
@@ -252,9 +285,13 @@ export const apiClient = {
       }
       return data;
     } catch (error) {
+      if (error.isNetworkError) {
+        throw error;
+      }
       if (
         error.message?.includes('Network request failed') ||
-        error.message?.includes('Failed to fetch')
+        error.message?.includes('Failed to fetch') ||
+        error.message?.toLowerCase().includes('cancel')
       ) {
         const netErr = new Error('Kết nối mạng không ổn định. Vui lòng kiểm tra Wi-Fi hoặc 4G/5G và thử lại.');
         netErr.isNetworkError = true;
