@@ -49,6 +49,8 @@ export default function DriverProfileScreen() {
     handlePullRefresh,
   } = useDriverProfile();
 
+  const [failedImages, setFailedImages] = React.useState({});
+
   // Presigned URLs từ hệ thống hoặc fallback asset
   const idCardFront = driverDetail?.idCard?.front;
   const idCardBack = driverDetail?.idCard?.back;
@@ -79,6 +81,7 @@ export default function DriverProfileScreen() {
       : originalUrl
       ? normalizeImageUrl(originalUrl)
       : null;
+    const isFailed = !isDraft && Boolean(failedImages[fieldKey]);
 
     return (
       <View style={styles.documentItem} key={fieldKey}>
@@ -97,22 +100,43 @@ export default function DriverProfileScreen() {
             styles.documentImageBox,
             isEditMode && styles.documentImageBoxEditable,
           ]}
-          onPress={() => handleImagePress(fieldKey, displayUri, title)}
+          onPress={() => {
+            if (isFailed && !isEditMode) {
+              setFailedImages((prev) => {
+                const next = { ...prev };
+                delete next[fieldKey];
+                return next;
+              });
+            } else {
+              handleImagePress(fieldKey, displayUri, title);
+            }
+          }}
           disabled={isSaving}
         >
-          {displayUri ? (
+          {displayUri && !isFailed ? (
             <Image
               source={{ uri: displayUri }}
               style={styles.documentImage}
               contentFit="cover"
               cachePolicy="memory-disk"
               transition={200}
+              onError={() => {
+                setFailedImages((prev) => ({ ...prev, [fieldKey]: true }));
+              }}
             />
           ) : (
             <View style={styles.documentPlaceholder}>
-              <Ionicons name="image-outline" size={32} color="#9CA3AF" />
-              <ThemedText style={styles.documentPlaceholderText}>
-                {isEditMode ? 'Chạm để tải ảnh lên' : 'Chưa có ảnh'}
+              <Ionicons
+                name={isFailed ? 'alert-circle-outline' : 'image-outline'}
+                size={32}
+                color={isFailed ? '#EF4444' : '#9CA3AF'}
+              />
+              <ThemedText style={[styles.documentPlaceholderText, isFailed && { color: '#EF4444' }]}>
+                {isFailed
+                  ? 'Không thể tải ảnh (chạm để thử lại)'
+                  : isEditMode
+                  ? 'Chạm để tải ảnh lên'
+                  : 'Chưa có ảnh'}
               </ThemedText>
             </View>
           )}
@@ -139,7 +163,7 @@ export default function DriverProfileScreen() {
           )}
 
           {/* Icon gợi ý xem phóng to khi ở chế độ thường */}
-          {!isEditMode && displayUri && (
+          {!isEditMode && displayUri && !isFailed && (
             <View style={styles.zoomIndicatorIcon}>
               <Ionicons name="expand" size={16} color="#FFFFFF" />
             </View>
@@ -209,7 +233,10 @@ export default function DriverProfileScreen() {
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
-            onRefresh={handlePullRefresh}
+            onRefresh={() => {
+              setFailedImages({});
+              handlePullRefresh();
+            }}
             colors={['#00B5B8']}
             tintColor="#00B5B8"
           />

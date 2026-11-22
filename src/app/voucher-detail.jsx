@@ -1,3 +1,4 @@
+import { getUserErrorMessage } from '../utils/error-message';
 import React, { useState } from 'react';
 import { View, Pressable, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -87,7 +88,7 @@ export default function VoucherDetailScreen() {
         ]
       );
     } catch (err) {
-      Alert.alert('Lỗi nhận ưu đãi', err.message || 'Không thể nhận voucher lúc này.');
+      Alert.alert('Lỗi nhận ưu đãi', getUserErrorMessage(err, 'Không thể nhận ưu đãi lúc này. Vui lòng thử lại.'));
     } finally {
       setIsSubmitting(false);
     }

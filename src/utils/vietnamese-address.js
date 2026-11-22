@@ -339,7 +339,6 @@ export const HANOI_STREETS = {
   'vo thi sau': 'Võ Thị Sáu',
   'thanh nhan': 'Thanh Nhàn',
   'dinh cong': 'Định Công',
-  'giai phong': 'Giải Phóng',
 
   // Khu Tây Hồ
   'au co': 'Âu Cơ',
@@ -351,7 +350,6 @@ export const HANOI_STREETS = {
 
   // Khu Hà Đông
   'tran phu': 'Trần Phú',
-  'quang trung': 'Quang Trung',
   'phung hung': 'Phùng Hưng',
   'to hieu': 'Tô Hiệu',
   'le trong tan': 'Lê Trọng Tấn',

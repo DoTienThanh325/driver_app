@@ -81,12 +81,9 @@ export function normalizeImageUrl(url) {
       cleanUrl = cleanUrl.split('?')[0];
     }
 
-    // 5. Thay thế localhost / 127.0.0.1 / minio sang host IP (hỗ trợ mọi cổng)
+    // 5. Thay thế localhost / 127.0.0.1 / minio / mọi IP trỏ cổng 9000 sang host IP của máy chủ Metro
     let normalized = cleanUrl
-      .replace(/https?:\/\/localhost:9000/gi, `http://${hostIp}:9000`)
-      .replace(/https?:\/\/127\.0\.0\.1:9000/gi, `http://${hostIp}:9000`)
-      .replace(/https?:\/\/minio:9000/gi, `http://${hostIp}:9000`)
-      .replace(/https?:\/\/10\.0\.2\.2:9000/gi, `http://${hostIp}:9000`)
+      .replace(/https?:\/\/[^/]+:9000/gi, `http://${hostIp}:9000`)
       .replace(/https?:\/\/localhost(?::(\d+))?/gi, (match, port) => `http://${hostIp}${port ? `:${port}` : ''}`)
       .replace(/https?:\/\/127\.0\.0\.1(?::(\d+))?/gi, (match, port) => `http://${hostIp}${port ? `:${port}` : ''}`)
       .replace(/https?:\/\/minio(?::(\d+))?/gi, (match, port) => `http://${hostIp}${port ? `:${port}` : ''}`);

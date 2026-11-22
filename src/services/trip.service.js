@@ -66,6 +66,14 @@ export const tripService = {
     return await apiClient.get(`/api/trips/${tripId}`);
   },
 
+  getDriverCurrentTrips: async () => {
+    return await apiClient.get('/api/trips/driver/current');
+  },
+
+  getTripCounterparty: async (tripId) => {
+    return await apiClient.get(`/api/trips/${encodeURIComponent(tripId)}/counterparty`);
+  },
+
   /**
    * Khách hàng hủy chuyến
    * PATCH /api/trips/{tripId}/cancel

@@ -1,3 +1,4 @@
+import { getUserErrorMessage } from '../../utils/error-message';
 import { ThemedText } from '@/components/themed-text';
 import { ImageUploadCard } from '@/components/ui/image-upload-card';
 import { driverService } from '@/services/driver.service';
@@ -117,7 +118,7 @@ export function AddVehicleModal({
         ]
       );
     } catch (err) {
-      const msg = err.message || 'Thêm phương tiện mới thất bại. Vui lòng thử lại.';
+      const msg = getUserErrorMessage(err, 'Thêm phương tiện mới thất bại. Vui lòng thử lại.');
       Alert.alert('Lỗi', msg);
     } finally {
       setIsSubmitting(false);

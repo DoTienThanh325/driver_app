@@ -1,11 +1,12 @@
 // @ts-check
-import React, { useState } from 'react';
+import React from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNotifications } from '../providers/notification-provider';
 import { useTheme } from '../hooks/use-theme';
+import { formatNotificationTimestamp } from '../utils/notification-state';
 
 const statusLabels = {
   connecting: 'Đang kết nối thông báo…',
@@ -19,7 +20,6 @@ const statusLabels = {
 
 export default function NotificationsScreen() {
   const { items, userId, loading, status, storageError, unreadCount, markRead } = useNotifications();
-  const [expandedId, setExpandedId] = useState(/** @type {string | null} */ (null));
   const colors = useTheme();
   const text = { color: colors.text };
   const secondary = { color: colors.textSecondary };
@@ -67,7 +67,6 @@ export default function NotificationsScreen() {
             <FlatList
               data={items}
               keyExtractor={(item) => item.id}
-              extraData={`${expandedId}:${userId}`}
               contentContainerStyle={items.length ? styles.list : styles.emptyList}
               ListEmptyComponent={
                 <View style={styles.empty}>
@@ -77,13 +76,12 @@ export default function NotificationsScreen() {
                 </View>
               }
               renderItem={({ item }) => {
-                const expanded = expandedId === `${userId}:${item.id}`;
+                const timestamp = formatNotificationTimestamp(item.timestamp);
                 return (
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityState={{ expanded }}
-                    accessibilityLabel={`${item.readAt ? 'Đã đọc' : 'Chưa đọc'}: ${item.title}`}
-                    onPress={() => { setExpandedId(expanded ? null : `${userId}:${item.id}`); markRead(item.id); }}
+                    accessibilityLabel={`${item.readAt ? 'Đã đọc' : 'Chưa đọc'}. ${item.title}. ${item.content}. ${timestamp}`}
+                    onPress={() => markRead(item.id)}
                     style={[styles.item, {
                       backgroundColor: item.readAt ? colors.background : colors.backgroundElement,
                       borderColor: colors.border,
@@ -92,10 +90,9 @@ export default function NotificationsScreen() {
                     <View style={styles.itemHeader}>
                       {!item.readAt && <View style={styles.dot} />}
                       <Text style={[styles.title, text]}>{item.title}</Text>
-                      <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textSecondary} />
                     </View>
-                    <Text style={[styles.content, secondary]} numberOfLines={expanded ? undefined : 2}>{item.content}</Text>
-                    <Text style={[styles.caption, secondary]}>{new Date(item.timestamp).toLocaleString('vi-VN')}</Text>
+                    <Text style={[styles.content, secondary]}>{item.content}</Text>
+                    <Text style={[styles.caption, secondary]}>{timestamp}</Text>
                   </Pressable>
                 );
               }}

@@ -311,6 +311,9 @@ export async function geocodeAddress(address) {
   return null;
 }
 
+// Bộ nhớ đệm RAM lưu kết quả dịch địa chỉ để phản hồi tức thì trong phiên
+const reverseGeocodeMemoryCache = new Map();
+
 /**
  * Lấy tên địa chỉ đầy đủ (Tên cơ sở, số nhà, đường, phường, quận, Hà Nội) từ tọa độ GPS bằng tiếng Việt chuẩn
  * @param {number} latitude
@@ -319,6 +322,12 @@ export async function geocodeAddress(address) {
  */
 export async function reverseGeocodeCoords(latitude, longitude) {
   if (!latitude || !longitude) return null;
+
+  // Kiểm tra RAM cache theo bán kính gần (~50m-100m)
+  const cacheKey = `${Number(latitude).toFixed(3)}_${Number(longitude).toFixed(3)}`;
+  if (reverseGeocodeMemoryCache.has(cacheKey)) {
+    return reverseGeocodeMemoryCache.get(cacheKey);
+  }
 
   // 1. Ưu tiên số 1: Nominatim Reverse Geocode với accept-language=vi & namedetails=1
   // Tự động phân giải tên tiếng Việt của mọi địa danh/trường học/bệnh viện/tuyến đường trong OpenStreetMap
@@ -331,15 +340,19 @@ export async function reverseGeocodeCoords(latitude, longitude) {
           'Accept-Language': 'vi,en;q=0.8',
         },
       },
-      4000
+      2000
     );
     const data = await res.json();
     if (data && (data.address || data.display_name)) {
       const formatted = formatNominatimAddress(data);
-      if (formatted) return toVietnameseAddress(formatted);
+      if (formatted) {
+        const result = toVietnameseAddress(formatted);
+        reverseGeocodeMemoryCache.set(cacheKey, result);
+        return result;
+      }
     }
   } catch (err) {
-    console.warn('Nominatim reverse geocoding lỗi, chuyển sang fallback Photon:', err);
+    console.warn('Nominatim reverse geocoding lỗi, chuyển sang fallback Photon:', err?.message || err);
   }
 
   // 2. Fallback số 2: Photon Reverse Geocode (Komoot)
@@ -347,15 +360,19 @@ export async function reverseGeocodeCoords(latitude, longitude) {
     const res = await fetchWithTimeout(
       `https://photon.komoot.io/reverse?lat=${latitude}&lon=${longitude}`,
       {},
-      4000
+      2000
     );
     const data = await res.json();
     if (data && data.features && data.features.length > 0) {
       const formatted = formatPhotonAddress(data.features[0].properties);
-      if (formatted) return toVietnameseAddress(formatted);
+      if (formatted) {
+        const result = toVietnameseAddress(formatted);
+        reverseGeocodeMemoryCache.set(cacheKey, result);
+        return result;
+      }
     }
   } catch (err) {
-    console.warn('Photon reverse geocoding lỗi, dùng native fallback:', err);
+    console.warn('Photon reverse geocoding lỗi, dùng native fallback:', err?.message || err);
   }
 
   // 3. Fallback số 3: Native Reverse Geocoder của expo-location
@@ -363,10 +380,14 @@ export async function reverseGeocodeCoords(latitude, longitude) {
     const results = await Location.reverseGeocodeAsync({ latitude, longitude });
     if (results && results.length > 0) {
       const formatted = formatNativeAddress(results[0]);
-      if (formatted) return toVietnameseAddress(formatted);
+      if (formatted) {
+        const result = toVietnameseAddress(formatted);
+        reverseGeocodeMemoryCache.set(cacheKey, result);
+        return result;
+      }
     }
   } catch (err) {
-    console.warn('Native reverse geocoding lỗi:', err);
+    console.warn('Native reverse geocoding lỗi:', err?.message || err);
   }
 
   return null;

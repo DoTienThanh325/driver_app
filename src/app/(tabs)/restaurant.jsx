@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -79,6 +79,12 @@ const DEFAULT_DEMO_FOODS = [
 export default function RestaurantScreen() {
   const [activeSubTab, setActiveSubTab] = useState('food'); // 'food' | 'voucher'
   const [businessInfo, setBusinessInfo] = useState(null);
+  const businessInfoRef = useRef(null);
+
+  // Giữ ref đồng bộ để các callback không cần re-create liên tục
+  useEffect(() => {
+    businessInfoRef.current = businessInfo;
+  }, [businessInfo]);
 
   // Món ăn
   const [foods, setFoods] = useState([]);
@@ -131,6 +137,7 @@ export default function RestaurantScreen() {
       }
     }
 
+    businessInfoRef.current = info;
     setBusinessInfo(info);
     return info;
   }, []);
@@ -138,60 +145,66 @@ export default function RestaurantScreen() {
   // 2. Tải danh sách Món ăn của quán (Check cache trước, nếu cache không có gì thì call API rồi cập nhật cache)
   const loadFoods = useCallback(
     async (currentRestId, force = false) => {
-      const targetId = currentRestId || businessInfo?.restaurantId || businessInfo?.id;
+      const targetId = currentRestId || businessInfoRef.current?.restaurantId || businessInfoRef.current?.id;
+      if (!targetId) {
+        setFoods([]);
+        setLoadingFoods(false);
+        return;
+      }
 
       try {
-        // Kiểm tra cache trước nếu không force làm mới
-        if (!force && targetId) {
+        // Kiểm tra cache trước nếu không force làm mới (kể cả khi cache là mảng rỗng [] cũng chấp nhận)
+        if (!force) {
           const cached = await offlineCacheStorage.getRestaurantFoods(targetId);
-          if (cached && cached.length > 0) {
+          if (cached !== null && Array.isArray(cached)) {
             setFoods(cached);
             setLoadingFoods(false);
             return;
           }
         }
 
-        // Nếu cache không có gì hoặc đang kéo làm mới (force) -> Call API lấy dữ liệu thực tế
+        // Nếu cache chưa có hoặc đang kéo làm mới (force) -> Call API lấy dữ liệu thực tế
         setLoadingFoods(true);
         const list = await foodService.getFoodsByRestaurant(targetId);
         const realList = Array.isArray(list) ? list : [];
         setFoods(realList);
 
         // Cập nhật lại cache thiết bị với dữ liệu vừa nhận được từ API
-        if (targetId) {
-          await offlineCacheStorage.saveRestaurantFoods(realList, targetId);
-        }
+        await offlineCacheStorage.saveRestaurantFoods(realList, targetId);
       } catch (err) {
         console.warn('Lỗi tải danh sách món ăn nhà hàng từ API:', err?.message);
-        if (targetId) {
-          const fallback = await offlineCacheStorage.getRestaurantFoods(targetId);
-          if (fallback) setFoods(fallback);
-        }
+        const fallback = await offlineCacheStorage.getRestaurantFoods(targetId);
+        if (fallback) setFoods(fallback);
       } finally {
         setLoadingFoods(false);
       }
     },
-    [businessInfo]
+    []
   );
 
   // 3. Tải danh sách Voucher của quán (Check cache trước, nếu cache không có gì thì call API rồi cập nhật cache)
   const loadVouchers = useCallback(
     async (currentRestId, force = false) => {
-      const targetId = currentRestId || businessInfo?.restaurantId || businessInfo?.id;
+      const targetId = currentRestId || businessInfoRef.current?.restaurantId || businessInfoRef.current?.id;
+      if (!targetId) {
+        setVouchers([]);
+        setLoadingVouchers(false);
+        return;
+      }
 
       try {
         // Kiểm tra cache trước nếu không force làm mới
-        if (!force && targetId) {
+        if (!force) {
           const cached = await offlineCacheStorage.getRestaurantVouchers(targetId);
-          const validCached = (cached || []).filter((v) => !v.id?.startsWith('demo-voucher'));
-          if (validCached.length > 0) {
+          if (cached !== null && Array.isArray(cached)) {
+            const validCached = cached.filter((v) => !v.id?.startsWith('demo-voucher'));
             setVouchers(validCached);
             setLoadingVouchers(false);
             return;
           }
         }
 
-        // Nếu cache không có gì hoặc đang kéo làm mới (force) -> Call API lấy dữ liệu thực tế
+        // Nếu cache chưa có hoặc đang kéo làm mới (force) -> Call API lấy dữ liệu thực tế
         setLoadingVouchers(true);
         const list = await voucherService.getRestaurantVouchers(targetId);
         const realList = (Array.isArray(list) ? list : []).filter(
@@ -200,22 +213,18 @@ export default function RestaurantScreen() {
         setVouchers(realList);
 
         // Cập nhật lại cache thiết bị với dữ liệu vừa nhận được từ API
-        if (targetId) {
-          await offlineCacheStorage.saveRestaurantVouchers(realList, targetId);
-        }
+        await offlineCacheStorage.saveRestaurantVouchers(realList, targetId);
       } catch (err) {
         console.warn('Lỗi tải danh sách voucher nhà hàng từ API:', err?.message);
-        if (targetId) {
-          const fallback = await offlineCacheStorage.getRestaurantVouchers(targetId);
-          if (fallback) {
-            setVouchers((fallback || []).filter((v) => !v.id?.startsWith('demo-voucher')));
-          }
+        const fallback = await offlineCacheStorage.getRestaurantVouchers(targetId);
+        if (fallback) {
+          setVouchers(fallback.filter((v) => !v.id?.startsWith('demo-voucher')));
         }
       } finally {
         setLoadingVouchers(false);
       }
     },
-    [businessInfo]
+    []
   );
 
   const initData = useCallback(
@@ -227,10 +236,16 @@ export default function RestaurantScreen() {
     [loadRestaurantInfo, loadFoods, loadVouchers]
   );
 
+  const initDataRef = useRef(initData);
+  useEffect(() => {
+    initDataRef.current = initData;
+  }, [initData]);
+
+  // Chỉ kích hoạt một lần duy nhất khi người dùng chuyển tab sang Restaurant, tránh trigger vòng lặp vô hạn
   useFocusEffect(
     useCallback(() => {
-      initData(false);
-    }, [initData])
+      initDataRef.current?.(false);
+    }, [])
   );
 
   const handleRefresh = async () => {

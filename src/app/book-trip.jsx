@@ -1,3 +1,4 @@
+import { getUserErrorMessage } from '../utils/error-message';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
@@ -19,7 +20,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { WebView } from 'react-native-webview';
 import { Image } from 'react-native';
-import { driverService } from '@/services/driver.service';
+import { useTripCounterparty } from '@/hooks/use-trip-counterparty';
 import { paymentService, PAYMENT_METHOD, PAYMENT_STATUS } from '@/services/payment.service';
 import { SubHeader } from '@/components/ui/sub-header';
 import * as Location from 'expo-location';
@@ -180,6 +181,15 @@ function checkIsPeakHour(date = new Date()) {
   return isMorningPeak || isEveningPeak;
 }
 
+// Cấu hình thời gian tìm kiếm tài xế: tối đa 15 phút (900 giây)
+const MAX_SEARCH_SECONDS = 15 * 60;
+
+function formatSearchTime(totalSeconds) {
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
 export default function BookTripScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
@@ -218,7 +228,16 @@ export default function BookTripScreen() {
 
   // Bộ đếm giây tìm kiếm cho UX (Expanding Ring Search)
   const [searchSeconds, setSearchSeconds] = useState(0);
-  const [driverProfile, setDriverProfile] = useState(null);
+  const {
+    profile: driverProfile,
+    loading: isDriverProfileLoading,
+    error: driverProfileError,
+    retry: retryDriverProfile,
+  } = useTripCounterparty(
+    activeTrip?.driverId ? activeTrip.id : null,
+    'DRIVER',
+    activeTrip?.driverId
+  );
   const [driverLocation, setDriverLocation] = useState(null); // { latitude, longitude, heading, speed }
   const [trackingRouteCoords, setTrackingRouteCoords] = useState(() => {
     if (params.routeCoords) {
@@ -233,7 +252,6 @@ export default function BookTripScreen() {
   const [selectedPayMethod, setSelectedPayMethod] = useState(
     params.preferredPayMethod || PAYMENT_METHOD.PAY_DIRECTLY
   );
-  const [qrLoadError, setQrLoadError] = useState(false);
   const [isLoadingPayment, setIsLoadingPayment] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
@@ -242,67 +260,9 @@ export default function BookTripScreen() {
   const [hasRatedRestaurant, setHasRatedRestaurant] = useState(false);
   const autoPromptedRatingRef = useRef(false);
 
-  // Tổng hợp thông tin tài khoản ngân hàng và mã VietQR thanh toán cho tài xế
-  const driverQrInfo = useMemo(() => {
-    const bankBin =
-      tripPayment?.qrPayment?.bankBin ||
-      activeTrip?.driverBankBin ||
-      '970422'; // MBBank (Ngân hàng Quân Đội)
-
-    const bankName =
-      tripPayment?.qrPayment?.bankName ||
-      activeTrip?.driverBankName ||
-      'MBBank (Ngân hàng Quân Đội)';
-
-    const bankAccountNumber =
-      tripPayment?.qrPayment?.bankAccountNumber ||
-      activeTrip?.driverBankAccountNumber ||
-      driverProfile?.phoneNumber ||
-      activeTrip?.driverPhone ||
-      '0911000001';
-
-    const driverName =
-      driverProfile?.username ||
-      activeTrip?.driverName ||
-      'Tài xế đối tác T&M';
-
-    const bankAccountName =
-      tripPayment?.qrPayment?.bankAccountName ||
-      activeTrip?.driverBankAccountName ||
-      driverName.toUpperCase();
-
-    const amount =
-      tripPayment?.qrPayment?.amount ||
-      tripPayment?.finalAmount ||
-      activeTrip?.finalAmount ||
-      activeTrip?.shippFare ||
-      shippFare ||
-      24000;
-
-    const currentTripId = activeTrip?.id || params.tripId || 'TRIP';
-    const transferContent =
-      tripPayment?.qrPayment?.transferContent ||
-      `THANH TOAN CHUYEN DI ${currentTripId}`;
-
-    const qrUrl =
-      tripPayment?.qrPayment?.qrDataURL ||
-      `https://img.vietqr.io/image/${bankBin}-${bankAccountNumber}-compact2.png?amount=${Math.round(
-        amount
-      )}&addInfo=${encodeURIComponent(transferContent)}&accountName=${encodeURIComponent(
-        bankAccountName
-      )}`;
-
-    return {
-      bankBin,
-      bankName,
-      bankAccountNumber,
-      bankAccountName,
-      driverName,
-      amount,
-      transferContent,
-      qrUrl,
-    };
-  }, [tripPayment, activeTrip, driverProfile, shippFare, params.tripId]);
+  const driverQrInfo = tripPayment?.qrPayment;
+  const canShowPaymentQr = tripPayment?.status === PAYMENT_STATUS.AWAITING_PAYMENT &&
+    Boolean(driverQrInfo?.qrDataURL);
 
   // Hàm sao chép thông tin chuyển khoản vào bộ nhớ tạm
   const copyToClipboard = async (text, label) => {
@@ -323,7 +283,6 @@ export default function BookTripScreen() {
     }
     setActiveTrip(null);
     setTripPayment(null);
-    setDriverProfile(null);
     setDriverLocation(null);
     setTrackingRouteCoords([]);
     setSearchSeconds(0);
@@ -351,7 +310,6 @@ export default function BookTripScreen() {
     }
     setActiveTrip(null);
     setTripPayment(null);
-    setDriverProfile(null);
     setDriverLocation(null);
     setTrackingRouteCoords([]);
     setSearchSeconds(0);
@@ -649,7 +607,7 @@ export default function BookTripScreen() {
     checkCurrentTrip();
   }, [checkCurrentTrip]);
 
-  // Bộ đếm thời gian khi đang tìm tài xế (0 - 45s)
+  // Bộ đếm thời gian khi đang tìm tài xế (0 - 15 phút / 900s)
   useEffect(() => {
     const isSearching =
       activeTrip?.status === TRIP_STATUS.REQUESTED ||
@@ -658,7 +616,25 @@ export default function BookTripScreen() {
     if (!isSearching) return;
 
     const timer = setInterval(() => {
-      setSearchSeconds((prev) => prev + 1);
+      setSearchSeconds((prev) => {
+        if (prev + 1 >= MAX_SEARCH_SECONDS) {
+          clearInterval(timer);
+          setActiveTrip((current) => {
+            if (
+              current &&
+              (current.status === TRIP_STATUS.REQUESTED || current.status === TRIP_STATUS.SEARCHING_DRIVER)
+            ) {
+              return {
+                ...current,
+                status: TRIP_STATUS.NO_DRIVER_FOUND,
+              };
+            }
+            return current;
+          });
+          return MAX_SEARCH_SECONDS;
+        }
+        return prev + 1;
+      });
     }, 1000);
 
     return () => clearInterval(timer);
@@ -682,89 +658,70 @@ export default function BookTripScreen() {
     }
   }, [activeTrip?.id]);
 
-  // Tự động chuyển đổi sang PAY_BEFORE trên backend khi đã có tài xế nhận cuốc
+  // Đồng bộ phương thức đã chọn và trạng thái thanh toán trên hai thiết bị.
   useEffect(() => {
-    if (!activeTrip?.id) return;
-    if (String(activeTrip.id).startsWith('sample') || activeTrip.id === 'TRIP-DEMO') return;
+    const tripId = activeTrip?.id;
+    if (!tripId) {
+      setTripPayment(null);
+      return;
+    }
+    if (String(tripId).startsWith('sample') || tripId === 'TRIP-DEMO') return;
 
-    const hasDriver =
-      Boolean(activeTrip.driverId) ||
-      [
-        TRIP_STATUS.DRIVER_ASSIGNED,
-        TRIP_STATUS.DRIVER_ARRIVING,
-        TRIP_STATUS.IN_PROGRESS,
-        TRIP_STATUS.COMPLETED,
-      ].includes(activeTrip.status);
+    const hasDriver = Boolean(activeTrip.driverId) || [
+      TRIP_STATUS.DRIVER_ASSIGNED,
+      TRIP_STATUS.DRIVER_ARRIVING,
+      TRIP_STATUS.IN_PROGRESS,
+      TRIP_STATUS.COMPLETED,
+    ].includes(activeTrip.status);
 
-    if (!hasDriver) return;
+    let isMounted = true;
+    let isChecking = false;
+    const checkPayment = async () => {
+      if (isChecking || isSwitchingPaymentRef.current) return;
+      isChecking = true;
+      try {
+        let payment = await paymentService.getTripPayment(tripId, { serverOnly: true });
+        const preferred =
+          params.preferredPayMethod || await paymentService.getPreferredPaymentMethod(tripId);
+        if (!isMounted || !payment?.tripPaymentId || isSwitchingPaymentRef.current) return;
 
-    const triggerAutoSwitch = async () => {
-      const preferred =
-        params.preferredPayMethod ||
-        (await paymentService.getPreferredPaymentMethod(activeTrip.id));
+        setTripPayment((previous) => (
+          previous?.tripPaymentId === payment.tripPaymentId &&
+          previous.status === PAYMENT_STATUS.COMPLETED
+            ? previous
+            : payment
+        ));
+        setSelectedPayMethod(
+          payment.status !== PAYMENT_STATUS.COMPLETED && preferred === PAYMENT_METHOD.PAY_BEFORE
+            ? PAYMENT_METHOD.PAY_BEFORE
+            : payment.method
+        );
 
-      if (preferred === PAYMENT_METHOD.PAY_BEFORE) {
-        setSelectedPayMethod(PAYMENT_METHOD.PAY_BEFORE);
-
-        if (tripPayment?.method !== PAYMENT_METHOD.PAY_BEFORE && !isSwitchingPaymentRef.current) {
+        if (hasDriver && preferred === PAYMENT_METHOD.PAY_BEFORE &&
+            payment.method === PAYMENT_METHOD.PAY_DIRECTLY &&
+            payment.status === PAYMENT_STATUS.PENDING) {
           isSwitchingPaymentRef.current = true;
           try {
-            console.log('[BOOK-TRIP] Đã có tài xế nhận chuyến! Tự động gọi switchToPayBefore cho tripId:', activeTrip.id);
-            const res = await paymentService.switchToPayBefore(activeTrip.id);
-            if (res) {
-              setTripPayment(res);
-            }
-          } catch (err) {
-            console.warn('[BOOK-TRIP] Lỗi auto switchToPayBefore:', err?.message || err);
+            payment = await paymentService.switchToPayBefore(tripId);
+            if (isMounted && payment) setTripPayment(payment);
           } finally {
             isSwitchingPaymentRef.current = false;
           }
         }
+      } catch {
+        // Thử đồng bộ lại ở lần tải định kỳ tiếp theo.
+      } finally {
+        isChecking = false;
       }
-    };
-
-    triggerAutoSwitch();
-  }, [activeTrip?.id, activeTrip?.driverId, activeTrip?.status, params.preferredPayMethod, tripPayment?.method]);
-
-  // Tải chi tiết thông tin thanh toán chuyến đi từ Payment Service và kiểm tra trạng thái xác nhận
-  useEffect(() => {
-    let isMounted = true;
-    if (!activeTrip?.id) {
-      setTripPayment(null);
-      return;
-    }
-
-    const checkPayment = async () => {
-      try {
-        const res = await paymentService.getTripPayment(activeTrip.id);
-        if (isMounted && res) {
-          setTripPayment(res);
-          const preferred =
-            params.preferredPayMethod ||
-            (await paymentService.getPreferredPaymentMethod(activeTrip.id));
-          if (preferred === PAYMENT_METHOD.PAY_BEFORE) {
-            setSelectedPayMethod(PAYMENT_METHOD.PAY_BEFORE);
-          } else if (res.method) {
-            setSelectedPayMethod(res.method);
-          }
-        }
-      } catch (err) {}
     };
 
     checkPayment();
-
-    // Polling định kỳ nếu chưa hoàn tất thanh toán để cập nhật khi tài xế xác nhận nhận tiền
-    const interval = setInterval(() => {
-      if (tripPayment?.status !== 'COMPLETED') {
-        checkPayment();
-      }
-    }, 4000);
-
+    const interval = setInterval(checkPayment, 4000);
     return () => {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [activeTrip?.id, activeTrip?.status, tripPayment?.status]);
+  }, [activeTrip?.id, activeTrip?.driverId, activeTrip?.status, params.preferredPayMethod]);
 
   // Xử lý khi khách hàng chọn phương thức thanh toán (Tiền mặt hoặc Chuyển khoản VietQR)
   const handleSelectPayMethod = async (method) => {
@@ -774,9 +731,10 @@ export default function BookTripScreen() {
       return;
     }
 
-    setSelectedPayMethod(method);
-    if (!activeTrip?.id) return;
+    if (!activeTrip?.id || isSwitchingPaymentRef.current) return;
 
+    isSwitchingPaymentRef.current = true;
+    setSelectedPayMethod(method);
     setIsLoadingPayment(true);
     try {
       if (method === PAYMENT_METHOD.PAY_BEFORE) {
@@ -794,33 +752,15 @@ export default function BookTripScreen() {
       if (method === PAYMENT_METHOD.PAY_BEFORE) {
         Alert.alert(
           'Chưa thể tạo mã VietQR',
-          err.message || 'Tài xế chưa cập nhật số tài khoản ngân hàng. Bạn có thể thanh toán trực tiếp tiền mặt.'
+          getUserErrorMessage(err, 'Không thể tải thông tin thanh toán của tài xế. Vui lòng thử lại.')
         );
         setSelectedPayMethod(PAYMENT_METHOD.PAY_DIRECTLY);
       }
     } finally {
+      isSwitchingPaymentRef.current = false;
       setIsLoadingPayment(false);
     }
   };
-
-  // Tải chi tiết thông tin tài xế & phương tiện khi đã được gán tài xế
-  useEffect(() => {
-    let isMounted = true;
-    if (activeTrip?.driverId) {
-      driverService.getDriverDetail(activeTrip.driverId)
-        .then((detail) => {
-          if (isMounted && detail) {
-            setDriverProfile(detail);
-          }
-        })
-        .catch(() => {
-          // Bỏ qua lỗi fallback
-        });
-    } else {
-      setDriverProfile(null);
-    }
-    return () => { isMounted = false; };
-  }, [activeTrip?.driverId]);
 
   // Lấy tuyến đường thực tế OSRM giữa điểm đón và điểm đến (hoặc điểm đón và tài xế)
   useEffect(() => {
@@ -1062,34 +1002,6 @@ export default function BookTripScreen() {
           } catch {}
         }
 
-        // Cập nhật trạng thái payment từ PaymentService để đồng bộ giữa khách và tài xế
-        if ([TRIP_STATUS.DRIVER_ARRIVING, TRIP_STATUS.IN_PROGRESS, TRIP_STATUS.COMPLETED].includes(activeTrip.status)) {
-          const pay = await paymentService.getTripPayment(activeTrip.id);
-          if (pay) {
-            setTripPayment(pay);
-            const preferred =
-              params.preferredPayMethod ||
-              (await paymentService.getPreferredPaymentMethod(activeTrip.id));
-            if (preferred === PAYMENT_METHOD.PAY_BEFORE) {
-              setSelectedPayMethod(PAYMENT_METHOD.PAY_BEFORE);
-              // Nếu backend vẫn là PAY_DIRECTLY thì tự động gọi switchToPayBefore
-              if (pay.method !== PAYMENT_METHOD.PAY_BEFORE && activeTrip.driverId && !isSwitchingPaymentRef.current) {
-                isSwitchingPaymentRef.current = true;
-                paymentService
-                  .switchToPayBefore(activeTrip.id)
-                  .then((switched) => {
-                    if (switched) setTripPayment(switched);
-                  })
-                  .catch(() => {})
-                  .finally(() => {
-                    isSwitchingPaymentRef.current = false;
-                  });
-              }
-            } else if (pay.method) {
-              setSelectedPayMethod(pay.method);
-            }
-          }
-        }
       } catch {
         // Bỏ qua lỗi mạng tạm thời
       }
@@ -1121,22 +1033,22 @@ export default function BookTripScreen() {
       };
 
       const res = await tripService.createTrip(payload);
-      if (res?.tripId) {
-        const newTrip = {
-          id: res.tripId,
-          status: TRIP_STATUS.REQUESTED,
-          ...payload,
-          distanceKm: displayDistanceKm,
-        };
-        setActiveTrip(newTrip);
-        if (precalculatedRouteCoords?.length > 0) {
-          setTrackingRouteCoords(precalculatedRouteCoords);
-        }
-      } else {
-        Alert.alert('Thành công', 'Đã gửi yêu cầu đặt chuyến tới hệ sinh thái!');
+      const newTripId = res?.tripId || res?.id;
+      if (!newTripId) {
+        throw new Error('Chưa nhận được mã chuyến từ hệ thống.');
+      }
+
+      setActiveTrip({
+        id: newTripId,
+        status: TRIP_STATUS.REQUESTED,
+        ...payload,
+        distanceKm: displayDistanceKm,
+      });
+      if (precalculatedRouteCoords?.length > 0) {
+        setTrackingRouteCoords(precalculatedRouteCoords);
       }
     } catch (err) {
-      Alert.alert('Không thể đặt chuyến', err.message || 'Đang có cuốc xe chưa hoàn thành.');
+      Alert.alert('Không thể đặt chuyến', getUserErrorMessage(err, 'Không thể đặt chuyến. Vui lòng kiểm tra thông tin rồi thử lại.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -1150,7 +1062,7 @@ export default function BookTripScreen() {
       activeTrip.status === TRIP_STATUS.REQUESTED ||
       activeTrip.status === TRIP_STATUS.SEARCHING_DRIVER;
 
-    const title = isFindingDriver ? 'Hủy tìm tài xế' : 'Hủy chuyến xe';
+    const title = isFindingDriver ? 'Dừng tìm tài xế' : 'Hủy chuyến';
     const message = isFindingDriver
       ? 'Bạn có chắc chắn muốn dừng tìm kiếm tài xế cho chuyến đi này không?'
       : 'Bạn có chắc chắn muốn hủy chuyến đi này?';
@@ -1158,7 +1070,7 @@ export default function BookTripScreen() {
     Alert.alert(title, message, [
       { text: 'Không', style: 'cancel' },
       {
-        text: 'Đồng ý hủy',
+        text: title,
         style: 'destructive',
         onPress: async () => {
           setIsCancelling(true);
@@ -1175,7 +1087,6 @@ export default function BookTripScreen() {
             // Xóa sạch trạng thái chuyến đi
             setActiveTrip(null);
             setTripPayment(null);
-            setDriverProfile(null);
             setTrackingRouteCoords([]);
             setSearchSeconds(0);
             setIsSubmitting(false);
@@ -1208,7 +1119,7 @@ export default function BookTripScreen() {
             // Khi gặp lỗi 403 hoặc chuyến đã hủy/thay đổi trên server
             Alert.alert(
               'Không thể hủy trên máy chủ',
-              `${err.message || 'Lỗi kết nối hoặc trạng thái chuyến đã thay đổi.'}\n\nBạn có muốn gỡ chuyến này khỏi màn hình để tiếp tục không?`,
+              `${getUserErrorMessage(err, 'Không thể hủy chuyến lúc này. Vui lòng tải lại thông tin chuyến.')}\n\nBạn có muốn gỡ chuyến này khỏi màn hình để tiếp tục không?`,
               [
                 { text: 'Đóng', style: 'cancel' },
                 {
@@ -1219,7 +1130,7 @@ export default function BookTripScreen() {
                   },
                 },
                 {
-                  text: 'Gỡ & Đặt mới',
+                  text: 'Đặt chuyến mới',
                   style: 'destructive',
                   onPress: () => {
                     dismissedTripIdRef.current = canceledTripId;
@@ -1272,10 +1183,6 @@ export default function BookTripScreen() {
     }
   };
 
-  // Tính vòng quét hiện tại (Expanding Ring Search)
-  const currentRound = activeTrip?.searchRound || (searchSeconds <= 10 ? 1 : searchSeconds <= 25 ? 2 : 3);
-  const currentRadius = activeTrip?.searchRadiusKm || (currentRound === 1 ? 3 : currentRound === 2 ? 5 : 8);
-
   // Kiểm tra loại chuyến: Đặt món (FOOD_DELIVERY) hay Chở khách (PASSENGER)
   const isFoodTrip = useMemo(() => {
     return (
@@ -1291,14 +1198,7 @@ export default function BookTripScreen() {
     switch (activeTrip?.status) {
       case TRIP_STATUS.REQUESTED:
       case TRIP_STATUS.SEARCHING_DRIVER:
-        if (isFoodTrip) {
-          if (currentRound === 1) return 'Vòng 1: Tìm tài xế giao món gần quán (< 3km)';
-          if (currentRound === 2) return 'Vòng 2: Mở rộng bán kính tìm tài xế giao món (5km)';
-          return 'Vòng 3: Mở rộng tìm kiếm & cuốc gối đầu (8km)';
-        }
-        if (currentRound === 1) return 'Vòng 1: Tìm tài xế gần bạn nhất (< 3km)';
-        if (currentRound === 2) return 'Vòng 2: Mở rộng bán kính tìm kiếm (5km)';
-        return 'Vòng 3: Mở rộng & Tìm cuốc gối đầu (8km)';
+        return isFoodTrip ? 'Đang tìm tài xế giao món...' : 'Đang tìm tài xế gần bạn...';
       case TRIP_STATUS.DRIVER_ASSIGNED:
         return isFoodTrip ? 'Tài xế đã nhận đơn giao món!' : 'Tài xế đã nhận chuyến!';
       case TRIP_STATUS.DRIVER_ARRIVING:
@@ -1310,7 +1210,7 @@ export default function BookTripScreen() {
       case TRIP_STATUS.CANCELLED:
         return isFoodTrip ? 'Đơn món ăn đã bị hủy' : 'Chuyến đi đã bị hủy';
       case TRIP_STATUS.NO_DRIVER_FOUND:
-        return isFoodTrip ? 'Chưa tìm thấy tài xế giao món phù hợp' : 'Chưa tìm thấy tài xế sau 3 vòng quét';
+        return isFoodTrip ? 'Chưa tìm thấy tài xế giao món phù hợp' : 'Chưa tìm thấy tài xế phù hợp';
       default:
         return 'Đang xử lý...';
     }
@@ -1320,15 +1220,9 @@ export default function BookTripScreen() {
   const getStatusDescription = () => {
     if (activeTrip?.status === TRIP_STATUS.SEARCHING_DRIVER || activeTrip?.status === TRIP_STATUS.REQUESTED) {
       if (isFoodTrip) {
-        return 'Quán đang chuẩn bị món. Hệ thống đang điều phối tài xế gần quán nhất để nhận đơn.';
+        return 'Quán đang chuẩn bị món. Hệ thống đang tìm kiếm tài xế phù hợp để giao đơn.';
       }
-      if (currentRound === 1) {
-        return 'Hệ thống AI Matching đang quét các tài xế có thời gian tiếp cận nhanh nhất quanh bạn.';
-      }
-      if (currentRound === 2) {
-        return 'Đang mở rộng bán kính 5km để kết nối các tài xế lân cận đang di chuyển.';
-      }
-      return 'Đang quét toàn diện khu vực 8km và các tài xế sắp hoàn thành chuyến đi gần bạn (Cuốc gối đầu).';
+      return 'Hệ thống đang kết nối với các tài xế gần bạn nhất. Vui lòng đợi trong giây lát...';
     }
     if (activeTrip?.status === TRIP_STATUS.DRIVER_ASSIGNED || activeTrip?.status === TRIP_STATUS.DRIVER_ARRIVING) {
       if (isFoodTrip) {
@@ -1370,7 +1264,7 @@ export default function BookTripScreen() {
         [
           { text: 'Tiếp tục tìm', style: 'cancel' },
           {
-            text: 'Hủy & Quay lại',
+            text: 'Dừng tìm tài xế',
             style: 'destructive',
             onPress: async () => {
               if (activeTrip?.id) {
@@ -1452,7 +1346,7 @@ export default function BookTripScreen() {
                   <View style={styles.timerChip}>
                     <Ionicons name="time-outline" size={14} color="#D97706" />
                     <ThemedText style={styles.timerText}>
-                      {searchSeconds}s / 45s
+                      {formatSearchTime(searchSeconds)} / 15:00
                     </ThemedText>
                   </View>
                 )}
@@ -1475,16 +1369,6 @@ export default function BookTripScreen() {
                 <ThemedText style={styles.trackingTitle}>{getStatusLabel()}</ThemedText>
                 <ThemedText style={styles.trackingSubtitle}>{getStatusDescription()}</ThemedText>
 
-                {/* Banner quét bán kính mở rộng khi đang tìm tài xế */}
-                {isSearching && (
-                  <View style={styles.roundBanner}>
-                    <Ionicons name="navigate-circle" size={18} color="#0D9488" />
-                    <ThemedText style={styles.roundBannerText}>
-                      Bán kính quét: {currentRadius} km (Vòng {currentRound}/3)
-                    </ThemedText>
-                  </View>
-                )}
-
                 {/* Thông báo nếu là Cuốc gối đầu */}
                 {(activeTrip.status === TRIP_STATUS.DRIVER_ASSIGNED ||
                   activeTrip.status === TRIP_STATUS.DRIVER_ARRIVING) &&
@@ -1497,7 +1381,6 @@ export default function BookTripScreen() {
                     </View>
                   )}
 
-                {/* Thông tin tài xế & Phương tiện & Đánh giá sao */}
                 {(activeTrip.status === TRIP_STATUS.DRIVER_ASSIGNED ||
                   activeTrip.status === TRIP_STATUS.DRIVER_ARRIVING ||
                   activeTrip.status === TRIP_STATUS.IN_PROGRESS) && (
@@ -1505,41 +1388,40 @@ export default function BookTripScreen() {
                     <View style={styles.driverProfileHeader}>
                       <View style={styles.driverAvatarBox}>
                         <Ionicons
-                          name={activeTrip.vehicleType === 'CAR' ? 'car' : 'bicycle'}
+                          name={driverProfile?.vehicleType === VEHICLE_TYPE.CAR ? 'car' : 'person-outline'}
                           size={26}
                           color="#10B981"
                         />
                       </View>
                       <View style={{ flex: 1 }}>
                         <ThemedText style={styles.driverName}>
-                          {driverProfile?.username || 'Tài xế đối tác T&M'}
+                          {driverProfile?.displayName ||
+                            (isDriverProfileLoading ? 'Đang tải thông tin tài xế' : 'Chưa có thông tin tài xế')}
                         </ThemedText>
-                        <ThemedText style={styles.driverVehicleText}>
-                          {activeTrip.vehicleType === 'CAR' ? '🚗 Xe ô tô 4 chỗ' : '🛵 Xe máy T&M Bike'}
-                        </ThemedText>
-                        {/* Đánh giá sao của tài xế */}
-                        <View style={styles.driverRatingBox}>
-                          <Ionicons name="star" size={12} color="#F59E0B" />
-                          <ThemedText style={styles.driverRatingText}>
-                            {driverProfile?.average_rating ? Number(driverProfile.average_rating).toFixed(1) : '5.0'} (Đánh giá cao)
+                        {driverProfile?.vehicleType && (
+                          <ThemedText style={styles.driverVehicleText}>
+                            {driverProfile.vehicleType === VEHICLE_TYPE.CAR ? 'Xe ô tô' : 'Xe máy'}
                           </ThemedText>
-                        </View>
+                        )}
+                        {Number.isFinite(driverProfile?.averageRating) && (
+                          <View style={styles.driverRatingBox}>
+                            <Ionicons name="star" size={12} color="#F59E0B" />
+                            <ThemedText style={styles.driverRatingText}>
+                              {driverProfile.averageRating.toFixed(1)}
+                            </ThemedText>
+                          </View>
+                        )}
                         {driverProfile?.phoneNumber && (
                           <ThemedText style={styles.driverPhoneText}>
                             📞 {driverProfile.phoneNumber}
                           </ThemedText>
                         )}
+                        {driverProfileError && (
+                          <Pressable accessibilityRole="button" onPress={retryDriverProfile}>
+                            <ThemedText style={styles.driverVehicleText}>Thử tải lại thông tin</ThemedText>
+                          </Pressable>
+                        )}
                       </View>
-                    </View>
-
-                    {/* Biển số xe */}
-                    <View style={styles.driverPlateBadge}>
-                      <ThemedText style={styles.driverPlateLabel}>Biển số đăng ký:</ThemedText>
-                      <ThemedText style={styles.driverPlateNumber}>
-                        {driverProfile?.vehicle?.plate
-                          ? driverProfile.vehicle.plate.replace(/.*plate_/i, '').replace(/.jpg.*/i, '')
-                          : (activeTrip.vehicleType === 'CAR' ? '30H-888.88' : '29A-123.45')}
-                      </ThemedText>
                     </View>
                   </View>
                 )}
@@ -1606,7 +1488,8 @@ export default function BookTripScreen() {
                 {/* Thanh trạng thái thanh toán & Xem mã QR trong suốt chuyến đi */}
                 {(activeTrip.status === TRIP_STATUS.DRIVER_ASSIGNED ||
                   activeTrip.status === TRIP_STATUS.DRIVER_ARRIVING ||
-                  activeTrip.status === TRIP_STATUS.IN_PROGRESS) && (
+                  activeTrip.status === TRIP_STATUS.IN_PROGRESS ||
+                  (activeTrip.status === TRIP_STATUS.COMPLETED && canShowPaymentQr)) && (
                   <View style={styles.inTripPayBar}>
                     <View style={{ flex: 1, marginRight: 10 }}>
                       <ThemedText style={{ fontSize: 11, color: '#0369A1', fontWeight: '600' }}>
@@ -1624,13 +1507,18 @@ export default function BookTripScreen() {
                       </View>
                     </View>
                     <View style={{ flexDirection: 'row', gap: 6 }}>
-                      {selectedPayMethod === PAYMENT_METHOD.PAY_BEFORE ? (
+                      {tripPayment?.status === PAYMENT_STATUS.COMPLETED ? (
+                        <ThemedText>Đã thanh toán</ThemedText>
+                      ) : selectedPayMethod === PAYMENT_METHOD.PAY_BEFORE ? (
                         <Pressable
+                          disabled={!canShowPaymentQr}
                           style={styles.inTripPayBtn}
                           onPress={() => setShowQrModal(true)}
                         >
                           <Ionicons name="qr-code-outline" size={16} color="#FFFFFF" />
-                          <ThemedText style={styles.inTripPayBtnText}>Xem mã QR</ThemedText>
+                          <ThemedText style={styles.inTripPayBtnText}>
+                            {canShowPaymentQr ? 'Xem mã QR' : 'Mã QR chưa sẵn sàng'}
+                          </ThemedText>
                         </Pressable>
                       ) : (
                         <Pressable
@@ -1655,7 +1543,9 @@ export default function BookTripScreen() {
                     {isCancelling ? (
                       <ActivityIndicator size="small" color="#EF4444" />
                     ) : (
-                      <ThemedText style={styles.cancelBtnText}>HỦY TÌM CHUYẾN</ThemedText>
+                      <ThemedText style={styles.cancelBtnText}>
+                        {isSearching ? 'Dừng tìm tài xế' : 'Hủy chuyến'}
+                      </ThemedText>
                     )}
                   </Pressable>
                 ) : activeTrip.status === TRIP_STATUS.DRIVER_ARRIVING || activeTrip.status === TRIP_STATUS.IN_PROGRESS ? (
@@ -1751,7 +1641,7 @@ export default function BookTripScreen() {
                           activeOpacity={0.8}
                         >
                           <Ionicons name="star" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                          <ThemedText style={styles.bookButtonText}>ĐÁNH GIÁ TÀI XẾ (1-5 SAO)</ThemedText>
+                          <ThemedText style={styles.bookButtonText}>Đánh giá tài xế</ThemedText>
                         </TouchableOpacity>
                       ) : (
                         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ECFDF5', padding: 10, borderRadius: 12, marginBottom: 6, borderWidth: 1, borderColor: '#A7F3D0' }}>
@@ -1772,7 +1662,7 @@ export default function BookTripScreen() {
                             activeOpacity={0.8}
                           >
                             <Ionicons name="restaurant" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                            <ThemedText style={styles.bookButtonText}>ĐÁNH GIÁ NHÀ HÀNG & MÓN ĂN</ThemedText>
+                            <ThemedText style={styles.bookButtonText}>Đánh giá đơn món</ThemedText>
                           </TouchableOpacity>
                         ) : (
                           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFF7ED', padding: 10, borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: '#FED7AA' }}>
@@ -1789,7 +1679,7 @@ export default function BookTripScreen() {
                       >
                         <Ionicons name="refresh-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
                         <ThemedText style={styles.bookButtonText}>
-                          {isFoodTrip ? 'ĐẶT ĐƠN MÓN MỚI' : 'ĐẶT CHUYẾN MỚI (ĐẶT TIẾP)'}
+                          {isFoodTrip ? 'ĐẶT ĐƠN MÓN MỚI' : 'Đặt chuyến mới'}
                         </ThemedText>
                       </TouchableOpacity>
 
@@ -1839,7 +1729,7 @@ export default function BookTripScreen() {
                         }}>
                           {activeTrip.status === TRIP_STATUS.CANCELLED
                             ? 'Chuyến đi này đã được hủy. Bạn có thể đặt lại chuyến mới hoặc quay về trang chủ.'
-                            : 'Khu vực hiện chưa có tài xế phản hồi sau 3 vòng quét. Bạn có thể thử tìm lại ngay.'}
+                            : 'Khu vực hiện chưa có tài xế phản hồi. Bạn có thể thử tìm lại ngay.'}
                         </ThemedText>
                       </View>
                     </View>
@@ -2098,7 +1988,7 @@ export default function BookTripScreen() {
                       }}
                     >
                       <ThemedText style={styles.confirmStepBtnText}>
-                        {selectedVehicle ? 'XÁC NHẬN PHƯƠNG TIỆN & XEM GIÁ TIỀN ➜' : 'VUI LÒNG CHỌN PHƯƠNG TIỆN'}
+                        {selectedVehicle ? 'Xem giá' : 'VUI LÒNG CHỌN PHƯƠNG TIỆN'}
                       </ThemedText>
                     </Pressable>
                   )}
@@ -2216,7 +2106,7 @@ export default function BookTripScreen() {
               });
             }}
           >
-            <ThemedText style={styles.fixedContinueBtnText}>TIẾP TỤC (XEM BẢN ĐỒ & GIÁ XE) ➜</ThemedText>
+            <ThemedText style={styles.fixedContinueBtnText}>Tiếp tục</ThemedText>
           </Pressable>
         </View>
         )}
@@ -2234,7 +2124,7 @@ export default function BookTripScreen() {
 
       {/* Modal hiển thị mã VietQR tài xế khi khách nhấn xem trong suốt chuyến đi */}
       <Modal
-        visible={showQrModal}
+        visible={showQrModal && canShowPaymentQr}
         transparent={true}
         animationType="fade"
         onRequestClose={() => setShowQrModal(false)}
@@ -2252,11 +2142,11 @@ export default function BookTripScreen() {
               Thanh toán VietQR 24/7
             </ThemedText>
             <ThemedText style={{ fontSize: 12, color: '#64748B', marginBottom: 12, textAlign: 'center' }}>
-              Quét mã để chuyển khoản trực tiếp cho tài xế {driverQrInfo.driverName}
+              Quét mã để chuyển khoản trực tiếp cho tài xế
             </ThemedText>
 
             <Image
-              source={{ uri: driverQrInfo.qrUrl }}
+              source={{ uri: driverQrInfo?.qrDataURL }}
               style={styles.qrImage}
               resizeMode="contain"
             />
@@ -2265,15 +2155,15 @@ export default function BookTripScreen() {
             <View style={styles.bankDetailTable}>
               <View style={styles.bankDetailRow}>
                 <ThemedText style={styles.bankDetailLabel}>Ngân hàng</ThemedText>
-                <ThemedText style={styles.bankDetailValue}>{driverQrInfo.bankName}</ThemedText>
+                <ThemedText style={styles.bankDetailValue}>{driverQrInfo?.bankName}</ThemedText>
               </View>
               <View style={styles.bankDetailRow}>
                 <ThemedText style={styles.bankDetailLabel}>Số tài khoản</ThemedText>
                 <View style={styles.bankDetailValueRow}>
-                  <ThemedText style={[styles.bankDetailValue, { color: '#0284C7' }]}>{driverQrInfo.bankAccountNumber}</ThemedText>
+                  <ThemedText style={[styles.bankDetailValue, { color: '#0284C7' }]}>{driverQrInfo?.bankAccountNumber}</ThemedText>
                   <Pressable
                     style={styles.copyBadgeBtn}
-                    onPress={() => copyToClipboard(driverQrInfo.bankAccountNumber, 'Số tài khoản')}
+                    onPress={() => copyToClipboard(driverQrInfo?.bankAccountNumber, 'Số tài khoản')}
                   >
                     <Ionicons name="copy-outline" size={12} color="#0284C7" />
                     <ThemedText style={styles.copyBadgeText}>Copy</ThemedText>
@@ -2282,17 +2172,17 @@ export default function BookTripScreen() {
               </View>
               <View style={styles.bankDetailRow}>
                 <ThemedText style={styles.bankDetailLabel}>Chủ tài khoản</ThemedText>
-                <ThemedText style={styles.bankDetailValue}>{driverQrInfo.bankAccountName}</ThemedText>
+                <ThemedText style={styles.bankDetailValue}>{driverQrInfo?.bankAccountName}</ThemedText>
               </View>
               <View style={styles.bankDetailRow}>
                 <ThemedText style={styles.bankDetailLabel}>Số tiền</ThemedText>
                 <View style={styles.bankDetailValueRow}>
                   <ThemedText style={[styles.bankDetailValue, { color: '#EF4444', fontWeight: '800' }]}>
-                    {Number(driverQrInfo.amount).toLocaleString('vi-VN')} đ
+                    {Number(driverQrInfo?.amount).toLocaleString('vi-VN')} đ
                   </ThemedText>
                   <Pressable
                     style={styles.copyBadgeBtn}
-                    onPress={() => copyToClipboard(driverQrInfo.amount, 'Số tiền')}
+                    onPress={() => copyToClipboard(driverQrInfo?.amount, 'Số tiền')}
                   >
                     <Ionicons name="copy-outline" size={12} color="#0284C7" />
                     <ThemedText style={styles.copyBadgeText}>Copy</ThemedText>
@@ -2304,7 +2194,7 @@ export default function BookTripScreen() {
                   <ThemedText style={styles.bankDetailLabel}>Nội dung chuyển khoản</ThemedText>
                   <Pressable
                     style={styles.copyBadgeBtn}
-                    onPress={() => copyToClipboard(driverQrInfo.transferContent, 'Nội dung chuyển khoản')}
+                    onPress={() => copyToClipboard(driverQrInfo?.transferContent, 'Nội dung chuyển khoản')}
                   >
                     <Ionicons name="copy-outline" size={12} color="#0284C7" />
                     <ThemedText style={styles.copyBadgeText}>Copy</ThemedText>
@@ -2312,7 +2202,7 @@ export default function BookTripScreen() {
                 </View>
                 <View style={styles.transferContentBox}>
                   <ThemedText style={styles.transferContentText} selectable={true}>
-                    {driverQrInfo.transferContent}
+                    {driverQrInfo?.transferContent}
                   </ThemedText>
                 </View>
               </View>
@@ -2322,7 +2212,7 @@ export default function BookTripScreen() {
               style={[styles.bookButton, { width: '100%', marginTop: 16, paddingVertical: 12 }]}
               onPress={() => setShowQrModal(false)}
             >
-              <ThemedText style={styles.bookButtonText}>ĐÃ HIỂU & ĐÓNG</ThemedText>
+              <ThemedText style={styles.bookButtonText}>Đóng</ThemedText>
             </Pressable>
           </View>
         </View>

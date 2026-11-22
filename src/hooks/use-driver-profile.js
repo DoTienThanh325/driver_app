@@ -1,3 +1,4 @@
+import { getUserErrorMessage } from '../utils/error-message';
 import { useState, useEffect, useCallback } from 'react';
 import { Alert } from 'react-native';
 import { authService } from '@/services/auth.service';
@@ -381,7 +382,7 @@ export function useDriverProfile() {
     } catch (err) {
       Alert.alert(
         'Chưa thể gửi ảnh',
-        err.message || 'Đường truyền bị gián đoạn. Bạn vui lòng kiểm tra kết nối mạng và bấm "Lưu" lại nhé.'
+        getUserErrorMessage(err, 'Không thể lưu hồ sơ. Vui lòng thử lại.')
       );
     } finally {
       setIsSaving(false);

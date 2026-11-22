@@ -1,3 +1,4 @@
+import { getUserErrorMessage } from '../utils/error-message';
 import { useState, useCallback, useRef } from 'react';
 import { Alert } from 'react-native';
 import { router } from 'expo-router';
@@ -193,7 +194,7 @@ export function useBusinessRegistration() {
         ]
       );
     } catch (err) {
-      Alert.alert('Đăng ký thất bại', err.message || 'Đã có lỗi xảy ra trong quá trình nộp hồ sơ.');
+      Alert.alert('Đăng ký thất bại', getUserErrorMessage(err, 'Đã có lỗi xảy ra trong quá trình nộp hồ sơ.'));
     } finally {
       setIsSubmitting(false);
     }

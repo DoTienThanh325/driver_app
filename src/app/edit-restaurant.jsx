@@ -1,3 +1,4 @@
+import { getUserErrorMessage } from '../utils/error-message';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
@@ -226,7 +227,7 @@ export default function EditRestaurantScreen() {
     } catch (error) {
       Alert.alert(
         'Chưa thể lưu thông tin',
-        error?.message || 'Đường truyền bị gián đoạn. Bạn vui lòng kiểm tra kết nối mạng và thử lại.'
+        getUserErrorMessage(error, 'Không thể lưu thông tin nhà hàng. Vui lòng thử lại.')
       );
     } finally {
       setIsSubmitting(false);

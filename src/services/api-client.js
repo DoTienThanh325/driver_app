@@ -1,3 +1,4 @@
+import { getFriendlyErrorMessage } from '../utils/error-message';
 import { getGatewayUrl } from '../constants/api';
 import { tokenStorage } from './storage/token.storage';
 import { createSessionRefresher } from './refresh-session';
@@ -19,8 +20,9 @@ const fetchWithTimeout = async (url, options = {}, timeoutMs = 8000) => {
       err.message?.toLowerCase().includes('cancel') ||
       err.message?.toLowerCase().includes('abort')
     ) {
-      const timeoutErr = new Error('Quá thời gian kết nối (8s). Máy chủ Gateway (Port 8080) chưa phản hồi.');
+      const timeoutErr = new Error('Hệ thống phản hồi chậm. Vui lòng thử lại.');
       timeoutErr.isNetworkError = true;
+      timeoutErr.isTimeout = true;
       throw timeoutErr;
     }
     throw err;
@@ -34,43 +36,16 @@ const getFullUrl = (endpoint) => {
   return `${baseUrl}${normalizedEndpoint}`;
 };
 
-/**
- * Chuyển đổi mã HTTP status hoặc lỗi kỹ thuật thành thông điệp tiếng Việt thân thiện, dễ hiểu.
- */
-export function getFriendlyErrorMessage(status, serverMessage) {
-  if (serverMessage && typeof serverMessage === 'string') {
-    const lower = serverMessage.toLowerCase();
-    if (lower.includes('network request failed') || lower.includes('failed to fetch')) {
-      return 'Kết nối mạng không ổn định. Vui lòng kiểm tra Wi-Fi hoặc 4G/5G và thử lại.';
-    }
-    // Nếu thông báo từ máy chủ đã là tiếng Việt rõ ràng, giữ lại
-    if (/[\u00C0-\u1EF9]/.test(serverMessage)) {
-      return serverMessage;
-    }
-  }
+export { getFriendlyErrorMessage };
 
-  switch (status) {
-    case 400:
-      return 'Dữ liệu gửi lên chưa hợp lệ hoặc thiếu thông tin cần thiết. Vui lòng kiểm tra lại.';
-    case 401:
-      return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.';
-    case 403:
-      return 'Bạn không có quyền thực hiện thao tác này trên hệ thống.';
-    case 404:
-      return 'Không tìm thấy thông tin yêu cầu. Có thể nội dung đã bị gỡ bỏ.';
-    case 409:
-      return 'Thông tin đã tồn tại hoặc đang có xung đột với dữ liệu hiện tại.';
-    case 413:
-      return 'Kích thước tệp hoặc ảnh quá lớn. Vui lòng chọn tệp nhỏ hơn.';
-    case 500:
-      return 'Hệ thống đang gặp sự cố xử lý. Vui lòng thử lại sau ít phút.';
-    case 502:
-    case 503:
-    case 504:
-      return 'Dịch vụ máy chủ tạm thời gián đoạn. Vui lòng thử lại sau ít phút.';
-    default:
-      return serverMessage || 'Đã có sự cố xảy ra. Vui lòng thử lại.';
-  }
+function createHttpError(status, data, fallback) {
+  const serverMessage = data?.message || data?.detail || '';
+  const error = new Error(getFriendlyErrorMessage(status, serverMessage, fallback));
+  error.status = status;
+  error.code = data?.code || data?.errorCode;
+  error.serverMessage = serverMessage;
+  console.info(`[apiClient] HTTP ${status}`);
+  return error;
 }
 
 const refreshSession = createSessionRefresher({
@@ -119,12 +94,12 @@ export const apiClient = {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(data.message || `Lỗi yêu cầu: mã ${response.status}`);
+        throw createHttpError(response.status, data, 'Không thể gửi yêu cầu. Vui lòng thử lại.');
       }
 
       return data;
     } catch (error) {
-      if (error.isNetworkError) {
+      if (error.status || error.isNetworkError) {
         throw error;
       }
       if (
@@ -174,12 +149,12 @@ export const apiClient = {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(data.message || `Lỗi cập nhật: mã ${response.status}`);
+        throw createHttpError(response.status, data, 'Không thể lưu thay đổi. Vui lòng thử lại.');
       }
 
       return data;
     } catch (error) {
-      if (error.isNetworkError) {
+      if (error.status || error.isNetworkError) {
         throw error;
       }
       if (
@@ -227,11 +202,11 @@ export const apiClient = {
 
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(data.message || `Lỗi tải dữ liệu: mã ${response.status}`);
+        throw createHttpError(response.status, data, 'Không thể tải dữ liệu. Vui lòng thử lại.');
       }
       return data;
     } catch (error) {
-      if (error.isNetworkError) {
+      if (error.status || error.isNetworkError) {
         throw error;
       }
       if (
@@ -281,11 +256,11 @@ export const apiClient = {
 
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(getFriendlyErrorMessage(response.status, data.message || data.detail));
+        throw createHttpError(response.status, data, 'Không thể xóa dữ liệu. Vui lòng thử lại.');
       }
       return data;
     } catch (error) {
-      if (error.isNetworkError) {
+      if (error.status || error.isNetworkError) {
         throw error;
       }
       if (
@@ -341,9 +316,7 @@ export const apiClient = {
           if (xhr.status >= 200 && xhr.status < 300) {
             resolve(data);
           } else {
-            const errMsg = data.detail || data.message || `Lỗi tải lên: mã ${xhr.status}`;
-            console.warn(`[apiClient.${method}XHR Error ${xhr.status}] ${fullUrl}:`, errMsg);
-            reject(new Error(errMsg));
+            reject(createHttpError(xhr.status, data, 'Không thể tải tệp lên. Vui lòng thử lại.'));
           }
         };
 
@@ -354,8 +327,9 @@ export const apiClient = {
         };
 
         xhr.ontimeout = () => {
-          const timeoutErr = new Error('Quá thời gian kết nối tới máy chủ (Timeout).');
+          const timeoutErr = new Error('Hệ thống phản hồi chậm. Vui lòng thử lại.');
           timeoutErr.isNetworkError = true;
+          timeoutErr.isTimeout = true;
           reject(timeoutErr);
         };
 

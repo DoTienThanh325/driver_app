@@ -364,6 +364,7 @@ export const driverStyles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
     padding: 18,
+    marginBottom: 20,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
@@ -372,6 +373,8 @@ export const driverStyles = StyleSheet.create({
   },
   activeTripHeader: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 14,
@@ -394,6 +397,56 @@ export const driverStyles = StyleSheet.create({
     fontSize: 12,
     color: '#9CA3AF',
   },
+  activeTripRouteBox: {
+    padding: 14,
+    gap: 14,
+  },
+  activeTripStop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  activeTripStopText: {
+    flex: 1,
+    gap: 3,
+  },
+  activeTripStopLabel: {
+    color: '#111827',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  activeTripAddress: {
+    color: '#374151',
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  queuedTripBox: {
+    marginTop: 16,
+    gap: 4,
+  },
+  activeTripSyncRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  activeTripSyncText: {
+    flex: 1,
+    color: '#4B5563',
+    fontSize: 13,
+  },
+  activeTripRetry: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  activeTripRetryText: {
+    color: '#007D80',
+    fontSize: 13,
+    fontWeight: '700',
+  },
   activeStepBtn: {
     backgroundColor: '#00B5B8',
     borderRadius: 16,
@@ -406,52 +459,6 @@ export const driverStyles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '800',
-  },
-
-  // THẺ THU NHẬP HÔM NAY (MATCH IMAGE 1)
-  incomeCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 18,
-    marginBottom: 16,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  incomeHeader: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 8,
-  },
-  incomeMiddleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  incomeValue: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#111827',
-    lineHeight: 36, // Đảm bảo khoảng cách dòng đủ cho kích thước font 28
-    paddingVertical: 2, // Đệm tránh cắt đầu số
-    includeFontPadding: false, // Tắt font padding mặc định của Android
-  },
-  incomeIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: '#E0F7F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  incomeFooterText: {
-    fontSize: 13,
-    color: '#6B7280',
-    fontWeight: '500',
   },
 
   // TIÊU ĐỀ DANH SÁCH CUỐC XE QUANH ĐÂY (MATCH IMAGE 1)

@@ -3,24 +3,22 @@ import { MAX_NOTIFICATIONS, normalizeNotification, restoreNotifications } from '
 
 /**
  * @typedef {{userId: string | null, items: import('../utils/notification-state').NotificationItem[],
- * unreadCount: number, loading: boolean, status: string,
- * banner: import('../utils/notification-state').NotificationItem | null, storageError: boolean}} NotificationSnapshot
+ * unreadCount: number, loading: boolean, status: string, storageError: boolean}} NotificationSnapshot
  */
 
 /** @returns {NotificationSnapshot} */
 const initialSnapshot = () => ({
   userId: null, items: [], unreadCount: 0, loading: false,
-  status: 'signed-out', banner: null, storageError: false,
+  status: 'signed-out', storageError: false,
 });
 
 /** A session-scoped inbox. Storage operations are ordered, including logout deletion. */
 export class NotificationStore {
-  constructor({ storage, createTransport, supported = true, setTimer = setTimeout, clearTimer = clearTimeout }) {
+  constructor({ storage, createTransport, supported = true, onNewNotification = null }) {
     this.storage = storage;
     this.createTransport = createTransport;
     this.supported = supported;
-    this.setTimer = setTimer;
-    this.clearTimer = clearTimer;
+    this.onNewNotification = onNewNotification;
     this.snapshot = initialSnapshot();
     this.listeners = new Set();
     this.session = null;
@@ -59,11 +57,6 @@ export class NotificationStore {
       .catch(() => { if (epoch === this.epoch) this.update({ storageError: true }); });
   }
 
-  dismissBanner = () => {
-    this.clearTimer(this.bannerTimer);
-    this.update({ banner: null });
-  };
-
   stopConnection() {
     this.connection += 1;
     this.stopTransport?.();
@@ -80,7 +73,6 @@ export class NotificationStore {
     const hydrated = sameUser && !this.snapshot.loading;
     const epoch = ++this.epoch;
     this.stopConnection();
-    this.dismissBanner();
     this.session = session;
 
     if (previousUser && previousUser !== session?.userId) {
@@ -111,7 +103,6 @@ export class NotificationStore {
     if (this.active === active) return;
     this.active = active;
     this.stopConnection();
-    if (!active) this.dismissBanner();
     this.startConnection();
   }
 
@@ -132,10 +123,10 @@ export class NotificationStore {
   receive(value) {
     const item = normalizeNotification(value);
     if (!item || this.snapshot.items.some((existing) => existing.id === item.id)) return;
-    this.update({ items: [item, ...this.snapshot.items].slice(0, MAX_NOTIFICATIONS), banner: item });
+    const userId = this.snapshot.userId;
+    this.update({ items: [item, ...this.snapshot.items].slice(0, MAX_NOTIFICATIONS) });
     this.persist();
-    this.clearTimer(this.bannerTimer);
-    this.bannerTimer = this.setTimer(() => this.update({ banner: null }), 5000);
+    this.onNewNotification?.(item, () => this.active && this.snapshot.userId === userId);
   }
 
   /** @param {string | null} [id] */
@@ -149,7 +140,6 @@ export class NotificationStore {
   dispose() {
     ++this.epoch;
     this.stopConnection();
-    this.clearTimer(this.bannerTimer);
     this.session = null;
     this.active = false;
     this.snapshot = initialSnapshot();

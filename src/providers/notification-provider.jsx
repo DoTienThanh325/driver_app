@@ -7,10 +7,10 @@ import { createNotificationTransport } from '../services/notification-realtime.s
 import { tokenStorage } from '../services/storage/token.storage';
 import { userStorage } from '../services/storage/user.storage';
 import { getTokenClaims } from '../utils/notification-state';
-import { NotificationBanner } from '../components/notifications/notification-banner';
+import { notificationService } from '../services/notification.service';
 
 /** @type {React.Context<(import('../services/notification-store').NotificationSnapshot & {
- * markRead: (id?: string) => void, dismissBanner: () => void
+ * markRead: (id?: string) => void
  * }) | null>} */
 const NotificationContext = createContext(null);
 
@@ -19,6 +19,7 @@ export function NotificationProvider({ children }) {
     storage: AsyncStorage,
     createTransport: createNotificationTransport,
     supported: Platform.OS === 'android' || Platform.OS === 'ios',
+    onNewNotification: notificationService.showInNotificationCenter,
   }));
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 
@@ -39,7 +40,6 @@ export function NotificationProvider({ children }) {
     };
     const unsubscribeToken = tokenStorage.subscribe((token) => {
       store.stopConnection();
-      store.dismissBanner();
       if (!token) {
         ++version;
         void store.setSession(null);
@@ -69,9 +69,8 @@ export function NotificationProvider({ children }) {
   }, [store]);
 
   return (
-    <NotificationContext.Provider value={{ ...snapshot, markRead: store.markRead, dismissBanner: store.dismissBanner }}>
+    <NotificationContext.Provider value={{ ...snapshot, markRead: store.markRead }}>
       {children}
-      <NotificationBanner notification={snapshot.banner} onDismiss={store.dismissBanner} />
     </NotificationContext.Provider>
   );
 }

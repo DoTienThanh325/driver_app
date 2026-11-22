@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { getUserErrorMessage } from '../utils/error-message';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -32,6 +33,59 @@ export default function FoodDetailScreen() {
   const [claimedVoucherIds, setClaimedVoucherIds] = useState(new Set());
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
 
+  // Lưu trữ vị trí khách ngầm để phản hồi tức thì khi bấm Đặt món (< 100ms)
+  const userLocationRef = useRef({
+    latitude: 21.028511,
+    longitude: 105.854444,
+    address: 'Vị trí hiện tại của bạn',
+  });
+
+  // Pre-fetch vị trí GPS của khách ngầm ngay khi mở xem chi tiết món ăn (không block giao diện)
+  useEffect(() => {
+    let isMounted = true;
+    async function prefetchLocation() {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+
+        // 1. Đọc vị trí lưu gần nhất trong cache hệ điều hành (rất nhanh < 50ms)
+        const lastKnown = await Location.getLastKnownPositionAsync();
+        if (lastKnown?.coords && isMounted) {
+          userLocationRef.current.latitude = lastKnown.coords.latitude;
+          userLocationRef.current.longitude = lastKnown.coords.longitude;
+          reverseGeocodeCoords(lastKnown.coords.latitude, lastKnown.coords.longitude)
+            .then((addr) => {
+              if (addr && isMounted) {
+                userLocationRef.current.address = addr;
+              }
+            })
+            .catch(() => {});
+        }
+
+        // 2. Cập nhật vị trí GPS chính xác hơn ở nền
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
+          .then(async (loc) => {
+            if (loc?.coords && isMounted) {
+              userLocationRef.current.latitude = loc.coords.latitude;
+              userLocationRef.current.longitude = loc.coords.longitude;
+              const freshAddr = await reverseGeocodeCoords(loc.coords.latitude, loc.coords.longitude);
+              if (freshAddr && isMounted) {
+                userLocationRef.current.address = freshAddr;
+              }
+            }
+          })
+          .catch(() => {});
+      } catch (e) {
+        // Fallback ngầm không gián đoạn người dùng
+      }
+    }
+
+    prefetchLocation();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const handleClaimVoucher = async (voucher) => {
     if (!voucher?.id || claimedVoucherIds.has(voucher.id)) return;
     const quantity = Number(
@@ -49,11 +103,11 @@ export default function FoodDetailScreen() {
         `Đã nhận ${quantity > 1 ? `${quantity} ` : ''}voucher của nhà hàng vào ví ưu đãi của bạn!`
       );
     } catch (err) {
-      if (err?.message?.includes('đã nhận') || err?.message?.includes('already claimed')) {
+      if (/đã nhận|already claimed/i.test(err.serverMessage ?? err.message ?? '')) {
         setClaimedVoucherIds((prev) => new Set(prev).add(voucher.id));
         Alert.alert('Thông báo', 'Bạn đã nhận voucher này rồi.');
       } else {
-        Alert.alert('Thông báo', err?.message || 'Không thể nhận voucher lúc này.');
+        Alert.alert('Thông báo', getUserErrorMessage(err, 'Không thể nhận ưu đãi lúc này. Vui lòng thử lại.'));
       }
     } finally {
       setClaimingVoucherId(null);
@@ -119,29 +173,14 @@ export default function FoodDetailScreen() {
   const formatVND = (price) =>
     new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
 
-  const handleOrderFood = async () => {
+  const handleOrderFood = () => {
     if (!food || !currentOption) return;
     setIsSubmittingOrder(true);
     try {
-      // 1. Lấy vị trí GPS hiện tại của khách làm Điểm nhận món
-      let custLat = 21.028511;
-      let custLon = 105.854444;
-      let custAddress = 'Vị trí hiện tại của bạn';
-
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-          if (loc?.coords) {
-            custLat = loc.coords.latitude;
-            custLon = loc.coords.longitude;
-            const resolvedAddr = await reverseGeocodeCoords(custLat, custLon);
-            if (resolvedAddr) custAddress = resolvedAddr;
-          }
-        }
-      } catch (locErr) {
-        console.warn('Lỗi lấy vị trí GPS khách khi đặt món:', locErr);
-      }
+      // 1. Lấy vị trí đã pre-fetch ngầm (hoặc mặc định) ngay lập tức mà không phải chờ đợi
+      const custLat = userLocationRef.current?.latitude || 21.028511;
+      const custLon = userLocationRef.current?.longitude || 105.854444;
+      const custAddress = userLocationRef.current?.address || 'Vị trí hiện tại của bạn';
 
       // 2. Điểm lấy món (Nhà hàng)
       const restAddress = restaurant?.locationAddress || 'Nhà hàng đối tác T&M';
@@ -159,7 +198,7 @@ export default function FoodDetailScreen() {
         imageUrl: heroUri,
       };
 
-      // 4. Chuyển sang màn hình xác nhận đơn món
+      // 4. Chuyển sang màn hình xác nhận đơn món ngay tức khắc (< 100ms)
       router.push({
         pathname: '/trip-confirm',
         params: {
@@ -177,7 +216,7 @@ export default function FoodDetailScreen() {
         },
       });
     } catch (err) {
-      Alert.alert('Không thể tiếp tục', err.message || 'Có lỗi xảy ra khi chuẩn bị đơn đặt món.');
+      Alert.alert('Không thể tiếp tục', getUserErrorMessage(err, 'Có lỗi xảy ra khi chuẩn bị đơn đặt món.'));
     } finally {
       setIsSubmittingOrder(false);
     }

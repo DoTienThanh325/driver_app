@@ -1,3 +1,4 @@
+import { getUserErrorMessage } from '../../utils/error-message';
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   View,
@@ -11,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import * as Location from 'expo-location';
 
 import { ThemedText } from '@/components/themed-text';
@@ -20,7 +21,7 @@ import { useDriverAvailability } from '@/hooks/use-driver-availability';
 import { authService } from '@/services/auth.service';
 import { userStorage } from '@/services/storage/user.storage';
 import { tripService, TRIP_STATUS } from '@/services/trip.service';
-import { paymentService } from '@/services/payment.service';
+import { getDriverTripAction } from '@/utils/driver-trip-actions';
 import { reverseGeocodeCoords } from '@/utils/geocoding';
 import { driverStyles as styles } from '@/styles/screens/driver.styles';
 import { NotificationBell } from '@/components/notifications/notification-bell';
@@ -30,6 +31,12 @@ const DEFAULT_DRIVER_COORDS = {
   latitude: 21.028511,
   longitude: 105.854444,
   name: 'Hồ Hoàn Kiếm, Hoàn Kiếm, Hà Nội',
+};
+
+const activeTripLabels = {
+  [TRIP_STATUS.DRIVER_ASSIGNED]: ['Đang đến điểm đón', 'Đang đến quán'],
+  [TRIP_STATUS.DRIVER_ARRIVING]: ['Đã đến điểm đón', 'Đã đến quán'],
+  [TRIP_STATUS.IN_PROGRESS]: ['Đang chở khách', 'Đang giao món'],
 };
 
 export default function DriverScreen() {
@@ -166,7 +173,16 @@ export default function DriverScreen() {
 
   // Cuốc xe đang nhận và thực hiện
   const [activeTrip, setActiveTrip] = useState(null);
+  const [queuedTrip, setQueuedTrip] = useState(null);
+  const [currentTripsStatus, setCurrentTripsStatus] = useState('loading');
+  const currentTripsRequestRef = useRef(0);
+  const currentTripsPendingRef = useRef(null);
+  const acceptingOfferRef = useRef(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const statusUpdateRef = useRef(null);
+  const tripAction = getDriverTripAction(activeTrip);
+  const activeTripStatus = activeTrip?.status;
+  const queuedTripId = queuedTrip?.id;
 
   // Kiểm tra quyền đối tác tài xế
   useEffect(() => {
@@ -274,13 +290,16 @@ export default function DriverScreen() {
   // Quét cuốc xe mới từ AI Matching khi tài xế đang online
   // Cho phép quét khi chưa có cuốc HOẶC khi đang chở khách (IN_PROGRESS) để nhận cuốc gối đầu
   useEffect(() => {
-    if (!isAvailable) return;
-    if (activeTrip && activeTrip.status !== TRIP_STATUS.IN_PROGRESS) return;
+    if (!isAvailable || currentTripsStatus === 'loading') return;
+    if (queuedTripId || (activeTripStatus && activeTripStatus !== TRIP_STATUS.IN_PROGRESS)) return;
 
+    let active = true;
     const fetchOffers = async () => {
       try {
         const offers = await tripService.getMyPendingOffers();
-        setPendingOffers(offers);
+        if (active && !acceptingOfferRef.current) {
+          setPendingOffers(activeTripStatus ? offers.filter((offer) => offer.backToBack) : offers);
+        }
       } catch {
         // Bỏ qua lỗi kết nối tạm thời
       }
@@ -289,64 +308,66 @@ export default function DriverScreen() {
     fetchOffers();
     const offerInterval = setInterval(fetchOffers, 2500);
 
-    return () => clearInterval(offerInterval);
-  }, [isAvailable, activeTrip]);
+    return () => {
+      active = false;
+      clearInterval(offerInterval);
+    };
+  }, [isAvailable, activeTripStatus, queuedTripId, currentTripsStatus]);
 
-  // Cập nhật chi tiết cuốc xe đang chạy nếu có
-  useEffect(() => {
-    if (!activeTrip?.id) return;
-
-    const interval = setInterval(async () => {
-      try {
-        const updated = await tripService.getTripById(activeTrip.id);
-        if (updated) {
-          if (updated.status === TRIP_STATUS.COMPLETED || updated.status === TRIP_STATUS.CANCELLED) {
-            Alert.alert(
-              'Cuốc xe kết thúc',
-              updated.status === TRIP_STATUS.COMPLETED
-                ? 'Chúc mừng! Chuyến đi đã hoàn thành thành công.'
-                : 'Chuyến đi đã bị hủy.'
-            );
-            setActiveTrip(null);
-          } else {
-            setActiveTrip(updated);
-          }
-        }
-      } catch {
-        // Bỏ qua lỗi polling
-      }
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [activeTrip?.id]);
-
-  // Tự động đăng ký thông tin ngân hàng mặc định của tài xế vào PaymentService để nhận VietQR
-  useEffect(() => {
-    paymentService
-      .registerDriverPaymentInfo({
-        bankName: 'MBBank (Quân Đội)',
-        bankBin: '970422',
-        bankAccountNumber: '0399888999',
-        bankAccountName: 'TAI XE DRIVER APP',
-      })
-      .catch(() => {});
+  const refreshCurrentTrips = useCallback(async () => {
+    if (currentTripsPendingRef.current === currentTripsRequestRef.current) return;
+    const request = ++currentTripsRequestRef.current;
+    currentTripsPendingRef.current = request;
+    try {
+      const response = await tripService.getDriverCurrentTrips();
+      if (request !== currentTripsRequestRef.current) return;
+      setActiveTrip(response.currentTrip ?? null);
+      setQueuedTrip(response.queuedTrip ?? null);
+      setCurrentTripsStatus('ready');
+    } catch {
+      if (request === currentTripsRequestRef.current) setCurrentTripsStatus('error');
+    } finally {
+      if (currentTripsPendingRef.current === request) currentTripsPendingRef.current = null;
+    }
   }, []);
+
+  useFocusEffect(useCallback(() => {
+    if (!userProfile?.id) return;
+
+    const refresh = () => {
+      if (!statusUpdateRef.current && !acceptingOfferRef.current) void refreshCurrentTrips();
+    };
+    refresh();
+    const interval = setInterval(refresh, 3000);
+    return () => {
+      clearInterval(interval);
+      currentTripsRequestRef.current += 1;
+    };
+  }, [userProfile?.id, refreshCurrentTrips]));
+
+  const openCurrentTrip = (trip, payment = false, routeCoords = null) => {
+    const { latitude, longitude } = driverCoordsRef.current;
+    router.push({
+      pathname: '/driver-active-trip',
+      params: {
+        tripId: trip.id,
+        tripData: JSON.stringify(trip),
+        driverLatitude: String(latitude),
+        driverLongitude: String(longitude),
+        ...(payment ? { openPayment: '1' } : {}),
+        ...(routeCoords?.length ? { routeCoords: JSON.stringify(routeCoords) } : {}),
+      },
+    });
+  };
 
   // Nhận cuốc xe (Hỗ trợ cả cuốc mới & cuốc gối đầu)
   const handleAcceptOffer = async (offer) => {
-    if (!offer) return;
+    if (!offer || queuedTrip || acceptingOfferRef.current || statusUpdateRef.current) return;
+    if (activeTrip && (!offer.backToBack || activeTrip.status !== TRIP_STATUS.IN_PROGRESS)) return;
+    acceptingOfferRef.current = true;
+    currentTripsRequestRef.current += 1;
     setIsAccepting(true);
     try {
-      // Đảm bảo thông tin ngân hàng đã cập nhật
-      paymentService
-        .registerDriverPaymentInfo({
-          bankName: 'MBBank (Quân Đội)',
-          bankBin: '970422',
-          bankAccountNumber: '0399888999',
-          bankAccountName: 'TAI XE DRIVER APP',
-        })
-        .catch(() => {});
-
       setSelectedOfferForDetail(null);
 
       // Chuyển sang màn hình Chi tiết cuốc xe & Thông tin khách hàng
@@ -360,7 +381,7 @@ export default function DriverScreen() {
       const tripDetail = {
         id: offer.tripId || 'TRIP-' + Date.now(),
         status: TRIP_STATUS.DRIVER_ASSIGNED,
-        shippFare: offer.shippFare || 45000,
+        shippFare: offer.shippFare ?? 45000,
         totalFoodPrice: offer.totalFoodPrice || null,
         shippingType: offer.shippingType || 'PASSENGER',
         foods: Array.isArray(offer.foods) ? offer.foods : [],
@@ -373,49 +394,27 @@ export default function DriverScreen() {
         driverLatitude: drvLat,
         driverLongitude: drvLon,
         vehicleType: offer.vehicleType || 'MOTORBIKE',
-        customerName: offer.customerName || 'Nguyễn Văn An',
-        customerPhone: offer.customerPhone || '0988123456',
-        customerRating: '4.9',
         distanceKm: offer.distanceKm || '2.5',
       };
 
-      if (!offer.isSample) {
-        await tripService.acceptTrip(offer.tripId);
+      if (offer.isSample) {
+        openCurrentTrip({ ...tripDetail, id: offer.tripId?.startsWith('sample') ? offer.tripId : 'TRIP-DEMO' }, false, modalRouteCoords);
+        return;
       }
-      setPendingOffers([]);
-      router.push({
-        pathname: '/driver-active-trip',
-        params: {
-          tripId: tripDetail.id,
-          tripData: JSON.stringify(tripDetail),
-          shippingType: tripDetail.shippingType,
-          totalFoodPrice: tripDetail.totalFoodPrice ? String(tripDetail.totalFoodPrice) : '',
-          foodsData: JSON.stringify(tripDetail.foods),
-          driverLatitude: drvLat,
-          driverLongitude: drvLon,
-          ...(modalRouteCoords && modalRouteCoords.length > 0
-            ? { routeCoords: JSON.stringify(modalRouteCoords) }
-            : {}),
-        },
-      });
-      return;
 
       await tripService.acceptTrip(offer.tripId);
       setPendingOffers([]);
-      if (activeTrip) {
-        Alert.alert(
-          'Nhận cuốc gối đầu thành công 🎉',
-          'Bạn đã nhận trước cuốc xe tiếp theo! Hãy hoàn thành cuốc xe hiện tại, hệ thống sẽ tự động chuyển sang đón khách mới.'
-        );
-      } else {
-        Alert.alert('Thành công', 'Bạn đã nhận chuyến xe thành công! Bắt đầu đón khách.');
-        const trip = await tripService.getTripById(offer.tripId);
-        setActiveTrip(trip || { id: offer.tripId, status: TRIP_STATUS.DRIVER_ASSIGNED, ...offer });
+      if (!activeTrip) {
+        setActiveTrip(tripDetail);
+        setCurrentTripsStatus('ready');
+        openCurrentTrip(tripDetail, false, modalRouteCoords);
       }
+      await refreshCurrentTrips();
     } catch (err) {
-      Alert.alert('Không thể nhận chuyến', err.message || 'Cuốc xe đã được tài xế khác nhận hoặc đã hết hạn.');
+      Alert.alert('Không thể nhận chuyến', getUserErrorMessage(err, 'Không thể nhận chuyến lúc này. Vui lòng tải lại danh sách chuyến.'));
       setPendingOffers((prev) => prev.filter((o) => o.offerId !== offer.offerId));
     } finally {
+      acceptingOfferRef.current = false;
       setIsAccepting(false);
     }
   };
@@ -433,51 +432,30 @@ export default function DriverScreen() {
     }
   };
 
-  // Tài xế cập nhật trạng thái chuyến đi theo quy trình
   const handleAdvanceTripStatus = async () => {
-    if (!activeTrip?.id) return;
+    if (!activeTrip?.id || !tripAction || statusUpdateRef.current || acceptingOfferRef.current) return;
 
-    let nextStatus = null;
-    let confirmMsg = '';
+    const { nextStatus } = tripAction;
+    statusUpdateRef.current = activeTrip.id;
+    currentTripsRequestRef.current += 1;
+    setIsUpdatingStatus(true);
+    try {
+      await tripService.updateTripStatus(activeTrip.id, nextStatus);
+      const updatedTrip = { ...activeTrip, status: nextStatus };
 
-    if (activeTrip.status === TRIP_STATUS.DRIVER_ASSIGNED) {
-      nextStatus = TRIP_STATUS.DRIVER_ARRIVING;
-      confirmMsg = 'Xác nhận bạn đã đến điểm đón khách?';
-    } else if (activeTrip.status === TRIP_STATUS.DRIVER_ARRIVING) {
-      nextStatus = TRIP_STATUS.IN_PROGRESS;
-      confirmMsg = 'Khách đã lên xe. Xác nhận bắt đầu chuyến đi?';
-    } else if (activeTrip.status === TRIP_STATUS.IN_PROGRESS) {
-      nextStatus = TRIP_STATUS.COMPLETED;
-      confirmMsg = 'Đã đến điểm trả khách. Xác nhận hoàn thành chuyến đi và thu cước?';
+      if (nextStatus === TRIP_STATUS.COMPLETED) {
+        setActiveTrip(null);
+        openCurrentTrip(updatedTrip, true);
+      } else {
+        setActiveTrip(updatedTrip);
+      }
+    } catch (err) {
+      Alert.alert('Lỗi cập nhật', getUserErrorMessage(err, 'Không thể cập nhật trạng thái.'));
+    } finally {
+      statusUpdateRef.current = null;
+      setIsUpdatingStatus(false);
+      void refreshCurrentTrips();
     }
-
-    if (!nextStatus) return;
-
-    Alert.alert('Xác nhận tiến trình', confirmMsg, [
-      { text: 'Hủy', style: 'cancel' },
-      {
-        text: 'Đồng ý',
-        onPress: async () => {
-          setIsUpdatingStatus(true);
-          try {
-            await tripService.updateTripStatus(activeTrip.id, nextStatus);
-            if (nextStatus === TRIP_STATUS.COMPLETED) {
-              Alert.alert(
-                'Hoàn thành cuốc xe 🎉',
-                `Đã thu cước phí: ${Number(activeTrip.shippFare || 25000).toLocaleString('vi-VN')} đ. Bạn đã sẵn sàng nhận cuốc xe tiếp theo!`
-              );
-              setActiveTrip(null);
-            } else {
-              setActiveTrip((prev) => ({ ...prev, status: nextStatus }));
-            }
-          } catch (err) {
-            Alert.alert('Lỗi cập nhật', err.message || 'Không thể cập nhật trạng thái.');
-          } finally {
-            setIsUpdatingStatus(false);
-          }
-        },
-      },
-    ]);
   };
 
   // Đổi tọa độ GPS hoặc lấy lại vị trí thực tế của tài xế
@@ -532,26 +510,12 @@ export default function DriverScreen() {
       await tripService.simulateTripNearMe(driverCoords.latitude, driverCoords.longitude);
       Alert.alert('Thành công', 'Đã mô phỏng 1 khách đặt chuyến gần bạn! Cuốc xe sẽ xuất hiện trong giây lát.');
     } catch (err) {
-      Alert.alert('Lỗi', err.message || 'Không thể tạo cuốc xe mô phỏng');
+      Alert.alert('Lỗi', getUserErrorMessage(err, 'Không thể tạo cuốc xe mô phỏng'));
     }
   };
 
   const driverName = userProfile?.fullName || userProfile?.username || 'Thành Trung';
   const initialLetter = driverName.charAt(0).toUpperCase();
-
-  // Nhãn nút tiến trình cho tài xế
-  const getNextActionLabel = () => {
-    switch (activeTrip?.status) {
-      case TRIP_STATUS.DRIVER_ASSIGNED:
-        return '1. TÔI ĐÃ ĐẾN ĐIỂM ĐÓN';
-      case TRIP_STATUS.DRIVER_ARRIVING:
-        return '2. BẮT ĐẦU CHUYẾN ĐI';
-      case TRIP_STATUS.IN_PROGRESS:
-        return '3. ĐÃ ĐẾN ĐIỂM TRẢ KHÁCH (THU TIỀN)';
-      default:
-        return 'CẬP NHẬT TRẠNG THÁI';
-    }
-  };
 
   return (
     <ThemedView style={styles.safeArea}>
@@ -598,19 +562,103 @@ export default function DriverScreen() {
             </View>
           </View>
 
-          {/* 2. Thẻ Thu nhập hôm nay */}
-          <View style={styles.incomeCard}>
-            <ThemedText style={styles.incomeHeader}>Thu nhập hôm nay</ThemedText>
-            <View style={styles.incomeMiddleRow}>
-              <ThemedText style={styles.incomeValue}>450.000đ</ThemedText>
-              <View style={styles.incomeIconBox}>
-                <Ionicons name="bar-chart" size={22} color="#00B5B8" />
+          {activeTrip && (
+            <>
+              <View style={styles.sectionHeaderRow}>
+                <ThemedText style={styles.sectionTitle}>Cuốc xe đang thực hiện</ThemedText>
               </View>
-            </View>
-            <ThemedText style={styles.incomeFooterText}>12 Chuyến   4h 30p Online</ThemedText>
-          </View>
+              <View style={styles.activeTripCard}>
+                <View style={styles.activeTripHeader}>
+                  <View style={styles.statusBadge}>
+                    <ThemedText style={styles.statusBadgeText}>
+                      {activeTripLabels[activeTrip.status]?.[activeTrip.shippingType === 'FOOD_DELIVERY' ? 1 : 0]}
+                    </ThemedText>
+                  </View>
+                  <ThemedText style={styles.tripIdText}>
+                    Mã: #{String(activeTrip.id || '').slice(-6).toUpperCase()}
+                  </ThemedText>
+                </View>
 
-          {/* 3. Mục Các cuốc xe đã thực hiện */}
+                {/* Thông tin lộ trình */}
+                <View style={[styles.offerRouteBox, styles.activeTripRouteBox]}>
+                  <View style={styles.activeTripStop}>
+                    <Ionicons name="location" size={18} color="#10B981" />
+                    <View style={styles.activeTripStopText}>
+                      <ThemedText style={styles.activeTripStopLabel}>Điểm đón</ThemedText>
+                      <ThemedText style={styles.activeTripAddress}>{activeTrip.pickUpAddress}</ThemedText>
+                    </View>
+                  </View>
+
+                  <View style={styles.activeTripStop}>
+                    <Ionicons name="flag" size={18} color="#EF4444" />
+                    <View style={styles.activeTripStopText}>
+                      <ThemedText style={styles.activeTripStopLabel}>Điểm đến</ThemedText>
+                      <ThemedText style={styles.activeTripAddress}>{activeTrip.destinationAddress}</ThemedText>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Cước phí */}
+                <View style={styles.offerMetaRow}>
+                  <View style={styles.metaItem}>
+                    <Ionicons name="wallet-outline" size={16} color="#00B5B8" />
+                    <ThemedText style={[styles.metaText, { fontWeight: '700', color: '#00B5B8', fontSize: 14 }]}>
+                      Thu cước: {Number(activeTrip.shippFare ?? 0).toLocaleString('vi-VN')} đ
+                    </ThemedText>
+                  </View>
+                  <View style={styles.metaItem}>
+                    <Ionicons name="car-outline" size={16} color="#6B7280" />
+                    <ThemedText style={styles.metaText}>
+                      {activeTrip.shippingType === 'FOOD_DELIVERY'
+                        ? 'Giao món'
+                        : activeTrip.vehicleType === 'CAR' ? 'Ô tô' : 'Xe máy'}
+                    </ThemedText>
+                  </View>
+                </View>
+
+                <Pressable
+                  accessibilityRole="button"
+                  style={styles.viewDetailRideBtn}
+                  disabled={isUpdatingStatus || isAccepting}
+                  onPress={() => openCurrentTrip(activeTrip)}
+                >
+                  <ThemedText style={styles.viewDetailRideBtnText}>Tiếp tục cuốc xe</ThemedText>
+                </Pressable>
+
+                {tripAction && (
+                  <Pressable
+                    style={styles.activeStepBtn}
+                    onPress={handleAdvanceTripStatus}
+                    disabled={isUpdatingStatus || isAccepting}
+                  >
+                    {isUpdatingStatus ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <ThemedText style={styles.activeStepBtnText}>{tripAction.label}</ThemedText>
+                    )}
+                  </Pressable>
+                )}
+
+                {queuedTrip && (
+                  <View style={[styles.offerRouteBox, styles.queuedTripBox]}>
+                    <ThemedText style={styles.sectionTitle}>Cuốc tiếp theo</ThemedText>
+                    <ThemedText style={styles.activeTripAddress}>{queuedTrip.pickUpAddress}</ThemedText>
+                    <ThemedText style={styles.activeTripAddress}>{queuedTrip.destinationAddress}</ThemedText>
+                  </View>
+                )}
+                {currentTripsStatus === 'error' && (
+                  <View style={styles.activeTripSyncRow}>
+                    <ThemedText style={styles.activeTripSyncText}>Chưa đồng bộ được cuốc xe</ThemedText>
+                    <Pressable accessibilityRole="button" style={styles.activeTripRetry} onPress={refreshCurrentTrips}>
+                      <ThemedText style={styles.activeTripRetryText}>Thử lại</ThemedText>
+                    </Pressable>
+                  </View>
+                )}
+              </View>
+            </>
+          )}
+
+          {/* 2. Mục Các cuốc xe đã thực hiện */}
           <Pressable
             style={styles.historyButtonCard}
             onPress={() => router.push('/driver-trips')}
@@ -682,73 +730,9 @@ export default function DriverScreen() {
               </ThemedText>
             </View>
           ) : activeTrip ? (
-            /* TRẠNG THÁI: ĐANG THỰC HIỆN CUỐC XE */
-            <View style={styles.activeTripCard}>
-              <View style={styles.activeTripHeader}>
-                <View style={styles.statusBadge}>
-                  <ThemedText style={styles.statusBadgeText}>
-                    {activeTrip.status === TRIP_STATUS.DRIVER_ASSIGNED
-                      ? 'ĐÃ NHẬN CHUYẾN'
-                      : activeTrip.status === TRIP_STATUS.DRIVER_ARRIVING
-                      ? 'ĐANG TỚI ĐIỂM ĐÓN'
-                      : 'ĐANG CHỞ KHÁCH'}
-                  </ThemedText>
-                </View>
-                <ThemedText style={styles.tripIdText}>
-                  Mã: #{String(activeTrip.id || '').slice(-6).toUpperCase()}
-                </ThemedText>
-              </View>
-
-              {/* Thông tin lộ trình */}
-              <View style={styles.offerRouteBox}>
-                <View style={styles.offerRouteRow}>
-                  <Ionicons name="location" size={18} color="#10B981" />
-                  <ThemedText style={styles.offerRouteText} numberOfLines={2}>
-                    <ThemedText style={{ fontWeight: '700' }}>Điểm đón: </ThemedText>
-                    {activeTrip.pickUpAddress}
-                  </ThemedText>
-                </View>
-
-                <View style={[styles.offerRouteRow, { marginBottom: 0 }]}>
-                  <Ionicons name="flag" size={18} color="#EF4444" />
-                  <ThemedText style={styles.offerRouteText} numberOfLines={2}>
-                    <ThemedText style={{ fontWeight: '700' }}>Điểm đến: </ThemedText>
-                    {activeTrip.destinationAddress}
-                  </ThemedText>
-                </View>
-              </View>
-
-              {/* Cước phí */}
-              <View style={styles.offerMetaRow}>
-                <View style={styles.metaItem}>
-                  <Ionicons name="wallet-outline" size={16} color="#00B5B8" />
-                  <ThemedText style={[styles.metaText, { fontWeight: '700', color: '#00B5B8', fontSize: 14 }]}>
-                    Thu cước: {Number(activeTrip.shippFare || 25000).toLocaleString('vi-VN')} đ
-                  </ThemedText>
-                </View>
-                <View style={styles.metaItem}>
-                  <Ionicons name="car-outline" size={16} color="#6B7280" />
-                  <ThemedText style={styles.metaText}>
-                    {activeTrip.vehicleType === 'CAR' ? '🚗 Ô tô' : '🛵 Xe máy'}
-                  </ThemedText>
-                </View>
-              </View>
-
-              {/* Nút hành động theo từng bước của tài xế */}
-              <Pressable
-                style={styles.activeStepBtn}
-                onPress={handleAdvanceTripStatus}
-                disabled={isUpdatingStatus}
-              >
-                {isUpdatingStatus ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <ThemedText style={styles.activeStepBtnText}>{getNextActionLabel()}</ThemedText>
-                )}
-              </Pressable>
-
+            <View>
               {/* Cuốc xe gối đầu khi đang chở khách (Back-to-back Dispatch) */}
-              {activeTrip.status === TRIP_STATUS.IN_PROGRESS && pendingOffers.length > 0 && (
+              {activeTrip.status === TRIP_STATUS.IN_PROGRESS && !queuedTrip && pendingOffers.length > 0 && (
                 <View style={{ marginTop: 20 }}>
                   <ThemedText style={{ fontSize: 14, fontWeight: '700', color: '#0F766E', marginBottom: 10 }}>
                     ⚡ CÓ {pendingOffers.length} CUỐC GỐI ĐẦU ĐƯỢC GỢI Ý CHO BẠN:
@@ -907,7 +891,7 @@ export default function DriverScreen() {
                   borderColor: '#E5E7EB',
                   marginTop: 8,
                 }}>
-                  <Ionicons name="radar-outline" size={36} color="#00B5B8" style={{ marginBottom: 10 }} />
+                  <Ionicons name="radio-outline" size={36} color="#00B5B8" style={{ marginBottom: 10 }} />
                   <ThemedText style={{ fontSize: 15, fontWeight: '700', color: '#111827' }}>
                     Đang quét cuốc xe mới...
                   </ThemedText>

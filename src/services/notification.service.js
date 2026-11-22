@@ -1,11 +1,41 @@
 import * as Notifications from 'expo-notifications';
 import { AndroidImportance } from 'expo-notifications';
 import { Platform } from 'react-native';
+import { formatNotificationTimestamp } from '../utils/notification-state';
 
-/**
- * Cấu hình hành vi hiển thị khi ứng dụng đang mở (Foreground):
- * Cho phép hiển thị banner, phát âm thanh và rung chuông
- */
+// Android retains the old silent channel's behavior after an app update.
+const INBOX_CHANNEL = 'app_inbox_alerts';
+const OTP_CHANNEL = 'otp_channel';
+let inboxChannelSetup;
+
+function ensureInboxChannel() {
+  if (Platform.OS !== 'android') return;
+
+  inboxChannelSetup ??= Notifications.setNotificationChannelAsync(INBOX_CHANNEL, {
+    name: 'Thông báo ứng dụng',
+    importance: AndroidImportance.HIGH,
+    sound: 'default',
+    enableVibrate: true,
+  }).catch((error) => {
+    inboxChannelSetup = undefined;
+    throw error;
+  });
+  return inboxChannelSetup;
+}
+
+function canPresentNotification(permission) {
+  return permission.granted ||
+    (Platform.OS === 'ios' && permission.ios?.allowsDisplayInNotificationCenter === true);
+}
+
+/** @param {import('expo-notifications').NotificationContentInput} content */
+function showLocalNotification(content, androidChannel) {
+  return Notifications.scheduleNotificationAsync({
+    content,
+    trigger: Platform.OS === 'android' ? { channelId: androidChannel } : null,
+  });
+}
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
@@ -16,6 +46,27 @@ Notifications.setNotificationHandler({
 });
 
 export const notificationService = {
+  showInNotificationCenter: async (item, isCurrent) => {
+    if (Platform.OS === 'web') return;
+    try {
+      const permission = await Notifications.getPermissionsAsync();
+      if (!canPresentNotification(permission)) return;
+
+      await ensureInboxChannel();
+      if (!isCurrent()) return;
+
+      const timestamp = formatNotificationTimestamp(item.timestamp);
+      await showLocalNotification({
+        title: item.title,
+        body: [item.content, timestamp].filter(Boolean).join('\n'),
+        data: { source: 'app_inbox', id: item.id, timestamp: item.timestamp },
+        sound: 'default',
+      }, INBOX_CHANNEL);
+    } catch (error) {
+      console.warn('Không thể hiển thị thông báo trong trung tâm thông báo:', error);
+    }
+  },
+
   /**
    * Khởi tạo quyền thông báo và tạo Channel cho Android
    */
@@ -23,17 +74,9 @@ export const notificationService = {
     try {
       if (Platform.OS === 'web') return false;
 
-      // 1. Kiểm tra & xin quyền thông báo
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
-      if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
-      }
-
-      // 2. Tạo Notification Channel với mức ưu tiên cao nhất trên Android
+      await ensureInboxChannel();
       if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('otp_channel', {
+        await Notifications.setNotificationChannelAsync(OTP_CHANNEL, {
           name: 'Mã xác thực OTP',
           importance: AndroidImportance.MAX,
           vibrationPattern: [0, 250, 250, 250],
@@ -42,7 +85,14 @@ export const notificationService = {
         });
       }
 
-      return finalStatus === 'granted';
+      const permission = await Notifications.getPermissionsAsync();
+      if (canPresentNotification(permission)) return true;
+      if (!permission.canAskAgain) return false;
+
+      const requested = await Notifications.requestPermissionsAsync({
+        ios: { allowAlert: true, allowSound: true },
+      });
+      return canPresentNotification(requested);
     } catch (error) {
       console.warn('Lỗi khi khởi tạo Notification:', error);
       return false;
@@ -57,19 +107,15 @@ export const notificationService = {
     try {
       if (!otpCode || Platform.OS === 'web') return;
 
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: '💬 Transit&Meal - Mã xác thực OTP',
-          body: `Mã OTP của bạn là: ${otpCode}. Mã có hiệu lực trong 60 giây. Không chia sẻ mã này cho bất kỳ ai.`,
-          data: {
-            type: 'OTP_VERIFICATION',
-            otp: String(otpCode),
-          },
-          sound: 'default',
-          ...(Platform.OS === 'android' ? { channelId: 'otp_channel' } : {}),
+      await showLocalNotification({
+        title: '💬 Transit&Meal - Mã xác thực OTP',
+        body: `Mã OTP của bạn là: ${otpCode}. Mã có hiệu lực trong 60 giây. Không chia sẻ mã này cho bất kỳ ai.`,
+        data: {
+          type: 'OTP_VERIFICATION',
+          otp: String(otpCode),
         },
-        trigger: null, // Gửi ngay lập tức
-      });
+        sound: 'default',
+      }, OTP_CHANNEL);
     } catch (error) {
       console.warn('Lỗi khi gửi Local Notification OTP:', error);
     }

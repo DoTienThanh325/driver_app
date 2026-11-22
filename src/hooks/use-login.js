@@ -1,3 +1,4 @@
+import { getUserErrorMessage } from '../utils/error-message';
 import { useState, useEffect, useCallback } from 'react';
 import { Keyboard, Alert, Platform } from 'react-native';
 import { router } from 'expo-router';
@@ -113,7 +114,7 @@ export function useLogin() {
         await notificationService.sendOtpLocalNotification(res.otp);
       }
     } catch (err) {
-      setErrorMessage(err.message || 'Số điện thoại hoặc mật khẩu không chính xác');
+      setErrorMessage(getUserErrorMessage(err, 'Không thể đăng nhập. Vui lòng thử lại.', { 401: 'Số điện thoại hoặc mật khẩu không đúng.' }));
     } finally {
       setIsLoading(false);
     }
@@ -144,7 +145,7 @@ export function useLogin() {
       // Đăng nhập thành công -> Reset stack và điều hướng thẳng về Trang chủ
       navigationHelper.resetToHome();
     } catch (err) {
-      setErrorMessage(err.message || 'Mã OTP không đúng hoặc đã hết hạn.');
+      setErrorMessage(getUserErrorMessage(err, 'Không thể xác minh mã OTP. Vui lòng thử lại.', { 400: 'Mã OTP không đúng hoặc đã hết hạn.', 401: 'Mã OTP không đúng hoặc đã hết hạn.', 422: 'Mã OTP không đúng hoặc đã hết hạn.' }));
     } finally {
       setIsLoading(false);
     }
@@ -176,7 +177,7 @@ export function useLogin() {
         await notificationService.sendOtpLocalNotification(res.otp);
       }
     } catch (err) {
-      setErrorMessage(err.message || 'Không thể gửi lại mã OTP. Vui lòng thử lại sau.');
+      setErrorMessage(getUserErrorMessage(err, 'Không thể gửi lại mã OTP. Vui lòng thử lại sau.', { 429: 'Bạn đã yêu cầu mã quá nhiều lần. Vui lòng đợi một lúc rồi thử lại.' }));
     } finally {
       setIsLoading(false);
     }

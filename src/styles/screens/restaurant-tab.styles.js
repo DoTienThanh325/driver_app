@@ -364,6 +364,25 @@ export const restaurantTabStyles = StyleSheet.create({
     fontSize: 13,
     color: '#111827',
   },
+  foodOptionCard: {
+    gap: 10,
+    padding: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 14,
+  },
+  foodOptionInputs: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  foodOptionRemove: {
+    padding: 8,
+  },
+  foodOptionImagePlaceholder: {
+    alignItems: 'center',
+  },
   uploadImageBox: {
     height: 100,
     backgroundColor: '#FFFFFF',

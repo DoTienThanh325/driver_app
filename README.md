@@ -1,231 +1,93 @@
-# T&M Driver App - Mobile Application 🛵🚗
+# T&M Driver App
 
-Ứng dụng di động công nghệ (Gọi xe, Giao hàng, Quản lý tài xế) dành cho khách hàng và đối tác tài xế của hệ sinh thái **T&M**. Ứng dụng được xây dựng trên nền tảng **React Native** kết hợp **Expo SDK 58**, **Expo Router**, hỗ trợ đa nền tảng (iOS, Android) với trải nghiệm người dùng hiện đại và hiệu năng cao.
+Ứng dụng Transit & Meal dành cho khách hàng, tài xế và đối tác nhà hàng. Dự án sử dụng React Native, Expo SDK 58 và Expo Router, chạy trên Android, iOS và web.
 
----
+## Tính năng
 
-## Thông báo realtime
+| Vai trò | Tính năng |
+| --- | --- |
+| Khách hàng | Đặt chuyến, theo dõi hoạt động, tìm món ăn và xem ưu đãi. |
+| Tài xế | Nộp hồ sơ, quản lý giấy tờ và phương tiện, bật trạng thái nhận chuyến, xử lý và xem lịch sử chuyến đi. |
+| Đối tác nhà hàng | Đăng ký kinh doanh, cập nhật hồ sơ nhà hàng, quản lý món ăn và tạo voucher. |
 
-Ứng dụng nhận thông báo cá nhân qua STOMP khi người dùng đã đăng nhập và ứng dụng
-đang mở trên Android/iOS. Nút chuông ở Trang chủ và Tài xế mở danh sách, có badge
-chưa đọc và thao tác đánh dấu đã đọc. Banner hiển thị trong app trong 5 giây,
-không cần quyền thông báo hệ điều hành. Luồng OTP local vẫn hoạt động riêng.
+Khi thêm phương tiện thuộc loại xe chưa có giấy phép lái xe trong hồ sơ, tài xế cần bổ sung ảnh hai mặt giấy phép. Giấy phép xe máy và ô tô được quản lý riêng. Ảnh giấy tờ được chuẩn hóa sang JPEG trước khi tải lên qua API.
 
-Mặc định kết nối tới `/ws/notifications` trên `EXPO_PUBLIC_API_URL` (hoặc Gateway
-tự nhận diện), đổi `http/https` sang `ws/wss`. JWT được gửi trong HTTP handshake
-và STOMP CONNECT; client subscribe `/user/queue/notifications`.
+## Chạy trên máy phát triển
 
-Nếu Gateway không chuyển tiếp WebSocket upgrade, đặt URL đầy đủ trong `.env`,
-dùng địa chỉ LAN mà điện thoại truy cập được, rồi khởi động lại Expo:
+Cài Node.js 24 LTS và npm. Chạy các lệnh sau từ thư mục chứa `package.json`. Khởi động Spring Cloud Gateway để sử dụng các chức năng cần backend.
+
+```bash
+npm ci
+npm start
+```
+
+Metro chạy ở cổng `8088`. Quét mã QR bằng Expo Go để mở ứng dụng trên điện thoại. Có thể dùng các lệnh sau khi đã cài đặt trình giả lập tương ứng hoặc muốn mở bản web.
+
+| Lệnh | Mục đích |
+| --- | --- |
+| `npm run android` | Mở trên Android Emulator. |
+| `npm run ios` | Mở trên iOS Simulator trên macOS. |
+| `npm run web` | Chạy bản web ở chế độ phát triển. |
+
+### Kết nối Gateway
+
+Khi để trống `EXPO_PUBLIC_API_URL`, ứng dụng di động ưu tiên lấy host từ Metro và gọi Gateway ở cổng `8080`. Địa chỉ dự phòng là `10.0.2.2` trên Android và `localhost` trên iOS. Bản web dùng giao thức và host của trang đang mở, với cổng Gateway `8080`.
+
+Nếu Gateway chạy trên máy khác, dùng cổng khác hoặc Metro chạy qua tunnel, đặt URL Gateway mà thiết bị có thể truy cập trong `.env`, rồi khởi động lại Expo. Ví dụ trên thiết bị cùng mạng LAN:
+
+```dotenv
+EXPO_PUBLIC_API_URL=http://192.168.1.10:8080
+```
+
+## Chạy bản web bằng Docker
+
+Sau khi Gateway sẵn sàng, chạy từ thư mục chứa `docker-compose.yml`:
+
+```bash
+docker compose up -d --build
+```
+
+Mở `http://localhost:8088` hoặc dùng địa chỉ LAN của máy chủ khi truy cập từ thiết bị khác. Đặt `MOBILE_WEB_PORT` trong `.env` nếu cần đổi cổng web, chẳng hạn khi Metro đang dùng cổng `8088`. Cấu hình `MOBILE_FE_ORIGIN` phía backend khớp với origin của trang web, gồm giao thức, host và cổng. Nếu thay đổi `EXPO_PUBLIC_API_URL`, chạy lại lệnh Compose trên để build lại bản web.
+
+## Thông báo thời gian thực
+
+Android và iOS nhận thông báo cá nhân qua STOMP khi người dùng đã đăng nhập và ứng dụng đang mở ở tiền cảnh. Nút chuông ở Trang chủ và Tài xế mở danh sách và hiển thị số mục chưa đọc. Ứng dụng lưu tối đa 200 thông báo trên thiết bị theo từng tài khoản và xóa dữ liệu thông báo khi đăng xuất.
+
+Nếu người dùng cấp quyền thông báo hệ thống, ứng dụng có thể hiển thị thông báo mới trong trung tâm thông báo của thiết bị. Luồng OTP dùng thông báo cục bộ riêng. Trạng thái đã đọc được lưu trên từng thiết bị. Bản web hiện chỉ hỗ trợ danh sách cục bộ. Các sự kiện phát sinh khi ứng dụng đóng, chạy nền hoặc mất mạng hiện không được nhận bù.
+
+Client mặc định kết nối tới `/ws/notifications` trên Gateway, dùng `ws://` hoặc `wss://` tương ứng với giao thức API, gửi JWT khi mở WebSocket và khi gửi STOMP CONNECT, rồi đăng ký `/user/queue/notifications`. Nếu cần kết nối trực tiếp tới dịch vụ thông báo, đặt URL đầy đủ trong `.env` và khởi động lại Expo. Dùng `wss://` trên môi trường triển khai.
 
 ```dotenv
 EXPO_PUBLIC_NOTIFICATION_WS_URL=ws://192.168.1.10:8086/ws/notifications
 ```
 
-Production dùng endpoint `wss://`. App không tự chuyển sang cổng 8086 khi lỗi.
-Backend hiện có route Gateway `lb://notificationservice`; cần kiểm tra thực tế
-HTTP `101 Switching Protocols` và STOMP `CONNECTED` trên môi trường triển khai.
+### Kiểm thử trên thiết bị
 
-Danh sách lưu tối đa 200 thông báo đã nhận trên thiết bị, tách theo user ID và xóa
-khi đăng xuất. Trạng thái đã đọc không đồng bộ giữa các thiết bị. Backend chưa
-có API lịch sử/replay hoặc gửi push: sự kiện mới khi app đóng, chạy nền hoặc mất
-mạng sẽ không nhận bù. Bản web có thể mở danh sách local nhưng chưa kết nối realtime.
+1. Đăng nhập và xác nhận WebSocket nhận HTTP `101 Switching Protocols`, sau đó STOMP nhận `CONNECTED`.
+2. Phát một sự kiện chuyến đi cho tài khoản đang kiểm thử. Kiểm tra danh sách, số mục chưa đọc và thông báo hệ thống khi đã cấp quyền. Kiểm tra bằng tài khoản khác để xác nhận thông báo chỉ đến người nhận.
+3. Đánh dấu một mục và tất cả mục là đã đọc. Mở lại ứng dụng để kiểm tra trạng thái đã lưu.
+4. Thử mất mạng, khởi động lại dịch vụ hoặc đưa ứng dụng trở lại tiền cảnh. Xác nhận kết nối được thiết lập lại và mỗi sự kiện chỉ xuất hiện một lần.
+5. Kiểm tra token hết hạn, làm mới token thất bại và đăng xuất hoặc đổi tài khoản trong lúc kết nối lại. Xác nhận danh sách chỉ hiển thị thông báo của tài khoản hiện tại.
 
-Kiểm tra thay đổi bằng `npm test`, `npm run typecheck` và `npm run lint`.
-Code notification mới bật `@ts-check`; code JavaScript cũ giữ chế độ kiểm tra hiện tại.
-Lint toàn dự án có thể phát hiện các lỗi code cũ khi chạy lần đầu với cấu hình Expo.
+## Cấu trúc dự án
 
-Kiểm thử tích hợp trên thiết bị thật với backend đang chạy:
+| Đường dẫn | Nội dung |
+| --- | --- |
+| `src/app/` | Màn hình và cấu hình điều hướng Expo Router. Nhóm `(tabs)` chứa các tab chính, gồm tab Tài xế và Nhà hàng theo vai trò. |
+| `src/components/`, `src/styles/` | Thành phần giao diện dùng lại và kiểu trình bày theo màn hình. |
+| `src/hooks/`, `src/providers/` | Logic nghiệp vụ và trạng thái dùng chung. |
+| `src/services/`, `src/services/storage/` | Client API, tích hợp dịch vụ backend và lưu trữ cục bộ. |
+| `src/constants/api.js` | Cấu hình URL Gateway. |
+| `src/utils/` | Tiện ích xử lý ảnh, địa chỉ và thông báo. |
+| `app.json`, `app.config.js` | Cấu hình Expo và cấu hình xuất bản web cho Docker. |
+| `tests/` | Kiểm thử luồng thông báo. |
 
-1. Đăng nhập bằng JWT thật, kiểm tra kết nối thành công qua Gateway hoặc URL riêng.
-2. Phát sự kiện chuyến đi hoặc tạo notification bằng công cụ backend cho đúng user ID;
-   kiểm tra một banner, một dòng trong danh sách và badge tăng một lần. Tài khoản khác
-   không được nhận thông báo đó.
-3. Đọc từng mục/tất cả, mở lại app để kiểm tra trạng thái đã đọc và lịch sử local.
-4. Tắt mạng rồi bật lại, restart notificationservice và đưa app về foreground;
-   kiểm tra tự kết nối lại, không nhân đôi thông báo/subscription.
-5. Kiểm tra token hết hạn, refresh thất bại, logout lúc đang reconnect/refresh và đổi
-   tài khoản; không hiển thị hoặc lưu thông báo của phiên cũ trong tài khoản mới.
-
----
-
-## 📱 Tính Năng Chính
-
-### 1. Phân Quyền Người Dùng & Quản Lý Hồ Sơ
-- **Khách hàng (`CUSTOMER` $\rightarrow$ KHÁCH HÀNG)**: Đặt chuyến, xem hoạt động, nhận ưu đãi.
-- **Tài xế (`DRIVER` $\rightarrow$ TÀI XẾ)**: Mở khóa tab chuyên biệt **Tài xế**, xem và quản lý **Hồ sơ Tài xế**, theo dõi trạng thái hoạt động trực tuyến/ngoại tuyến.
-- **Kinh doanh (`BUSINESS` $\rightarrow$ KINH DOANH)**: Dành cho đối tác doanh nghiệp, cửa hàng liên kết.
-- **Điều hướng thông minh tại màn hình Tài khoản**:
-  - **Tài khoản đã gửi hồ sơ** (`PENDING`, `APPROVED`, `REJECTED`):
-    - Mục *Hồ sơ của bạn* hiển thị **Hồ sơ Tài xế** kèm huy hiệu trạng thái trực quan: **Chờ duyệt** (vàng cam) hoặc **Cần bổ sung** (đỏ). Bấm vào sẽ mở màn hình Hồ sơ Tài xế chi tiết.
-    - Mục *Mở rộng* tự động **ẩn mục Đăng ký Tài xế**, ngăn người dùng nộp trùng lặp form đăng ký ban đầu (tránh lỗi xung đột HTTP 409).
-  - **Tài khoản hoàn toàn chưa đăng ký** (`NOT_REGISTERED`):
-    - Mục *Mở rộng* hiển thị **Đăng ký Tài xế** kèm mô tả *"Gửi hồ sơ xác minh để nhận chuyến"*.
-
-### 2. Quy Trình Đăng Ký Tài Xế (Driver Registration)
-- Cấu trúc form nộp hồ sơ được gom nhóm logic và trực quan:
-  - **Mục 1: Giấy tờ tùy thân**: Căn cước công dân (CCCD/CMND) mặt trước & mặt sau.
-  - **Mục 2: Thông tin phương tiện & Giấy tờ lái xe**: Đặt bộ chọn loại phương tiện (`🛵 Xe máy` / `🚗 Ô tô`) lên đầu; tất cả các ô tải ảnh giấy tờ liên quan tự động cập nhật nhãn tương ứng theo loại xe đã chọn:
-    - GPLX mặt trước & mặt sau (GPLX Xe máy / GPLX Ô tô).
-    - Giấy đăng ký xe mặt trước (Cà vẹt xe máy / Cà vẹt ô tô).
-    - Ảnh chụp biển số xe thực tế (Biển số xe máy / Biển số xe ô tô).
-- **Xử lý ảnh & kết nối**:
-  - Tự động nén và chuẩn hóa định dạng ảnh (`JPEG`) qua `expo-image-manipulator` giúp giảm dung lượng mạng và tăng tốc độ tải lên MinIO.
-  - Tự động nhận diện tài khoản đã tồn tại hồ sơ để hướng dẫn chuyển sang Hồ sơ Tài xế thay vì hiển thị mã lỗi thô.
-
-### 3. Hồ Sơ Tài Xế & Quản Lý Phương Tiện Đa Năng
-- **Lưu trữ & Tách biệt Giấy phép lái xe theo loại xe trên MinIO**:
-  - Tài xế có thể sở hữu đồng thời cả xe máy và ô tô.
-  - Hệ thống lưu trữ và hiển thị độc lập cả hai loại GPLX bên cạnh nhau:
-    - GPLX Ô tô: `license_car_front`, `license_car_back` (loại `DRIVER_LICENSE_CAR`).
-    - GPLX Xe máy: `license_motorbike_front`, `license_motorbike_back` (loại `DRIVER_LICENSE_MOTORBIKE`).
-    - Cập nhật một bằng lái hoàn toàn không ảnh hưởng hoặc ghi đè lên bằng lái của loại phương tiện còn lại.
-- **Quản lý danh sách phương tiện động**:
-  - Hiển thị danh sách phương tiện thực tế từ cơ sở dữ liệu (`Xe máy 1`, `Ô tô 2`,...), không sử dụng dữ liệu giả định.
-  - Nút **"Xem giấy tờ xe"**: Mở modal hiển thị ảnh Cà vẹt và ảnh Biển số xe thực tế đã lưu trên MinIO.
-- **Thêm phương tiện thông minh (`+ Thêm phương tiện`)**:
-  - Cho phép tài xế đăng ký thêm xe máy hoặc ô tô vào tài khoản đang hoạt động.
-  - **Tự động yêu cầu bổ sung bằng lái**: Nếu tài xế đăng ký loại xe mà mình chưa từng có bằng lái (ví dụ: đã có ô tô nhưng muốn thêm xe máy), form sẽ tự động hiển thị thêm 2 ô bắt buộc chụp **GPLX mặt trước & mặt sau** của phương tiện đó.
-  - Phương tiện mới thêm vào sẽ có trạng thái `Chờ duyệt` (`PENDING`) độc lập để quản trị viên kiểm tra.
-- **Xem chi tiết (Zoom) & Chỉnh sửa (Edit) ảnh giấy tờ**:
-  - **Phóng to**: Bấm vào ảnh để mở modal xem ảnh toàn màn hình với hiệu ứng làm mờ nền và kích thước rõ nét.
-  - **Chỉnh sửa**: Chuyển đổi linh hoạt chế độ Chỉnh sửa hồ sơ, hỗ trợ chọn ảnh từ Thư viện hoặc Chụp ảnh trực tiếp từ Camera, xem trước ảnh nháp và lưu cập nhật lên MinIO/Backend.
-
----
-
-## 🛠️ Kiến Trúc Thư Mục (Project Structure)
-
-Dự án áp dụng cấu trúc phân tách rõ ràng theo chuẩn **Expo Router**:
-
-```text
-mobile/
-├── assets/                          # Tài nguyên tĩnh (ảnh, logo, icons)
-├── src/
-│   ├── app/                         # File-based routing (Mỗi file là 1 màn hình)
-│   │   ├── (tabs)/                  # Bottom Tab Navigator
-│   │   │   ├── _layout.jsx          # Cấu hình thanh điều hướng đáy (5 tabs)
-│   │   │   ├── index.jsx            # Tab Trang chủ
-│   │   │   ├── activity.jsx         # Tab Hoạt động
-│   │   │   ├── driver.jsx           # Tab Tài xế (Chỉ hiện khi có role DRIVER)
-│   │   │   ├── promotions.jsx       # Tab Ưu đãi
-│   │   │   └── account.jsx          # Tab Tài khoản & Phân quyền ngữ cảnh
-│   │   ├── _layout.jsx              # Root Stack Navigator, theme provider, nạp font
-│   │   ├── login.jsx                # Màn hình Đăng nhập (OTP / Password)
-│   │   ├── register.jsx             # Màn hình Đăng ký tài khoản khách hàng
-│   │   ├── driver-register.jsx      # Màn hình Đăng ký tài xế (Nhóm theo phương tiện)
-│   │   └── driver-profile.jsx       # Màn hình Hồ sơ tài xế & quản lý phương tiện
-│   ├── components/                  # Reusable UI components
-│   │   ├── themed-text.jsx          # Typography theo theme
-│   │   ├── themed-view.jsx          # Container view theo theme
-│   │   └── ui/
-│   │       ├── sub-header.jsx               # Header chuẩn kèm nút quay lại
-│   │       ├── image-upload-card.jsx        # Thẻ hiển thị & tương tác ảnh (Xem / Sửa)
-│   │       ├── image-source-modal.jsx       # Modal chọn ảnh: Máy ảnh hoặc Thư viện
-│   │       ├── zoomable-image-modal.jsx     # Modal phóng to chi tiết ảnh toàn màn hình
-│   │       ├── vehicle-document-modal.jsx   # Modal xem chi tiết giấy tờ xe & chỉnh sửa
-│   │       └── add-vehicle-modal.jsx        # Modal thêm phương tiện động kèm GPLX
-│   ├── hooks/                       # Custom hooks nghiệp vụ & state
-│   │   ├── use-driver-profile.js            # Hook lấy hồ sơ, zoom, edit ảnh & quản lý xe
-│   │   ├── use-driver-registration.js       # Hook submit form đăng ký & chống lặp hồ sơ
-│   │   ├── use-driver-availability.js       # Hook bật/tắt nhận chuyến
-│   │   ├── use-login.js                     # Hook xử lý đăng nhập & JWT
-│   │   └── use-register.js                  # Hook xử lý đăng ký người dùng
-│   ├── services/                    # Tầng giao tiếp mạng & API backend
-│   │   ├── api-client.js            # Fetch client & sendMultipartXHR (Upload đa phần)
-│   │   ├── auth.service.js          # API auth, token refresh, lưu profile
-│   │   ├── driver.service.js        # API hồ sơ tài xế, thêm xe, nộp giấy tờ
-│   │   └── storage/
-│   │       ├── token.storage.js     # SecureStore lưu trữ Access/Refresh token
-│   │       └── user.storage.js      # AsyncStorage lưu thông tin người dùng
-│   ├── styles/                      # Định nghĩa StyleSheet tách biệt cho từng màn hình
-│   └── utils/                       # Tiện ích bổ trợ
-│       ├── image-processor.js       # Nén ảnh, định dạng JPEG chuẩn trước khi upload
-│       └── image-url.js             # Chuẩn hóa URL ảnh MinIO qua LAN IP / Gateway
-├── .env                             # Cấu hình biến môi trường API Gateway
-├── app.json                         # Cấu hình Expo App (ID, splash, icons, plugins)
-└── package.json                     # Danh sách dependencies (Expo SDK 58)
-```
-
----
-
-## 🌐 Tích Hợp API Backend & Object Storage
-
-Ứng dụng kết nối tới hệ thống Microservices backend qua **Spring Cloud Gateway (Port 8080)**:
-
-| Endpoint | Phương Thức | Mục Đích |
-| :--- | :---: | :--- |
-| `/api/auth/login` | `POST` | Đăng nhập tài khoản, nhận Access & Refresh Token |
-| `/api/auth/register` | `POST` | Đăng ký tài khoản khách hàng mới |
-| `/api/drivers/register?vehicleType={type}` | `POST` | Nộp hồ sơ đăng ký tài xế lần đầu (Multipart: CCCD, GPLX, Đăng ký xe, Biển số) |
-| `/api/drivers/registration` | `PATCH` | Cập nhật / thay đổi ảnh hồ sơ tài xế (`driverLicenseMotorbikeFront/Back`, `driverLicenseCarFront/Back`, `idCardFront/Back`) |
-| `/api/vehicles?vehicleType={type}` | `POST` | Thêm phương tiện mới cho tài xế (Multipart: Cà vẹt, Biển số, kèm GPLX nếu chưa có) |
-| `/api/drivers/{driverId}` | `GET` | Lấy chi tiết hồ sơ tài xế (`driverId` $\equiv$ `userId`) & Presigned URLs MinIO |
-| `/api/drivers/check-available/{driverId}` | `GET` | Kiểm tra trạng thái khả dụng của tài xế |
-| `/api/drivers/availability` | `PATCH` | Bật/tắt trạng thái trực tuyến sẵn sàng nhận chuyến |
-
-### Xử Lý Ảnh MinIO & Upload Đa Phần (Multipart)
-- **MinIO Object Storage**: Lưu trữ an toàn trong bucket `driver-documents`.
-- **Đường dẫn chuẩn hóa**:
-  - `driver/{username}/id-card/id_card_front.{ext}` & `id_card_back.{ext}`
-  - `driver/{username}/driver-license/license_car_front.{ext}` & `license_car_back.{ext}`
-  - `driver/{username}/driver-license/license_motorbike_front.{ext}` & `license_motorbike_back.{ext}`
-  - `driver/{username}/registration-front/registration_front_{index}.{ext}`
-  - `driver/{username}/plate/plate_img_{index}.{ext}`
-- **Multipart XHR (`api-client.js`)**: Triển khai `sendMultipartXHR` qua `XMLHttpRequest` thay thế fetch chuẩn, khắc phục hoàn toàn lỗi `Unsupported FormDataPart implementation` trên React Native khi gửi đồng thời nhiều file ảnh lên Spring Boot multipart backend.
-- **Helper `normalizeImageUrl`**: Tự động chuyển đổi các domain cục bộ (`localhost`, `127.0.0.1`, `minio:9000`) sang địa chỉ IP mạng nội bộ của máy chủ (`EXPO_PUBLIC_API_URL`), đảm bảo tải ảnh mượt mà trên cả thiết bị di động thật và trình giả lập.
-
----
-
-## 🚀 Hướng Dẫn Cài Đặt & Chạy Thử
-
-### 1. Yêu cầu môi trường
-- **Node.js**: Phiên bản 20 trở lên.
-- **Expo CLI**: Đi kèm qua lệnh `npx expo`.
-- **Ứng dụng Expo Go**: Cài đặt trên điện thoại di động (iOS App Store hoặc Android Google Play) hoặc sử dụng Xcode iOS Simulator / Android Studio Emulator.
-
-### 2. Cài đặt dependencies
-```bash
-cd mobile
-npm install
-```
-
-### 3. Cấu hình biến môi trường
-Tạo hoặc kiểm tra file `.env` tại thư mục `mobile/`:
-```env
-# Địa chỉ IP của máy tính đang chạy backend (thay thế bằng IP mạng LAN thực tế của bạn)
-EXPO_PUBLIC_API_URL=http://<IP_LAN_MAY_BAN>:8080
-```
-
-### 4. Khởi chạy ứng dụng
-```bash
-# Khởi động Expo Dev Server
-npx expo start
-
-# Hoặc chạy trực tiếp trên iOS Simulator (yêu cầu macOS có Xcode)
-npx expo start --ios
-
-# Hoặc chạy trên Android Emulator
-npx expo start --android
-```
-
-- Mở camera điện thoại (đối với iOS) hoặc ứng dụng Expo Go (đối với Android) để quét mã QR hiển thị trên terminal.
-
----
-
-## 🔍 Kiểm Tra Mã Nguồn (Lint & Typecheck)
-
-Trước khi đóng gói hoặc đẩy code lên kho lưu trữ:
+## Kiểm tra mã nguồn
 
 ```bash
-# Kiểm tra định dạng và quy chuẩn mã nguồn
-npx expo lint
-
-# Chẩn đoán tính tương thích của dependencies với Expo SDK 58
-npx expo-doctor
+npm run lint
+npm run typecheck
+npm test
 ```
 
----
-
-## 👥 Nhóm Phát Triển & Bản Quyền
-- Dự án thuộc hệ thống **Technology Driver App (T&M)**.
-- Phục vụ vận hành giải pháp công nghệ gọi xe, giao hàng và dịch vụ số.
+Xem [LICENSE](LICENSE) để biết điều khoản giấy phép.

@@ -44,7 +44,11 @@ export const paymentService = {
    * Lấy chi tiết thanh toán của chuyến đi (Khách hoặc Tài xế)
    * GET /api/payments/trip/{tripId}
    */
-  getTripPayment: async (tripId) => {
+  getTripPayment: async (tripId, { serverOnly = false } = {}) => {
+    if (serverOnly) {
+      return await apiClient.get(`/api/payments/trip/${tripId}`);
+    }
+
     let savedMethod = null;
     try {
       savedMethod = await AsyncStorage.getItem(`TRIP_PAY_METHOD_${tripId}`);
@@ -97,7 +101,7 @@ export const paymentService = {
    * PATCH /api/payments/trip/{tripPaymentId}/confirm
    */
   confirmPayment: async (tripPaymentId) => {
-    return await apiClient.patch(`/api/payments/trip/${tripPaymentId}/confirm`, {});
+    return await apiClient.patch(`/api/payments/trip/${tripPaymentId}/confirm`);
   },
 
   /**

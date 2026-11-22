@@ -402,80 +402,6 @@ export const bookTripStyles = StyleSheet.create({
     marginBottom: 16,
   },
 
-  // Banner hiển thị vòng quét & bán kính lũy tiến (Expanding Ring)
-  roundBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F0FDFA',
-    borderWidth: 1.5,
-    borderColor: '#0D9488',
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 16,
-  },
-  roundBannerText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0F766E',
-    marginLeft: 6,
-  },
-
-  // Thanh tiến trình 3 bước mở rộng bán kính (3km -> 5km -> 8km)
-  progressStepsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    marginBottom: 18,
-    paddingHorizontal: 12,
-  },
-  stepItem: {
-    alignItems: 'center',
-  },
-  stepBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#E5E7EB',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  stepBadgeActive: {
-    backgroundColor: '#00B5B8',
-  },
-  stepBadgeDone: {
-    backgroundColor: '#10B981',
-  },
-  stepText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#6B7280',
-  },
-  stepTextActive: {
-    color: '#FFFFFF',
-  },
-  stepSubLabel: {
-    fontSize: 11,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  stepSubLabelActive: {
-    color: '#00B5B8',
-    fontWeight: '700',
-  },
-  stepConnector: {
-    flex: 1,
-    height: 3,
-    backgroundColor: '#E5E7EB',
-    marginBottom: 16,
-    marginHorizontal: 4,
-  },
-  stepConnectorActive: {
-    backgroundColor: '#00B5B8',
-  },
-
   // Đồng hồ đếm ngược
   timerChip: {
     flexDirection: 'row',
@@ -612,29 +538,6 @@ export const bookTripStyles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
     marginTop: 2,
-  },
-  driverPlateBadge: {
-    marginTop: 10,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  driverPlateLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    fontWeight: '600',
-  },
-  driverPlateNumber: {
-    fontSize: 14,
-    color: '#111827',
-    fontWeight: '800',
-    letterSpacing: 0.5,
   },
 
   // GIAO DIỆN THEO DÕI CHUYẾN ĐI (SPLIT 1/2 BẢN ĐỒ & 1/2 THÔNG TIN)

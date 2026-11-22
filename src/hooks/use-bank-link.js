@@ -1,3 +1,4 @@
+import { getUserErrorMessage } from '../utils/error-message';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Alert } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
@@ -178,7 +179,7 @@ export const useBankLink = () => {
         }
       }
     } catch (e) {
-      Alert.alert('Lỗi', 'Không thể đọc bộ nhớ tạm: ' + e.message);
+      Alert.alert('Lỗi', getUserErrorMessage(e, 'Không thể đọc dữ liệu đã lưu trên thiết bị. Vui lòng thử lại.'));
     }
   }, []);
 
@@ -260,7 +261,7 @@ export const useBankLink = () => {
     } catch (err) {
       Alert.alert(
         'Chưa thể liên kết tài khoản',
-        err?.message || 'Kết nối bị gián đoạn hoặc thông tin tài khoản chưa khớp. Vui lòng kiểm tra lại số tài khoản và thử lại.'
+        getUserErrorMessage(err, 'Không thể liên kết tài khoản. Vui lòng kiểm tra lại ngân hàng và số tài khoản.')
       );
     } finally {
       setIsSubmitting(false);

@@ -1,3 +1,4 @@
+import { getUserErrorMessage } from '../../utils/error-message';
 import { ThemedText } from '@/components/themed-text';
 import { ImageSourceModal } from '@/components/ui/image-source-modal';
 import { ZoomableImageModal } from '@/components/ui/zoomable-image-modal';
@@ -221,7 +222,7 @@ export function VehicleDocumentModal({ visible, vehicle, onClose, onUpdated }) {
         ]
       );
     } catch (err) {
-      const msg = err.message || 'Cập nhật ảnh giấy tờ xe thất bại. Vui lòng thử lại.';
+      const msg = getUserErrorMessage(err, 'Cập nhật ảnh giấy tờ xe thất bại. Vui lòng thử lại.');
       Alert.alert('Lỗi cập nhật', msg);
     } finally {
       setIsSaving(false);

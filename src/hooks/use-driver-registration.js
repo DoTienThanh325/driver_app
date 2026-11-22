@@ -1,3 +1,4 @@
+import { getUserErrorMessage } from '../utils/error-message';
 import { useState, useCallback, useEffect } from 'react';
 import { Alert } from 'react-native';
 import { router } from 'expo-router';
@@ -103,11 +104,10 @@ export function useDriverRegistration() {
 
       return res;
     } catch (err) {
-      let msg = err.message || 'Đăng ký hồ sơ thất bại. Vui lòng thử lại.';
+      let msg = getUserErrorMessage(err, 'Đăng ký hồ sơ thất bại. Vui lòng thử lại.');
       if (
-        msg.includes('409') ||
-        msg.toLowerCase().includes('already has a driver profile') ||
-        msg.toLowerCase().includes('conflicts')
+        err.status === 409 ||
+        /already has a driver profile|conflicts/i.test(err.serverMessage ?? err.message ?? '')
       ) {
         msg = 'Tài khoản của bạn đã gửi hồ sơ đăng ký tài xế trên hệ thống. Vui lòng kiểm tra lại tại mục Hồ sơ Tài xế.';
         Alert.alert('Hồ sơ đã tồn tại', msg, [

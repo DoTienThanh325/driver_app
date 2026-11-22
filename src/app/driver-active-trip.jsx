@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { getUserErrorMessage } from '../utils/error-message';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   View,
   ScrollView,
@@ -19,6 +20,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { StatusBar } from 'expo-status-bar';
 import { tripService, TRIP_STATUS } from '@/services/trip.service';
+import { useTripCounterparty } from '@/hooks/use-trip-counterparty';
+import { getDriverTripAction } from '@/utils/driver-trip-actions';
 import { paymentService, PAYMENT_METHOD, PAYMENT_STATUS } from '@/services/payment.service';
 import { navigationHelper } from '@/utils/navigation';
 import { driverTripStyles as styles } from '@/styles/screens/driver-active-trip.styles';
@@ -52,7 +55,7 @@ export default function DriverActiveTripScreen() {
       totalFoodPrice: initial?.totalFoodPrice != null ? Number(initial.totalFoodPrice) : (params.totalFoodPrice ? Number(params.totalFoodPrice) : null),
       foods: Array.isArray(foodsList) ? foodsList : [],
       restaurantName: initial?.restaurantName || params.restaurantName || 'Nhà hàng đối tác',
-      restaurantPhone: initial?.restaurantPhone || params.restaurantPhone || '0988123456',
+      restaurantPhone: initial?.restaurantPhone || params.restaurantPhone,
       pickUpAddress: initial?.pickUpAddress || params.pickUpAddress || 'Hồ Hoàn Kiếm, Hoàn Kiếm, Hà Nội',
       pickUpLatitude: Number(initial?.pickUpLatitude || params.pickUpLatitude || params.pickUpLat) || 21.028511,
       pickUpLongitude: Number(initial?.pickUpLongitude || params.pickUpLongitude || params.pickUpLon) || 105.854444,
@@ -61,21 +64,58 @@ export default function DriverActiveTripScreen() {
       destinationLongitude: Number(initial?.destinationLongitude || params.destinationLongitude || params.destLon) || 105.84318,
       shippFare: Number(initial?.shippFare || params.shippFare) || 24000,
       vehicleType: initial?.vehicleType || params.vehicleType || 'MOTORBIKE',
-      customerName: initial?.customerName || params.customerName || 'Nguyễn Văn An',
-      customerPhone: initial?.customerPhone || params.customerPhone || '0988123456',
-      customerRating: initial?.customerRating || '4.9',
       distanceKm: initial?.distanceKm || params.distanceKm || '2.5',
     };
   });
 
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const statusUpdateRef = useRef(null);
+  const tripAction = getDriverTripAction(trip);
+  const actionLabel = trip.status === TRIP_STATUS.COMPLETED ? 'Xem thanh toán' : tripAction?.label;
 
   // Trạng thái modal và thông tin thanh toán khi tài xế bấm hoàn thành cuốc
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(
+    params.openPayment === '1' && trip.status === TRIP_STATUS.COMPLETED
+  );
   const [paymentInfo, setPaymentInfo] = useState(null);
-  const [selectedPayMethod, setSelectedPayMethod] = useState(PAYMENT_METHOD.PAY_DIRECTLY);
   const [qrLoadError, setQrLoadError] = useState(false);
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
+  const [isConfirmingVietQr, setIsConfirmingVietQr] = useState(false);
+  const confirmingVietQrRef = useRef(false);
+  const isDemoTrip = String(trip.id).startsWith('sample') || trip.id === 'TRIP-DEMO';
+  const {
+    profile: customer,
+    loading: isCustomerLoading,
+    error: customerError,
+    retry: retryCustomer,
+  } = useTripCounterparty(isDemoTrip ? null : trip.id, 'CUSTOMER');
+  const customerName = customer?.displayName;
+  const customerPhone = customer?.phoneNumber?.trim();
+  const customerLabel = customerName || (isCustomerLoading ? 'Đang tải thông tin khách hàng' : 'Chưa có thông tin khách hàng');
+  const isRestaurantPickup = trip.shippingType === 'FOOD_DELIVERY' &&
+    [TRIP_STATUS.DRIVER_ASSIGNED, TRIP_STATUS.DRIVER_ARRIVING].includes(trip.status);
+  const isPrepaid = paymentInfo?.method === PAYMENT_METHOD.PAY_BEFORE;
+  const qrPayment = paymentInfo?.qrPayment;
+  const isCashPayment = isDemoTrip || paymentInfo?.method === PAYMENT_METHOD.PAY_DIRECTLY;
+  const canConfirmPrepaid = isPrepaid &&
+    paymentInfo.status === PAYMENT_STATUS.AWAITING_PAYMENT &&
+    Boolean(paymentInfo.tripPaymentId);
+  const isPaid = paymentInfo?.status === PAYMENT_STATUS.COMPLETED ||
+    (isCashPayment && trip.status === TRIP_STATUS.COMPLETED);
+
+  const refreshTripPayment = useCallback(async () => {
+    const payment = await paymentService.getTripPayment(trip.id, { serverOnly: true });
+    if (payment?.tripPaymentId) {
+      setPaymentInfo((previous) => (
+        previous?.tripPaymentId === payment.tripPaymentId &&
+        previous.status === PAYMENT_STATUS.COMPLETED
+          ? previous
+          : payment
+      ));
+    }
+    return payment;
+  }, [trip.id]);
+
 
   // Vị trí GPS hiện tại của tài xế
   const initialDriverLat = Number(trip.driverLatitude || params.driverLatitude) || (trip.pickUpLatitude ? trip.pickUpLatitude + 0.005 : 21.0335);
@@ -236,13 +276,17 @@ export default function DriverActiveTripScreen() {
     Math.round(driverLocation.longitude * 1000),
   ]);
 
-  // Polling cập nhật trạng thái cuốc từ backend
+  // Polling cập nhật trạng thái cuốc và trạng thái thanh toán từ backend
   useEffect(() => {
     if (!trip?.id || String(trip.id).startsWith('sample') || trip.id === 'TRIP-DEMO') return;
 
+    const statusAtRequest = trip.status;
+    let active = true;
     const interval = setInterval(async () => {
+      if (statusUpdateRef.current) return;
       try {
         const updated = await tripService.getTripById(trip.id);
+        if (!active || statusUpdateRef.current) return;
         if (updated) {
           if (updated.status === TRIP_STATUS.CANCELLED) {
             Alert.alert(
@@ -250,190 +294,69 @@ export default function DriverActiveTripScreen() {
               'Chuyến đi đã bị khách hủy.',
               [{ text: 'Về trang chủ', onPress: () => navigationHelper.resetToDriverHome() }]
             );
-          } else if (updated.status === TRIP_STATUS.COMPLETED) {
-            // Đã hoàn thành (đã có alert khi bấm nút hoàn thành, tránh hiện lặp 2 lần)
-            setTrip((prev) => ({ ...prev, status: TRIP_STATUS.COMPLETED }));
           } else {
-            setTrip((prev) => ({ ...prev, ...updated }));
+            setTrip((prev) => prev.status === statusAtRequest
+              ? { ...prev, ...updated }
+              : prev);
           }
         }
+
+        await refreshTripPayment();
       } catch {
         // Bỏ qua lỗi polling tạm thời
       }
     }, 3000);
 
-    return () => clearInterval(interval);
-  }, [trip?.id]);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [trip?.id, trip.status, refreshTripPayment]);
 
-  // Hành động cập nhật tiến trình chuyến đi
-  const handleAdvanceStatus = () => {
-    let nextStatus = null;
-    let confirmMsg = '';
-    const isFood = trip.shippingType === 'FOOD_DELIVERY';
-
-    if (trip.status === TRIP_STATUS.DRIVER_ASSIGNED) {
-      nextStatus = TRIP_STATUS.DRIVER_ARRIVING;
-      confirmMsg = isFood
-        ? 'Xác nhận bạn đã đến quán ăn và chuẩn bị lấy món?'
-        : 'Xác nhận bạn đã đến điểm đón khách?';
-    } else if (trip.status === TRIP_STATUS.DRIVER_ARRIVING) {
-      nextStatus = TRIP_STATUS.IN_PROGRESS;
-      confirmMsg = isFood
-        ? 'Xác nhận bạn đã nhận đủ món ăn từ quán và bắt đầu đi giao cho khách?'
-        : 'Khách đã lên xe. Bắt đầu đưa khách đến điểm đến?';
-    } else if (trip.status === TRIP_STATUS.IN_PROGRESS) {
-      // Khi tài xế bấm đến điểm trả khách (thu tiền), cập nhật ngay sang COMPLETED trên BookingService
-      // để phía khách hàng lập tức hiển thị thông tin chuyến đi hoàn tất và yêu cầu trả tiền
-      const alertTitle = isFood ? 'Đến điểm giao món' : 'Đến điểm trả khách';
-      const alertMsg = isFood
-        ? 'Xác nhận bạn đã đến nơi an toàn và giao đồ ăn cho khách hàng?'
-        : 'Xác nhận bạn đã đưa khách đến nơi an toàn và tiến hành thu cước phí?';
-      const btnActionText = isFood ? 'Giao món & Thu tiền' : 'Thu tiền';
-
-      Alert.alert(alertTitle, alertMsg, [
-        { text: 'Hủy', style: 'cancel' },
-        {
-          text: btnActionText,
-          onPress: async () => {
-            setIsUpdatingStatus(true);
-            try {
-              if (!String(trip.id).startsWith('sample') && trip.id !== 'TRIP-DEMO') {
-                await tripService.updateTripStatus(trip.id, TRIP_STATUS.COMPLETED);
-              }
-              setTrip((prev) => ({ ...prev, status: TRIP_STATUS.COMPLETED }));
-              await handleOpenPaymentModal();
-            } catch (err) {
-              if (err.message?.includes('COMPLETED') || err.message?.includes('kết thúc')) {
-                setTrip((prev) => ({ ...prev, status: TRIP_STATUS.COMPLETED }));
-                await handleOpenPaymentModal();
-              } else {
-                Alert.alert('Lỗi cập nhật', err.message || 'Không thể cập nhật trạng thái.');
-              }
-            } finally {
-              setIsUpdatingStatus(false);
-            }
-          },
-        },
-      ]);
-      return;
-    } else if (trip.status === TRIP_STATUS.COMPLETED) {
-      handleOpenPaymentModal();
+  const handleAdvanceStatus = async () => {
+    if (statusUpdateRef.current) return;
+    if (trip.status === TRIP_STATUS.COMPLETED) {
+      await handleOpenPaymentModal();
       return;
     }
+    if (!tripAction) return;
 
-    if (!nextStatus) return;
-
-    Alert.alert('Xác nhận tiến trình', confirmMsg, [
-      { text: 'Hủy', style: 'cancel' },
-      {
-        text: 'Đồng ý',
-        onPress: async () => {
-          setIsUpdatingStatus(true);
-          try {
-            if (!String(trip.id).startsWith('sample') && trip.id !== 'TRIP-DEMO') {
-              await tripService.updateTripStatus(trip.id, nextStatus);
-            }
-
-            if (nextStatus === TRIP_STATUS.COMPLETED) {
-              Alert.alert(
-                'Hoàn thành cuốc xe 🎉',
-                `Đã thu cước phí: ${Number(trip.shippFare || 24000).toLocaleString('vi-VN')} đ. Bạn đã sẵn sàng nhận cuốc xe tiếp theo!`,
-                [
-                  {
-                    text: 'Về trang chủ tài xế',
-                    onPress: () => navigationHelper.resetToDriverHome(),
-                  },
-                ]
-              );
-            } else {
-              setTrip((prev) => ({ ...prev, status: nextStatus }));
-            }
-          } catch (err) {
-            Alert.alert('Lỗi cập nhật', err.message || 'Không thể cập nhật trạng thái.');
-          } finally {
-            setIsUpdatingStatus(false);
-          }
-        },
-      },
-    ]);
+    const { nextStatus } = tripAction;
+    statusUpdateRef.current = trip.id;
+    setIsUpdatingStatus(true);
+    try {
+      if (!isDemoTrip) {
+        await tripService.updateTripStatus(trip.id, nextStatus);
+      }
+      setTrip((previous) => ({ ...previous, status: nextStatus }));
+      if (nextStatus === TRIP_STATUS.COMPLETED) await handleOpenPaymentModal();
+    } catch (err) {
+      Alert.alert('Lỗi cập nhật', getUserErrorMessage(err, 'Không thể cập nhật trạng thái.'));
+    } finally {
+      statusUpdateRef.current = null;
+      setIsUpdatingStatus(false);
+    }
   };
 
-  // Tự động đăng ký STK tài xế & tải trước thông tin thanh toán
   useEffect(() => {
-    paymentService
-      .registerDriverPaymentInfo({
-        bankName: 'MBBank (Quân Đội)',
-        bankBin: '970422',
-        bankAccountNumber: '0399888999',
-        bankAccountName: 'TAI XE DRIVER APP',
-      })
-      .catch(() => {});
-
-    if (trip?.id && !String(trip.id).startsWith('sample') && trip.id !== 'TRIP-DEMO') {
-      paymentService
-        .getTripPayment(trip.id)
-        .then((pay) => {
-          if (pay) {
-            setPaymentInfo(pay);
-            if (pay.method === PAYMENT_METHOD.PAY_BEFORE) {
-              setSelectedPayMethod(PAYMENT_METHOD.PAY_BEFORE);
-            }
-          }
-        })
-        .catch(() => {});
+    if (trip?.id && !isDemoTrip) {
+      refreshTripPayment().catch(() => {});
     }
-  }, [trip?.id]);
+  }, [trip?.id, isDemoTrip, refreshTripPayment]);
 
-  // Mở giao diện xác nhận thu tiền / khách chuyển tiền khi kết thúc cuốc
   const handleOpenPaymentModal = async () => {
     setShowPaymentModal(true);
     setQrLoadError(false);
-
-    let method = PAYMENT_METHOD.PAY_DIRECTLY;
-    let saved = null;
-    try {
-      saved = await paymentService.getPreferredPaymentMethod(trip?.id);
-    } catch {}
-
-    if (trip?.id && !String(trip.id).startsWith('sample') && trip.id !== 'TRIP-DEMO') {
-      try {
-        const pay = await paymentService.getTripPayment(trip.id);
-        if (pay) {
-          setPaymentInfo(pay);
-          // Ưu tiên PAY_BEFORE nếu khách đã chọn trước hoặc backend trả về PAY_BEFORE
-          if (pay.method === PAYMENT_METHOD.PAY_BEFORE) {
-            method = PAYMENT_METHOD.PAY_BEFORE;
-          } else if (saved === PAYMENT_METHOD.PAY_BEFORE) {
-            method = PAYMENT_METHOD.PAY_BEFORE;
-          } else if (pay.method) {
-            method = pay.method;
-          }
-        } else if (saved) {
-          method = saved;
-        }
-      } catch {
-        if (saved) method = saved;
-      }
-    } else if (saved) {
-      method = saved;
+    if (trip?.id && !isDemoTrip) {
+      await refreshTripPayment().catch(() => {});
     }
-
-    setSelectedPayMethod(method);
   };
 
-  // Tài xế xác nhận đã nhận tiền và kết thúc cuốc xe thành công
   const handleConfirmReceivedPayment = async () => {
+    if (!isCashPayment) return;
+
     setIsConfirmingPayment(true);
     try {
-      // 1. Nếu là chuyển khoản VietQR và có payment id -> gọi xác nhận payment
-      if (paymentInfo?.tripPaymentId && selectedPayMethod === PAYMENT_METHOD.PAY_BEFORE) {
-        try {
-          await paymentService.confirmPayment(paymentInfo.tripPaymentId);
-        } catch (e) {
-          console.warn('Lỗi confirmPayment backend:', e);
-        }
-      }
-
       // 2. Đảm bảo trạng thái chuyến đi đã cập nhật COMPLETED trên Booking Service
       if (trip.status !== TRIP_STATUS.COMPLETED && !String(trip.id).startsWith('sample') && trip.id !== 'TRIP-DEMO') {
         try {
@@ -459,9 +382,41 @@ export default function DriverActiveTripScreen() {
         ]
       );
     } catch (err) {
-      Alert.alert('Không thể hoàn tất', err.message || 'Lỗi khi cập nhật chuyến đi.');
+      Alert.alert('Không thể hoàn tất', getUserErrorMessage(err, 'Lỗi khi cập nhật chuyến đi.'));
     } finally {
       setIsConfirmingPayment(false);
+    }
+  };
+
+  const handleConfirmVietQrPayment = async () => {
+    if (!canConfirmPrepaid || confirmingVietQrRef.current) return;
+
+    confirmingVietQrRef.current = true;
+    setIsConfirmingVietQr(true);
+    try {
+      const payment = await refreshTripPayment();
+      if (payment?.status === PAYMENT_STATUS.COMPLETED) return;
+      if (payment?.tripPaymentId !== paymentInfo.tripPaymentId ||
+          payment?.method !== PAYMENT_METHOD.PAY_BEFORE ||
+          payment?.status !== PAYMENT_STATUS.AWAITING_PAYMENT) {
+        throw new Error('Khoản thanh toán chưa sẵn sàng để xác nhận.');
+      }
+
+      await paymentService.confirmPayment(payment.tripPaymentId);
+      setPaymentInfo((previous) => (
+        previous?.tripPaymentId === payment.tripPaymentId
+          ? { ...previous, status: PAYMENT_STATUS.COMPLETED }
+          : previous
+      ));
+      await refreshTripPayment().catch(() => {});
+    } catch (err) {
+      const latestPayment = await refreshTripPayment().catch(() => null);
+      if (latestPayment?.status !== PAYMENT_STATUS.COMPLETED) {
+        Alert.alert('Không thể xác nhận', getUserErrorMessage(err, 'Chưa thể xác nhận thanh toán. Vui lòng kiểm tra trạng thái rồi thử lại.'));
+      }
+    } finally {
+      confirmingVietQrRef.current = false;
+      setIsConfirmingVietQr(false);
     }
   };
 
@@ -488,21 +443,24 @@ export default function DriverActiveTripScreen() {
   };
 
   const handleCallCustomer = () => {
-    const phone = trip.customerPhone || '0988123456';
+    if (!customerPhone) return;
+    const phone = customerPhone;
     Linking.openURL(`tel:${phone}`).catch(() => {
       Alert.alert('Thông tin liên hệ', `Số điện thoại khách hàng: ${phone}`);
     });
   };
 
   const handleCallRestaurant = () => {
-    const phone = trip.restaurantPhone || '0988123456';
+    const phone = trip.restaurantPhone;
+    if (!phone) return;
     Linking.openURL(`tel:${phone}`).catch(() => {
       Alert.alert('Thông tin quán ăn', `Số điện thoại quán: ${phone}`);
     });
   };
 
   const handleMessageCustomer = () => {
-    const phone = trip.customerPhone || '0988123456';
+    if (!customerPhone) return;
+    const phone = customerPhone;
     Linking.openURL(`sms:${phone}`).catch(() => {
       Alert.alert('Nhắn tin', `Gửi tin nhắn tới khách qua số: ${phone}`);
     });
@@ -534,35 +492,6 @@ export default function DriverActiveTripScreen() {
         return 'Đã hoàn thành';
       default:
         return 'Đang hoạt động';
-    }
-  };
-
-  const getButtonActionLabel = () => {
-    if (trip.shippingType === 'FOOD_DELIVERY') {
-      switch (trip.status) {
-        case TRIP_STATUS.DRIVER_ASSIGNED:
-          return '1. TÔI ĐÃ ĐẾN QUÁN ĂN';
-        case TRIP_STATUS.DRIVER_ARRIVING:
-          return '2. ĐÃ LẤY ĐỦ MÓN, BẮT ĐẦU GIAO';
-        case TRIP_STATUS.IN_PROGRESS:
-          return '3. ĐÃ ĐẾN NƠI & GIAO MÓN (THU TIỀN)';
-        case TRIP_STATUS.COMPLETED:
-          return 'MỞ LẠI BẢNG THU TIỀN';
-        default:
-          return 'CẬP NHẬT TIẾN TRÌNH';
-      }
-    }
-    switch (trip.status) {
-      case TRIP_STATUS.DRIVER_ASSIGNED:
-        return '1. TÔI ĐÃ ĐẾN ĐIỂM ĐÓN';
-      case TRIP_STATUS.DRIVER_ARRIVING:
-        return '2. BẮT ĐẦU CHUYẾN ĐI';
-      case TRIP_STATUS.IN_PROGRESS:
-        return '3. ĐÃ ĐẾN ĐIỂM TRẢ KHÁCH (THU TIỀN)';
-      case TRIP_STATUS.COMPLETED:
-        return 'MỞ LẠI BẢNG THU TIỀN';
-      default:
-        return 'CẬP NHẬT TRẠNG THÁI';
     }
   };
 
@@ -833,21 +762,19 @@ export default function DriverActiveTripScreen() {
                     },
                 ]}
               >
-                {trip.shippingType === 'FOOD_DELIVERY' &&
-                (trip.status === TRIP_STATUS.DRIVER_ASSIGNED || trip.status === TRIP_STATUS.DRIVER_ARRIVING) ? (
+                {isRestaurantPickup ? (
                   <Ionicons name="restaurant" size={18} color="#FFFFFF" />
                 ) : (
                   <ThemedText style={styles.customerAvatarText}>
-                    {(trip.customerName || 'K').charAt(0).toUpperCase()}
+                    {(customerName || 'K').charAt(0).toUpperCase()}
                   </ThemedText>
                 )}
               </View>
               <View style={styles.customerInfo}>
                 <ThemedText style={styles.customerName}>
-                  {trip.shippingType === 'FOOD_DELIVERY' &&
-                  (trip.status === TRIP_STATUS.DRIVER_ASSIGNED || trip.status === TRIP_STATUS.DRIVER_ARRIVING)
+                  {isRestaurantPickup
                     ? trip.restaurantName || 'Quán ăn đối tác'
-                    : trip.customerName || 'Nguyễn Văn An'}
+                    : customerLabel}
                 </ThemedText>
                 <View style={styles.customerRatingRow}>
                   <Ionicons
@@ -873,6 +800,9 @@ export default function DriverActiveTripScreen() {
                       : 'Hành khách'}
                   </ThemedText>
                 </View>
+                {!isRestaurantPickup && customerPhone && (
+                  <ThemedText style={styles.customerRatingText}>{customerPhone}</ThemedText>
+                )}
               </View>
 
               {/* Nút mở chỉ đường Google Maps ngoài */}
@@ -894,11 +824,26 @@ export default function DriverActiveTripScreen() {
               </Pressable>
             </View>
 
-            {/* Các nút gọi điện & liên hệ */}
-            <View style={styles.customerActions}>
-              {trip.shippingType === 'FOOD_DELIVERY' &&
-              (trip.status === TRIP_STATUS.DRIVER_ASSIGNED || trip.status === TRIP_STATUS.DRIVER_ARRIVING) ? (
-                <>
+            {customerError && (
+              <Pressable accessibilityRole="button" onPress={retryCustomer}>
+                <ThemedText style={styles.actionTextMsg}>Thử tải lại thông tin khách hàng</ThemedText>
+              </Pressable>
+            )}
+            {(customerPhone || (trip.shippingType === 'FOOD_DELIVERY' && trip.restaurantPhone)) && (
+              <View style={styles.customerActions}>
+                {customerPhone && (
+                  <Pressable style={styles.actionBtnCall} onPress={handleCallCustomer}>
+                    <Ionicons name="call" size={16} color="#059669" />
+                    <ThemedText style={styles.actionTextCall}>Gọi cho khách</ThemedText>
+                  </Pressable>
+                )}
+                {customerPhone && !isRestaurantPickup && (
+                  <Pressable style={styles.actionBtnMsg} onPress={handleMessageCustomer}>
+                    <Ionicons name="chatbubble-ellipses" size={16} color="#2563EB" />
+                    <ThemedText style={styles.actionTextMsg}>Nhắn tin</ThemedText>
+                  </Pressable>
+                )}
+                {trip.shippingType === 'FOOD_DELIVERY' && trip.restaurantPhone && (
                   <Pressable
                     style={[styles.actionBtnCall, { backgroundColor: '#FFF7ED', borderColor: '#FED7AA' }]}
                     onPress={handleCallRestaurant}
@@ -906,33 +851,9 @@ export default function DriverActiveTripScreen() {
                     <Ionicons name="call" size={16} color="#EA580C" />
                     <ThemedText style={[styles.actionTextCall, { color: '#EA580C' }]}>Gọi quán ăn</ThemedText>
                   </Pressable>
-                  <Pressable style={styles.actionBtnCall} onPress={handleCallCustomer}>
-                    <Ionicons name="person-outline" size={16} color="#059669" />
-                    <ThemedText style={styles.actionTextCall}>Gọi khách hàng</ThemedText>
-                  </Pressable>
-                </>
-              ) : (
-                <>
-                  <Pressable style={styles.actionBtnCall} onPress={handleCallCustomer}>
-                    <Ionicons name="call" size={16} color="#059669" />
-                    <ThemedText style={styles.actionTextCall}>Gọi cho khách</ThemedText>
-                  </Pressable>
-                  <Pressable style={styles.actionBtnMsg} onPress={handleMessageCustomer}>
-                    <Ionicons name="chatbubble-ellipses" size={16} color="#2563EB" />
-                    <ThemedText style={styles.actionTextMsg}>Nhắn tin</ThemedText>
-                  </Pressable>
-                  {trip.shippingType === 'FOOD_DELIVERY' && (
-                    <Pressable
-                      style={[styles.actionBtnCall, { backgroundColor: '#FFF7ED', borderColor: '#FED7AA', flex: 0.8 }]}
-                      onPress={handleCallRestaurant}
-                    >
-                      <Ionicons name="storefront-outline" size={15} color="#EA580C" />
-                      <ThemedText style={[styles.actionTextCall, { color: '#EA580C', fontSize: 12 }]}>Quán</ThemedText>
-                    </Pressable>
-                  )}
-                </>
-              )}
-            </View>
+                )}
+              </View>
+            )}
           </View>
 
           {/* Khung kiểm tra danh sách món ăn dành cho đơn đồ ăn */}
@@ -1074,35 +995,90 @@ export default function DriverActiveTripScreen() {
                   styles.detailItemValue,
                   {
                     color:
-                      trip.status === TRIP_STATUS.COMPLETED || paymentInfo?.status === 'COMPLETED'
+                      isPaid
                         ? '#10B981'
                         : '#EF4444',
                     fontWeight: '700',
                   },
                 ]}
               >
-                {trip.status === TRIP_STATUS.COMPLETED || paymentInfo?.status === 'COMPLETED'
+                {isPaid
                   ? 'Đã thanh toán'
                   : 'Chưa thanh toán'}
               </ThemedText>
             </View>
           </View>
+
+          {/* Khối xác nhận thanh toán VietQR độc lập (không phụ thuộc vào tiến trình cuốc) */}
+          {isPrepaid && (
+            <View style={styles.vietQrConfirmCard}>
+              <View style={styles.vietQrCardHeader}>
+                <View style={styles.vietQrIconBadge}>
+                  <Ionicons name="qr-code" size={18} color="#0284C7" />
+                </View>
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <ThemedText style={styles.vietQrTitle}>Chuyển khoản VietQR 24/7</ThemedText>
+                  <ThemedText style={styles.vietQrSubtitle}>
+                    {isPaid
+                      ? 'Khách đã thanh toán chuyển khoản thành công'
+                      : 'Khách hàng chọn thanh toán VietQR'}
+                  </ThemedText>
+                </View>
+                <ThemedText style={styles.vietQrAmount}>
+                  {Number(
+                    paymentInfo?.finalAmount ||
+                    (trip.shippingType === 'FOOD_DELIVERY'
+                      ? (trip.shippFare || 25000) + (trip.totalFoodPrice || 0)
+                      : trip.shippFare || 24000)
+                  ).toLocaleString('vi-VN')} đ
+                </ThemedText>
+              </View>
+
+              {isPaid ? (
+                <View style={styles.vietQrPaidRow}>
+                  <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+                  <ThemedText style={styles.vietQrPaidText}>
+                    Đã xác nhận nhận tiền vào tài khoản
+                  </ThemedText>
+                </View>
+              ) : canConfirmPrepaid ? (
+                <Pressable
+                  accessibilityRole="button"
+                  style={styles.btnConfirmVietQr}
+                  onPress={handleConfirmVietQrPayment}
+                  disabled={isConfirmingVietQr}
+                >
+                  {isConfirmingVietQr ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark-done-circle" size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
+                      <ThemedText style={styles.btnConfirmVietQrText}>
+                        Xác nhận thanh toán
+                      </ThemedText>
+                    </>
+                  )}
+                </Pressable>
+              ) : null}
+            </View>
+          )}
         </ScrollView>
 
-        {/* Nút hành động trạng thái cuốc */}
-        <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom + 12, 24) }]}>
-          <Pressable
-            style={styles.actionStepBtn}
-            onPress={handleAdvanceStatus}
-            disabled={isUpdatingStatus}
-          >
-            {isUpdatingStatus ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <ThemedText style={styles.actionStepBtnText}>{getButtonActionLabel()}</ThemedText>
-            )}
-          </Pressable>
-        </View>
+        {actionLabel && (
+          <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom + 12, 24) }]}>
+            <Pressable
+              style={styles.actionStepBtn}
+              onPress={handleAdvanceStatus}
+              disabled={isUpdatingStatus}
+            >
+              {isUpdatingStatus ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <ThemedText style={styles.actionStepBtnText}>{actionLabel}</ThemedText>
+              )}
+            </Pressable>
+          </View>
+        )}
       </View>
 
       {/* ======================================================== */}
@@ -1130,7 +1106,7 @@ export default function DriverActiveTripScreen() {
               </View>
 
               {/* Nếu ĐÃ thanh toán: chỉ hiện thông báo đã hoàn tất */}
-              {trip.status === TRIP_STATUS.COMPLETED || paymentInfo?.status === 'COMPLETED' ? (
+              {isPaid ? (
                 <View style={{ alignItems: 'center', paddingVertical: 20 }}>
                   <Ionicons name="checkmark-circle" size={56} color="#10B981" />
                   <ThemedText style={{ fontSize: 18, fontWeight: '800', color: '#065F46', marginTop: 12 }}>
@@ -1186,32 +1162,34 @@ export default function DriverActiveTripScreen() {
 
                     <View style={styles.receiptInfoRow}>
                       <ThemedText style={styles.receiptLabel}>Hành khách:</ThemedText>
-                      <ThemedText style={styles.receiptValue}>{trip.customerName || 'Khách hàng T&M'}</ThemedText>
+                      <ThemedText style={styles.receiptValue}>{customerLabel}</ThemedText>
                     </View>
 
-                    <View style={styles.receiptInfoRow}>
-                      <ThemedText style={styles.receiptLabel}>Số điện thoại:</ThemedText>
-                      <ThemedText style={styles.receiptValue}>{trip.customerPhone || '0988123456'}</ThemedText>
-                    </View>
+                    {customerPhone && (
+                      <View style={styles.receiptInfoRow}>
+                        <ThemedText style={styles.receiptLabel}>Số điện thoại:</ThemedText>
+                        <ThemedText style={styles.receiptValue}>{customerPhone}</ThemedText>
+                      </View>
+                    )}
 
                     <View style={[styles.receiptInfoRow, { marginBottom: 0 }]}>
                       <ThemedText style={styles.receiptLabel}>Phương thức:</ThemedText>
                       <ThemedText
                         style={[
                           styles.receiptValue,
-                          { color: selectedPayMethod === PAYMENT_METHOD.PAY_BEFORE ? '#0284C7' : '#059669', fontWeight: '800' },
+                          { color: isPrepaid ? '#0284C7' : '#059669', fontWeight: '800' },
                         ]}
                       >
-                        {selectedPayMethod === PAYMENT_METHOD.PAY_BEFORE
+                        {isPrepaid
                           ? '💳 Chuyển khoản VietQR'
-                          : '💵 Thu tiền mặt trực tiếp'}
+                          : isCashPayment ? '💵 Thu tiền mặt trực tiếp' : 'Đang tải phương thức'}
                       </ThemedText>
                     </View>
                   </View>
 
                   {/* THÔNG TIN THANH TOÁN CHI TIẾT THEO PHƯƠNG THỨC KHÁCH ĐÃ CHỌN (TÀI XẾ KHÔNG ĐƯỢC ĐỔI) */}
                   <View style={{ marginTop: 12 }}>
-                    {selectedPayMethod === PAYMENT_METHOD.PAY_BEFORE ? (
+                    {isPrepaid ? (
                       <View style={{ alignItems: 'center', padding: 16, backgroundColor: '#F0F9FF', borderRadius: 16, borderWidth: 1.5, borderColor: '#BAE6FD', marginBottom: 14 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
                           <Ionicons name="phone-portrait-outline" size={20} color="#0284C7" style={{ marginRight: 6 }} />
@@ -1222,7 +1200,7 @@ export default function DriverActiveTripScreen() {
 
                         {/* KHUNG MÃ QR KÈM IMAGEHOLDER NẾU CHƯA LOAD ĐƯỢC */}
                         <View style={{ width: 210, height: 210, backgroundColor: '#FFFFFF', borderRadius: 16, padding: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#CBD5E1', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 8, elevation: 3 }}>
-                          {qrLoadError ? (
+                          {qrLoadError || !qrPayment?.qrDataURL ? (
                             /* Imageholder dự phòng */
                             <View style={{ alignItems: 'center', justifyContent: 'center', padding: 10 }}>
                               <Ionicons name="qr-code" size={96} color="#00B5B8" />
@@ -1232,16 +1210,7 @@ export default function DriverActiveTripScreen() {
                             </View>
                           ) : (
                             <Image
-                              source={{
-                                uri:
-                                  paymentInfo?.qrInfo?.qrDataURL ||
-                                  `https://img.vietqr.io/image/970422-0399888999-compact2.png?amount=${
-                                    paymentInfo?.finalAmount ||
-                                    (trip.shippingType === 'FOOD_DELIVERY'
-                                      ? (trip.shippFare || 25000) + (trip.totalFoodPrice || 0)
-                                      : trip.shippFare || 24000)
-                                  }&addInfo=THANH+TOAN+${trip.id}&accountName=TAI+XE+DRIVER+APP`,
-                              }}
+                              source={{ uri: qrPayment.qrDataURL }}
                               style={{ width: '100%', height: '100%' }}
                               resizeMode="contain"
                               onError={() => setQrLoadError(true)}
@@ -1249,12 +1218,11 @@ export default function DriverActiveTripScreen() {
                           )}
                         </View>
 
-                        <ThemedText style={{ fontSize: 14, fontWeight: '800', color: '#0284C7', marginTop: 12 }}>
-                          {paymentInfo?.qrInfo?.bankName || 'Ngân hàng Quân Đội (MB Bank)'}
-                        </ThemedText>
-                        <ThemedText style={{ fontSize: 13, color: '#334155', fontWeight: '600', marginTop: 2 }}>
-                          STK: {paymentInfo?.qrInfo?.bankAccountNumber || '0399888999'} • {paymentInfo?.qrInfo?.bankAccountName || 'TAI XE DRIVER APP'}
-                        </ThemedText>
+                        {qrPayment?.bankAccountNumber && (
+                          <ThemedText style={{ fontSize: 13, color: '#334155', fontWeight: '600', marginTop: 2 }}>
+                            STK: {qrPayment.bankAccountNumber} • {qrPayment.bankAccountName}
+                          </ThemedText>
+                        )}
                         <ThemedText style={{ fontSize: 16, fontWeight: '900', color: '#0F172A', marginTop: 6 }}>
                           Số tiền:{' '}
                           {Number(
@@ -1266,10 +1234,10 @@ export default function DriverActiveTripScreen() {
                           đ
                         </ThemedText>
                         <ThemedText style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>
-                          Nội dung: THANH TOAN {trip.id}
+                          {qrPayment?.transferContent}
                         </ThemedText>
                       </View>
-                    ) : (
+                    ) : isCashPayment ? (
                       <View style={[styles.paymentMethodCard, styles.cashMethodBg, { marginBottom: 14 }]}>
                         <View style={[styles.paymentMethodIconBox, { backgroundColor: '#DCFCE7' }]}>
                           <Ionicons name="cash-outline" size={24} color="#16A34A" />
@@ -1290,31 +1258,32 @@ export default function DriverActiveTripScreen() {
                           </ThemedText>
                         </View>
                       </View>
-                    )}
+                    ) : null}
                   </View>
 
-                  {/* Nút bấm Tài xế xác nhận */}
-                  <Pressable
-                    style={styles.modalConfirmBtn}
-                    onPress={handleConfirmReceivedPayment}
-                    disabled={isConfirmingPayment}
-                  >
-                    {isConfirmingPayment ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <>
-                        <Ionicons name="checkmark-circle-outline" size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
-                        <ThemedText style={styles.modalConfirmBtnText}>XÁC NHẬN ĐÃ NHẬN TIỀN & KẾT THÚC</ThemedText>
-                      </>
-                    )}
+                  {isCashPayment && (
+                    <Pressable
+                      style={styles.modalConfirmBtn}
+                      onPress={handleConfirmReceivedPayment}
+                      disabled={isConfirmingPayment}
+                    >
+                      {isConfirmingPayment ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <>
+                          <Ionicons name="checkmark-circle-outline" size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
+                          <ThemedText style={styles.modalConfirmBtnText}>Xác nhận thu tiền</ThemedText>
+                        </>
+                      )}
                   </Pressable>
+                  )}
 
                   <Pressable
                     style={styles.modalSecondaryBtn}
                     onPress={() => setShowPaymentModal(false)}
                     disabled={isConfirmingPayment}
                   >
-                    <ThemedText style={styles.modalSecondaryBtnText}>Quay lại (Khách chưa trả tiền)</ThemedText>
+                    <ThemedText style={styles.modalSecondaryBtnText}>Quay lại</ThemedText>
                   </Pressable>
                 </>
               )}

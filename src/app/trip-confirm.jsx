@@ -1,3 +1,4 @@
+import { getUserErrorMessage } from '../utils/error-message';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
@@ -18,7 +19,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { StatusBar } from 'expo-status-bar';
 import { tripService, VEHICLE_TYPE } from '@/services/trip.service';
-import { paymentService } from '@/services/payment.service';
+import { paymentService, PAYMENT_METHOD } from '@/services/payment.service';
 import { voucherService } from '@/services/voucher.service';
 import { HanoiMapPicker } from '@/components/ui/hanoi-map-picker';
 import { tripConfirmStyles as styles } from '@/styles/screens/trip-confirm.styles';
@@ -37,7 +38,20 @@ export default function TripConfirmScreen() {
   const [pickUpLon, setPickUpLon] = useState(Number(params.pickUpLon) || 105.854444);
   const [destLat, setDestLat] = useState(Number(params.destLat) || 21.00705);
   const [destLon, setDestLon] = useState(Number(params.destLon) || 105.84318);
-  const initialDistanceKm = Number(params.distanceKm) || 2.5;
+
+  // Tính khoảng cách đường bộ sơ bộ (Haversine * 1.25) phản hồi ngay trong 0ms không cần chờ OSRM
+  const estimatedInitialKm = useMemo(() => {
+    const p = 0.017453292519943295;
+    const c = Math.cos;
+    const a =
+      0.5 -
+      c((destLat - pickUpLat) * p) / 2 +
+      (c(pickUpLat * p) * c(destLat * p) * (1 - c((destLon - pickUpLon) * p))) / 2;
+    const straight = 12742 * Math.asin(Math.sqrt(a));
+    return Math.max(0.5, Math.round(straight * 1.25 * 10) / 10);
+  }, [pickUpLat, pickUpLon, destLat, destLon]);
+
+  const initialDistanceKm = Number(params.distanceKm) || estimatedInitialKm;
 
   const mapPickerRef = useRef(null);
 
@@ -59,7 +73,7 @@ export default function TripConfirmScreen() {
   }, [isFoodDelivery, params.totalFoodPrice, foodItems]);
 
   const [vehicleType, setVehicleType] = useState(VEHICLE_TYPE.MOTORBIKE);
-  const [preferredPayMethod, setPreferredPayMethod] = useState('PAY_DIRECTLY'); // 'PAY_DIRECTLY' (Tiền mặt) | 'PAY_BEFORE' (VietQR)
+  const [preferredPayMethod, setPreferredPayMethod] = useState(PAYMENT_METHOD.PAY_DIRECTLY);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Quản lý Voucher ưu đãi chuyến đi & món ăn
@@ -261,16 +275,21 @@ export default function TripConfirmScreen() {
       }
 
       setIsLoadingRoute(true);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+
       try {
-        // Gọi OSRM public service có fallback
+        // Gọi OSRM public service có timeout 2.5s tránh bị treo ứng dụng
         const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${pickUpLon},${pickUpLat};${destLon},${destLat}?overview=full&geometries=geojson`;
         
         const response = await fetch(osrmUrl, {
+          signal: controller.signal,
           headers: {
             'User-Agent': 'DriverApp-Client/1.0',
             'Accept': 'application/json',
           },
         });
+        clearTimeout(timeoutId);
 
         if (response.ok) {
           const data = await response.json();
@@ -293,7 +312,8 @@ export default function TripConfirmScreen() {
           }
         }
       } catch (err) {
-        console.warn('Lỗi khi lấy tuyến đường OSRM:', err);
+        clearTimeout(timeoutId);
+        console.warn('Lỗi hoặc timeout khi lấy tuyến đường OSRM (dùng lộ trình dự kiến):', err?.message || err);
       }
 
       // Fallback nếu mất mạng: dùng tọa độ nối thẳng
@@ -598,9 +618,10 @@ export default function TripConfirmScreen() {
 
       const res = await tripService.createTrip(payload);
       const newTripId = res?.tripId || res?.id;
-      if (newTripId) {
-        await paymentService.savePreferredPaymentMethod(newTripId, preferredPayMethod);
+      if (!newTripId) {
+        throw new Error('Chưa nhận được mã chuyến từ hệ thống.');
       }
+      await paymentService.savePreferredPaymentMethod(newTripId, preferredPayMethod);
 
       const createdTripData = {
         id: newTripId,
@@ -625,35 +646,32 @@ export default function TripConfirmScreen() {
         restaurantId: isFoodDelivery ? restaurantId : null,
       };
 
-      const titleSuccess = isFoodDelivery ? 'Đặt món thành công 🎉' : 'Đặt chuyến thành công 🎉';
-      const descSuccess = isFoodDelivery
-        ? `Đơn món đang được chuyển tới quán & hệ thống điều phối tài xế giao món!\nLộ trình giao: ${actualDistanceKm} km\nTổng thanh toán: ${Number(finalFare).toLocaleString('vi-VN')} đ\nThanh toán: ${preferredPayMethod === 'PAY_BEFORE' ? 'Chuyển khoản VietQR' : 'Tiền mặt'}`
-        : `Hệ thống đang điều phối tài xế gần bạn nhất!\nLộ trình thực tế: ${actualDistanceKm} km\nThanh toán: ${preferredPayMethod === 'PAY_BEFORE' ? 'Chuyển khoản VietQR' : 'Tiền mặt'}`;
+      const openTracking = () =>
+        router.navigate({
+          pathname: '/book-trip',
+          params: {
+            tripId: newTripId,
+            preferredPayMethod,
+            tripData: JSON.stringify(createdTripData),
+            routeCoords: JSON.stringify(routeCoordinates),
+            shippingType: createdTripData.shippingType,
+          },
+        });
+
+      if (!isFoodDelivery) {
+        openTracking();
+        return;
+      }
 
       Alert.alert(
-        titleSuccess,
-        descSuccess,
-        [
-          {
-            text: isFoodDelivery ? 'Theo dõi đơn món' : 'Theo dõi chuyến đi',
-            onPress: () =>
-              router.navigate({
-                pathname: '/book-trip',
-                params: {
-                  tripId: newTripId,
-                  preferredPayMethod,
-                  tripData: JSON.stringify(createdTripData),
-                  routeCoords: JSON.stringify(routeCoordinates),
-                  shippingType: isFoodDelivery ? 'FOOD_DELIVERY' : 'PASSENGER',
-                },
-              }),
-          },
-        ]
+        'Đặt món thành công 🎉',
+        `Đơn món đang được chuyển tới quán & hệ thống điều phối tài xế giao món!\nLộ trình giao: ${actualDistanceKm} km\nTổng thanh toán: ${Number(finalFare).toLocaleString('vi-VN')} đ\nThanh toán: ${preferredPayMethod === 'PAY_BEFORE' ? 'Chuyển khoản VietQR' : 'Tiền mặt'}`,
+        [{ text: 'Theo dõi đơn món', onPress: openTracking }]
       );
     } catch (err) {
       Alert.alert(
         isFoodDelivery ? 'Không thể đặt món' : 'Không thể đặt chuyến',
-        err.message || 'Đang có cuốc xe hoặc đơn giao chưa hoàn thành.'
+        getUserErrorMessage(err, 'Không thể đặt chuyến. Vui lòng kiểm tra thông tin rồi thử lại.')
       );
     } finally {
       setIsSubmitting(false);
@@ -822,75 +840,31 @@ export default function TripConfirmScreen() {
           </View>
         )}
 
-        {/* Khách hàng chọn trước hình thức thanh toán */}
-        <View style={{ marginBottom: 12 }}>
-          <ThemedText style={{ fontSize: 13, fontWeight: '700', color: '#374151', marginBottom: 6 }}>
-            Hình thức thanh toán:
-          </ThemedText>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Pressable
-              style={{
-                flex: 1,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                paddingVertical: 9,
-                paddingHorizontal: 8,
-                borderRadius: 12,
-                borderWidth: 1.5,
-                borderColor: preferredPayMethod === 'PAY_DIRECTLY' ? '#00B5B8' : '#E5E7EB',
-                backgroundColor: preferredPayMethod === 'PAY_DIRECTLY' ? '#E6F8F8' : '#F9FAFB',
-              }}
-              onPress={() => setPreferredPayMethod('PAY_DIRECTLY')}
-            >
-              <Ionicons
-                name="cash-outline"
-                size={18}
-                color={preferredPayMethod === 'PAY_DIRECTLY' ? '#00B5B8' : '#6B7280'}
-                style={{ marginRight: 6 }}
-              />
-              <ThemedText
-                style={{
-                  fontSize: 12,
-                  fontWeight: '700',
-                  color: preferredPayMethod === 'PAY_DIRECTLY' ? '#008B8D' : '#4B5563',
-                }}
-              >
-                Tiền mặt
-              </ThemedText>
-            </Pressable>
-
-            <Pressable
-              style={{
-                flex: 1,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                paddingVertical: 9,
-                paddingHorizontal: 8,
-                borderRadius: 12,
-                borderWidth: 1.5,
-                borderColor: preferredPayMethod === 'PAY_BEFORE' ? '#00B5B8' : '#E5E7EB',
-                backgroundColor: preferredPayMethod === 'PAY_BEFORE' ? '#E6F8F8' : '#F9FAFB',
-              }}
-              onPress={() => setPreferredPayMethod('PAY_BEFORE')}
-            >
-              <Ionicons
-                name="qr-code-outline"
-                size={18}
-                color={preferredPayMethod === 'PAY_BEFORE' ? '#00B5B8' : '#6B7280'}
-                style={{ marginRight: 6 }}
-              />
-              <ThemedText
-                style={{
-                  fontSize: 12,
-                  fontWeight: '700',
-                  color: preferredPayMethod === 'PAY_BEFORE' ? '#008B8D' : '#4B5563',
-                }}
-              >
-                VietQR 24/7
-              </ThemedText>
-            </Pressable>
+        <View style={styles.paymentSection}>
+          <ThemedText style={styles.paymentHeading}>Phương thức thanh toán</ThemedText>
+          <View style={styles.paymentOptions} accessibilityRole="radiogroup">
+            {[
+              { method: PAYMENT_METHOD.PAY_DIRECTLY, label: 'Thanh toán tiền mặt COD' },
+              { method: PAYMENT_METHOD.PAY_BEFORE, label: 'Thanh toán trả trước' },
+            ].map(({ method, label }) => {
+              const checked = preferredPayMethod === method;
+              return (
+                <Pressable
+                  key={method}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked }}
+                  onPress={() => setPreferredPayMethod(method)}
+                  style={[styles.paymentOption, checked && styles.paymentOptionSelected]}
+                >
+                  <ThemedText style={styles.paymentOptionLabel}>{label}</ThemedText>
+                  <Ionicons
+                    name={checked ? 'radio-button-on' : 'radio-button-off'}
+                    size={22}
+                    color={checked ? '#008B8D' : '#6B7280'}
+                  />
+                </Pressable>
+              );
+            })}
           </View>
         </View>
 

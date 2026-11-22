@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -16,57 +16,55 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import { processImageForUpload } from '@/utils/image-processor';
 import { foodService } from '@/services/food.service';
+import { getUserErrorMessage } from '@/utils/error-message';
 import { restaurantTabStyles as styles } from '@/styles/screens/restaurant-tab.styles';
+
+const initialOptions = [{ id: 0, size: 'Phần tiêu chuẩn', price: '', imageUri: null }];
 
 export function CreateFoodModal({ visible, onClose, onSuccess }) {
   const [name, setName] = useState('');
-  const [selectedImageUri, setSelectedImageUri] = useState(null);
-  const [options, setOptions] = useState([
-    { size: 'Phần Tiêu Chuẩn', price: '' },
-  ]);
+  const [options, setOptions] = useState(initialOptions);
+  const nextOptionId = useRef(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handlePickImage = async () => {
+  const handlePickImage = async (optionId) => {
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('Quyền truy cập', 'Vui lòng cấp quyền truy cập thư viện ảnh để tải ảnh món ăn.');
-        return;
+      if (Platform.OS !== 'web') {
+        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!permission.granted) {
+          Alert.alert('Quyền truy cập', 'Vui lòng cấp quyền truy cập thư viện ảnh để tải ảnh món ăn.');
+          return;
+        }
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.8,
       });
 
       if (!result.canceled && result.assets?.[0]?.uri) {
-        setSelectedImageUri(result.assets[0].uri);
+        handleUpdateOption(optionId, 'imageUri', result.assets[0].uri);
       }
-    } catch (err) {
+    } catch {
       Alert.alert('Thông báo', 'Không thể mở thư viện ảnh lúc này.');
     }
   };
 
   const handleAddOption = () => {
-    setOptions((prev) => [...prev, { size: `Size ${prev.length + 1}`, price: '' }]);
+    const id = nextOptionId.current++;
+    setOptions((prev) => [...prev, { id, size: '', price: '', imageUri: null }]);
   };
 
-  const handleRemoveOption = (index) => {
-    if (options.length <= 1) {
-      Alert.alert('Thông báo', 'Món ăn cần có ít nhất 1 phân loại giá.');
-      return;
-    }
-    setOptions((prev) => prev.filter((_, idx) => idx !== index));
+  const handleRemoveOption = (id) => {
+    setOptions((prev) => prev.length > 1 ? prev.filter((option) => option.id !== id) : prev);
   };
 
-  const handleUpdateOption = (index, field, value) => {
-    setOptions((prev) => {
-      const clone = [...prev];
-      clone[index] = { ...clone[index], [field]: value };
-      return clone;
-    });
+  const handleUpdateOption = (id, field, value) => {
+    setOptions((prev) => prev.map((option) => (
+      option.id === id ? { ...option, [field]: value } : option
+    )));
   };
 
   const handleSubmit = async () => {
@@ -76,19 +74,18 @@ export function CreateFoodModal({ visible, onClose, onSuccess }) {
       return;
     }
 
-    if (!selectedImageUri) {
-      Alert.alert('Thiếu ảnh món', 'Vui lòng chọn ảnh đại diện cho món ăn.');
-      return;
-    }
-
     for (const opt of options) {
       if (!opt.size.trim()) {
         Alert.alert('Thiếu thông tin', 'Vui lòng điền tên loại / size cho tất cả các phân loại.');
         return;
       }
       const numPrice = Number(opt.price);
-      if (isNaN(numPrice) || numPrice <= 0) {
+      if (!Number.isFinite(numPrice) || numPrice <= 0) {
         Alert.alert('Giá không hợp lệ', `Vui lòng nhập giá hợp lệ cho loại "${opt.size}".`);
+        return;
+      }
+      if (!opt.imageUri) {
+        Alert.alert('Thiếu ảnh', `Vui lòng chọn ảnh cho size "${opt.size.trim()}".`);
         return;
       }
     }
@@ -105,59 +102,36 @@ export function CreateFoodModal({ visible, onClose, onSuccess }) {
         })),
       };
 
-      formData.append('food', {
-        string: JSON.stringify(foodPayload),
-        type: 'application/json',
-      });
+      const foodJson = JSON.stringify(foodPayload);
+      if (Platform.OS === 'web') {
+        formData.append('food', new Blob([foodJson], { type: 'application/json' }));
+      } else {
+        formData.append('food', { string: foodJson, type: 'application/json' });
+      }
 
-      // Xử lý nén ảnh trước khi đính kèm
-      for (let i = 0; i < options.length; i++) {
-        const processed = await processImageForUpload(selectedImageUri, `food_opt_${i + 1}`);
-        if (processed) {
-          formData.append('images', {
-            uri: processed.uri,
-            name: processed.name,
-            type: 'image/jpeg',
-          });
+      // Backend ghép từng ảnh với size ở cùng vị trí trong danh sách.
+      for (const [index, option] of options.entries()) {
+        const image = await processImageForUpload(option.imageUri, `food_opt_${index + 1}`);
+        if (Platform.OS === 'web') {
+          const response = await fetch(image.uri);
+          if (!response.ok) {
+            throw new Error(`Không thể đọc ảnh của size "${option.size.trim()}". Vui lòng chọn lại ảnh.`);
+          }
+          formData.append('images', await response.blob(), image.name);
+        } else {
+          formData.append('images', image);
         }
       }
 
       await foodService.createFood(formData);
 
       Alert.alert('Thành công', `Đã thêm món "${trimmedName}" vào thực đơn quán!`);
-      // Reset form
       setName('');
-      setSelectedImageUri(null);
-      setOptions([{ size: 'Phần Tiêu Chuẩn', price: '' }]);
+      setOptions(initialOptions);
       onSuccess?.();
       onClose();
     } catch (err) {
-      console.warn('Lỗi khi thêm món ăn:', err?.message);
-      // Fallback mô phỏng nếu endpoint backend chưa sẵn sàng để đảm bảo test mượt mà
-      const mockCreated = {
-        id: `mock-food-${Date.now()}`,
-        name: trimmedName,
-        thumbnailUrl: selectedImageUri,
-        minPrice: Number(options[0].price),
-        maxPrice: Number(options[options.length - 1].price),
-        averageRating: 5.0,
-        totalReviews: 0,
-        options: options.map((opt) => ({
-          size: opt.size.trim(),
-          price: Number(opt.price),
-          imageUrl: selectedImageUri,
-        })),
-        createdAt: new Date().toISOString(),
-      };
-      Alert.alert(
-        'Đã ghi nhận món ăn',
-        `Món "${trimmedName}" đã được cập nhật thành công vào danh sách.`
-      );
-      setName('');
-      setSelectedImageUri(null);
-      setOptions([{ size: 'Phần Tiêu Chuẩn', price: '' }]);
-      onSuccess?.(mockCreated);
-      onClose();
+      Alert.alert('Không thể thêm món', getUserErrorMessage(err, 'Không thể thêm món ăn. Vui lòng thử lại.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -189,40 +163,15 @@ export function CreateFoodModal({ visible, onClose, onSuccess }) {
                 placeholder="VD: Phở Bò Tái Nạm, Bún Chả..."
                 placeholderTextColor="#9CA3AF"
                 value={name}
+                editable={!isSubmitting}
                 onChangeText={setName}
               />
             </View>
 
-            {/* 2. Ảnh món ăn */}
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>
-                Ảnh món ăn <Text style={{ color: '#EF4444' }}>*</Text>
-              </Text>
-              <TouchableOpacity
-                style={styles.uploadImageBox}
-                activeOpacity={0.8}
-                onPress={handlePickImage}
-              >
-                {selectedImageUri ? (
-                  <Image
-                    source={{ uri: selectedImageUri }}
-                    style={styles.uploadImagePreview}
-                    contentFit="cover"
-                  />
-                ) : (
-                  <View style={{ alignItems: 'center' }}>
-                    <Ionicons name="camera-outline" size={28} color="#6B7280" />
-                    <Text style={styles.uploadImageText}>Chạm để chọn ảnh từ thiết bị</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            {/* 3. Phân loại & Giá tiền */}
             <View style={styles.formGroup}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                 <Text style={styles.formLabel}>
-                  Phân loại & Giá bán (Options) <Text style={{ color: '#EF4444' }}>*</Text>
+                  Các size <Text style={{ color: '#EF4444' }}>*</Text>
                 </Text>
                 <TouchableOpacity
                   style={{
@@ -234,36 +183,60 @@ export function CreateFoodModal({ visible, onClose, onSuccess }) {
                     borderRadius: 8,
                   }}
                   onPress={handleAddOption}
+                  disabled={isSubmitting}
                 >
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#1F2937' }}>+ Thêm Size</Text>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#1F2937' }}>+ Thêm size</Text>
                 </TouchableOpacity>
               </View>
 
-              {options.map((opt, idx) => (
-                <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <TextInput
-                    style={[styles.formInput, { flex: 1.2 }]}
-                    placeholder="Tên Size (VD: Tô Nhỏ)"
-                    placeholderTextColor="#9CA3AF"
-                    value={opt.size}
-                    onChangeText={(val) => handleUpdateOption(idx, 'size', val)}
-                  />
-                  <TextInput
-                    style={[styles.formInput, { flex: 1 }]}
-                    placeholder="Giá (VD: 45000)"
-                    placeholderTextColor="#9CA3AF"
-                    keyboardType="numeric"
-                    value={opt.price}
-                    onChangeText={(val) => handleUpdateOption(idx, 'price', val)}
-                  />
-                  {options.length > 1 && (
-                    <TouchableOpacity
-                      style={{ padding: 6 }}
-                      onPress={() => handleRemoveOption(idx)}
-                    >
-                      <Ionicons name="trash-outline" size={18} color="#EF4444" />
-                    </TouchableOpacity>
-                  )}
+              {options.map((opt, index) => (
+                <View key={opt.id} style={styles.foodOptionCard}>
+                  <View style={styles.foodOptionInputs}>
+                    <TextInput
+                      style={[styles.formInput, { flex: 1.2 }]}
+                      accessibilityLabel={`Tên size ${index + 1}`}
+                      placeholder="Tên size"
+                      placeholderTextColor="#9CA3AF"
+                      value={opt.size}
+                      editable={!isSubmitting}
+                      onChangeText={(value) => handleUpdateOption(opt.id, 'size', value)}
+                    />
+                    <TextInput
+                      style={[styles.formInput, { flex: 1 }]}
+                      accessibilityLabel={`Giá size ${index + 1}`}
+                      placeholder="Giá"
+                      placeholderTextColor="#9CA3AF"
+                      keyboardType="numeric"
+                      value={opt.price}
+                      editable={!isSubmitting}
+                      onChangeText={(value) => handleUpdateOption(opt.id, 'price', value)}
+                    />
+                    {options.length > 1 && (
+                      <TouchableOpacity
+                        style={styles.foodOptionRemove}
+                        accessibilityLabel={`Xóa size ${index + 1}`}
+                        disabled={isSubmitting}
+                        onPress={() => handleRemoveOption(opt.id)}
+                      >
+                        <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  <TouchableOpacity
+                    style={styles.uploadImageBox}
+                    accessibilityLabel={`${opt.imageUri ? 'Đổi' : 'Chọn'} ảnh cho ${opt.size.trim() || `size ${index + 1}`}`}
+                    disabled={isSubmitting}
+                    onPress={() => handlePickImage(opt.id)}
+                  >
+                    {opt.imageUri ? (
+                      <Image source={{ uri: opt.imageUri }} style={styles.uploadImagePreview} contentFit="cover" />
+                    ) : (
+                      <View style={styles.foodOptionImagePlaceholder}>
+                        <Ionicons name="camera-outline" size={24} color="#6B7280" />
+                        <Text style={styles.uploadImageText}>Chọn ảnh cho size này</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
                 </View>
               ))}
             </View>

@@ -1,3 +1,4 @@
+import { getUserErrorMessage } from '../utils/error-message';
 import { useState } from 'react';
 import { Keyboard, Alert } from 'react-native';
 import { router } from 'expo-router';
@@ -86,7 +87,7 @@ export function useRegister() {
         ]
       );
     } catch (err) {
-      setErrorMessage(err.message || 'Đăng ký thất bại. Vui lòng kiểm tra lại thông tin.');
+      setErrorMessage(getUserErrorMessage(err, 'Đăng ký thất bại. Vui lòng kiểm tra lại thông tin.'));
     } finally {
       setIsLoading(false);
     }

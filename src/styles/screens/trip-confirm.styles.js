@@ -178,6 +178,41 @@ export const tripConfirmStyles = StyleSheet.create({
     marginLeft: 6,
   },
 
+  paymentSection: {
+    marginBottom: 12,
+  },
+  paymentHeading: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#374151',
+    marginBottom: 6,
+  },
+  paymentOptions: {
+    gap: 8,
+  },
+  paymentOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 48,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+  },
+  paymentOptionSelected: {
+    borderColor: '#00B5B8',
+    backgroundColor: '#E6F8F8',
+  },
+  paymentOptionLabel: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#374151',
+  },
+
   // Nút Xác nhận đặt xe
   bookBtn: {
     backgroundColor: '#00B5B8',

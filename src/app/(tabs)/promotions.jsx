@@ -1,3 +1,4 @@
+import { getUserErrorMessage } from '../../utils/error-message';
 import React, { useState, useCallback } from 'react';
 import {
   View,
@@ -219,7 +220,7 @@ export default function PromotionsScreen() {
         ]
       );
     } catch (err) {
-      Alert.alert('Không thể nhận voucher', err.message || 'Đã có lỗi xảy ra.');
+      Alert.alert('Không thể nhận voucher', getUserErrorMessage(err, 'Không thể nhận ưu đãi lúc này. Vui lòng thử lại.'));
     }
   };
 

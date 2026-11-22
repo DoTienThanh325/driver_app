@@ -5,7 +5,7 @@ import { Client } from '@stomp/stompjs';
 import { NotificationStore } from '../src/services/notification-store.js';
 import { startNotificationTransport } from '../src/services/notification-transport.js';
 import { createSessionRefresher } from '../src/services/refresh-session.js';
-import { normalizeNotification, restoreNotifications, notificationSocketUrl } from '../src/utils/notification-state.js';
+import { formatNotificationTimestamp, normalizeNotification, restoreNotifications, notificationSocketUrl } from '../src/utils/notification-state.js';
 
 const message = (id = 'one') => ({ id, title: 'Cập nhật chuyến đi', content: 'Tài xế đang đến', type: 'TRIP_ACCEPTED' });
 const session = (userId = 'alice', token = 'token') => ({ userId, token });
@@ -33,7 +33,7 @@ function timers() {
 function inbox(storageOverrides = {}) {
   const values = new Map();
   const connections = [];
-  const clock = timers();
+  const delivered = [];
   const storage = {
     getItem: async (key) => values.get(key) || null,
     setItem: async (key, value) => { values.set(key, value); },
@@ -41,7 +41,8 @@ function inbox(storageOverrides = {}) {
     ...storageOverrides,
   };
   const store = new NotificationStore({
-    storage, ...clock,
+    storage,
+    onNewNotification: (item) => delivered.push(item.id),
     createTransport: (callbacks) => {
       const connection = { ...callbacks, stopped: false };
       connections.push(connection);
@@ -49,7 +50,7 @@ function inbox(storageOverrides = {}) {
     },
   });
   store.setActive(true);
-  return { store, values, connections, clock };
+  return { store, values, connections, delivered };
 }
 
 test('rejects malformed payloads and normalizes unknown types/timestamps', () => {
@@ -80,8 +81,14 @@ test('builds gateway/direct socket URLs without placing credentials in the URL',
   assert.throws(() => notificationSocketUrl('ftp://host'));
 });
 
-test('hydrates before subscribing, deduplicates events, persists reads and expires the banner', async () => {
-  const { store, values, connections, clock } = inbox();
+test('formats timestamps in Vietnam time without seconds or locale punctuation', () => {
+  assert.equal(formatNotificationTimestamp('2026-11-22T02:59:00Z'), '09:59 22/11/2026');
+  assert.equal(formatNotificationTimestamp('2026-11-22T17:05:00Z'), '00:05 23/11/2026');
+  assert.equal(formatNotificationTimestamp('invalid'), '');
+});
+
+test('hydrates before subscribing, presents each new event once, and persists reads', async () => {
+  const { store, values, connections, delivered } = inbox();
   values.set(store.storageKey('alice'), JSON.stringify([message('saved')]));
   await store.setSession(session());
   assert.equal(store.getSnapshot().items[0].id, 'saved');
@@ -93,8 +100,7 @@ test('hydrates before subscribing, deduplicates events, persists reads and expir
   assert.equal(store.getSnapshot().unreadCount, 1);
   store.markRead();
   assert.equal(store.getSnapshot().unreadCount, 0);
-  assert.equal(clock.runNext(), 5000);
-  assert.equal(store.getSnapshot().banner, null);
+  assert.deepEqual(delivered, ['one']);
   await store.pendingStorage;
   assert.ok(JSON.parse(values.get(store.storageKey('alice'))).every((item) => item.readAt));
 });

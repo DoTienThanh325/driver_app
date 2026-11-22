@@ -153,7 +153,7 @@ export const driverService = {
         data,
       };
     } catch (err) {
-      if (err.message?.includes('404') || err.message?.includes('not found') || err.message?.includes('không tìm thấy')) {
+      if (err.status === 404 || err.message?.includes('not found') || err.message?.includes('không tìm thấy')) {
         return { status: 'NOT_REGISTERED' };
       }
       // Nếu là lỗi khác, giả định là NOT_REGISTERED khi test offline

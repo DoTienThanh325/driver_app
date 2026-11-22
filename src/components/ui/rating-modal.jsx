@@ -1,3 +1,4 @@
+import { getUserErrorMessage } from '../../utils/error-message';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -152,7 +153,7 @@ export function RatingModal({
       ]);
     } catch (err) {
       const status = err?.response?.status || err?.status;
-      const message = err?.response?.data?.message || err?.message || '';
+      const message = err?.serverMessage || err?.response?.data?.message || err?.message || '';
 
       if (status === 409 || message.includes('đã được đánh giá')) {
         Alert.alert('Đã đánh giá', 'Bạn đã gửi đánh giá cho mục này trước đó rồi.', [
@@ -164,7 +165,7 @@ export function RatingModal({
           },
         ]);
       } else {
-        Alert.alert('Lỗi gửi đánh giá', message || 'Không thể gửi đánh giá vào lúc này. Vui lòng thử lại sau.');
+        Alert.alert('Lỗi gửi đánh giá', getUserErrorMessage(err, 'Không thể gửi đánh giá vào lúc này. Vui lòng thử lại sau.'));
       }
     } finally {
       setIsSubmitting(false);

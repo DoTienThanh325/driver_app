@@ -56,7 +56,7 @@ export const businessService = {
       return data;
     } catch (err) {
       if (
-        err.message?.includes('404') ||
+        err.status === 404 ||
         err.message?.includes('not found') ||
         err.message?.includes('không tìm thấy')
       ) {
@@ -88,7 +88,7 @@ export const businessService = {
       return await apiClient.get('/api/businesses/me');
     } catch (err) {
       if (
-        err.message?.includes('404') ||
+        err.status === 404 ||
         err.message?.includes('not found') ||
         err.message?.includes('không tìm thấy')
       ) {

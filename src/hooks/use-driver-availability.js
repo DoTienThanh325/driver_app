@@ -1,3 +1,4 @@
+import { getUserErrorMessage } from '../utils/error-message';
 import { useState, useEffect, useCallback } from 'react';
 import { Alert, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -59,7 +60,7 @@ export function useDriverAvailability(initialStatus = false) {
 
       Alert.alert(
         'Lỗi cập nhật',
-        error.message || 'Không thể cập nhật trạng thái sẵn sàng nhận chuyến. Vui lòng thử lại sau.'
+        getUserErrorMessage(error, 'Không thể cập nhật trạng thái sẵn sàng nhận chuyến. Vui lòng thử lại sau.')
       );
     } finally {
       setIsUpdating(false);

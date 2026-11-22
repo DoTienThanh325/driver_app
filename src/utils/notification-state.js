@@ -11,6 +11,24 @@ if (typeof TextDecoder === 'undefined') {
 import { toByteArray } from 'base64-js';
 export const MAX_NOTIFICATIONS = 200;
 
+const notificationClock = new Intl.DateTimeFormat('vi-VN', {
+  timeZone: 'Asia/Ho_Chi_Minh',
+  hourCycle: 'h23',
+  hour: '2-digit',
+  minute: '2-digit',
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+});
+
+/** @param {string} timestamp */
+export function formatNotificationTimestamp(timestamp) {
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) return '';
+  const parts = Object.fromEntries(notificationClock.formatToParts(date).map(({ type, value }) => [type, value]));
+  return `${parts.hour}:${parts.minute} ${parts.day}/${parts.month}/${parts.year}`;
+}
+
 /**
  * @typedef {Object} NotificationItem
  * @property {string} id
