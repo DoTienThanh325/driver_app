@@ -226,9 +226,25 @@ PAYMENT_MONGODB_URI=mongodb://mongodb:27017/driverapp_payment_db
 Từ thư mục `backend`, dùng file `.env.pod` đã tạo ở trên.
 
 ```bash
-docker compose --env-file .env.pod up -d --build
+./start-backend.sh --build
 docker compose --env-file .env.pod ps
 ```
+
+### Cập nhật IP LAN khi đổi Wi-Fi hoặc mạng
+
+Chạy lại script từ thư mục `backend`:
+
+```bash
+./start-backend.sh
+```
+
+Script lấy IP theo tuyến mạng đến `1.1.1.1` và in địa chỉ đã chọn. Nếu không lấy được IP, script có thể dùng `localhost`. Để điện thoại dùng được URL MinIO, kiểm tra địa chỉ được in ra là IP LAN mà điện thoại truy cập được.
+
+Script thay giá trị của dòng `STORAGE_PUBLIC_ENDPOINT=` trong `.env` và `.env.pod` nếu các file và dòng này đã tồn tại, sau đó chạy `docker compose up -d` với endpoint mới `http://<IP_LAN>:9000`. Nếu có `.env.pod`, script ưu tiên file đó cho Compose. Các đối số như `--build` được chuyển tiếp vào lệnh `up`.
+
+Trên điện thoại cùng mạng, cập nhật URL API Gateway thành `http://<IP_LAN>:8080` trong cấu hình ứng dụng. Nếu điện thoại gọi được API nhưng không tải được tệp từ MinIO, kiểm tra điện thoại có truy cập được cổng `9000` trên máy host hay không.
+
+### Cấu hình Docker Compose
 
 Compose dùng file env để nội suy và chỉ truyền các biến được khai báo cho mỗi container. Giữ các file có giá trị thật ngoài Git. Khi dùng volume RabbitMQ hoặc MinIO đã có dữ liệu, chọn credential phù hợp với tài khoản trên volume đó. Với RabbitMQ, dùng tài khoản có quyền truy cập qua mạng container.
 
