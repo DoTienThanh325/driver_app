@@ -160,9 +160,70 @@ Tám service Java dùng ba file trong `src/main/resources`: `application.yaml` c
 
 Compose khởi động PostgreSQL và MongoDB. Khi volume PostgreSQL được khởi tạo lần đầu, [init-postgres.sql](init-postgres.sql) tạo bốn database cho User, Driver, Feedback và Notification. Booking và Payment dùng hai database MongoDB riêng. Nếu dùng database bên ngoài, tạo các database PostgreSQL trước và đặt URL có thể truy cập từ nơi chạy service.
 
+### Tạo file môi trường cho thông tin nhạy cảm
+
+Tạo `.env` để chạy Java bằng Maven trên máy host hoặc `.env.pod` để chạy bằng Docker Compose. Đặt file ở thư mục gốc `backend`. Git đã bỏ qua cả hai file. Thay các giá trị `THAY_...` bằng thông tin thật của môi trường chạy.
+
+Thêm các biến sau vào file bạn dùng. Nếu chạy PostgreSQL bằng Compose, giữ user `postgres` theo `init-postgres.sql` và dùng cùng mật khẩu cho `POSTGRES_PASSWORD` và bốn biến `*_DB_PASSWORD`. Nếu dùng PostgreSQL riêng, điền tên người dùng và mật khẩu tương ứng cho từng database.
+
+```dotenv
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD='THAY_MAT_KHAU_POSTGRES'
+
+USER_DB_USERNAME=postgres
+USER_DB_PASSWORD='THAY_MAT_KHAU_POSTGRES'
+DRIVER_DB_USERNAME=postgres
+DRIVER_DB_PASSWORD='THAY_MAT_KHAU_POSTGRES'
+FEEDBACK_DB_USERNAME=postgres
+FEEDBACK_DB_PASSWORD='THAY_MAT_KHAU_POSTGRES'
+NOTIFICATION_DB_USERNAME=postgres
+NOTIFICATION_DB_PASSWORD='THAY_MAT_KHAU_POSTGRES'
+
+RABBITMQ_USERNAME=driverapp
+RABBITMQ_PASSWORD='THAY_MAT_KHAU_RABBITMQ'
+STORAGE_ACCESS_KEY='THAY_ACCESS_KEY_MINIO'
+STORAGE_SECRET_KEY='THAY_SECRET_KEY_MINIO'
+OTP_CHALLENGE_SECRET='THAY_CHUOI_BI_MAT_NGAU_NHIEN'
+```
+
+Dùng `openssl rand -hex 32` để tạo giá trị cho `OTP_CHALLENGE_SECRET`, rồi dán kết quả vào file. Nếu MongoDB yêu cầu xác thực, lưu URI đầy đủ chứa thông tin đăng nhập trong `BOOKING_MONGODB_URI` và `PAYMENT_MONGODB_URI`.
+
+**Chạy Maven trên máy host** — thêm vào `.env`. Ví dụ dùng PostgreSQL và MongoDB từ Compose.
+
+```dotenv
+SPRING_PROFILES_ACTIVE=dev
+EUREKA_DEFAULT_ZONE=http://localhost:8761/eureka/
+JWT_ISSUER_URI=http://localhost:8081
+JWT_JWK_SET_URI=http://localhost:8081/.well-known/jwks.json
+STORAGE_PUBLIC_ENDPOINT=http://localhost:9000
+
+USER_DB_URL=jdbc:postgresql://localhost:5433/driverapp_user_db
+DRIVER_DB_URL=jdbc:postgresql://localhost:5433/driverapp_driver_db
+FEEDBACK_DB_URL=jdbc:postgresql://localhost:5433/driverapp_feedback_db
+NOTIFICATION_DB_URL=jdbc:postgresql://localhost:5433/driverapp_notification_db
+BOOKING_MONGODB_URI=mongodb://localhost:27017/driverapp_booking_db
+PAYMENT_MONGODB_URI=mongodb://localhost:27017/driverapp_payment_db
+```
+
+**Chạy bằng Docker Compose** — thêm vào `.env.pod`. Compose đặt profile `pod` cho các service Java. URL nội bộ dùng tên service trong mạng Compose.
+
+```dotenv
+EUREKA_DEFAULT_ZONE=http://eureka:8761/eureka/
+JWT_ISSUER_URI=http://localhost:8080
+JWT_JWK_SET_URI=http://userservice:8081/.well-known/jwks.json
+STORAGE_PUBLIC_ENDPOINT=http://localhost:9000
+
+USER_DB_URL=jdbc:postgresql://postgres:5432/driverapp_user_db
+DRIVER_DB_URL=jdbc:postgresql://postgres:5432/driverapp_driver_db
+FEEDBACK_DB_URL=jdbc:postgresql://postgres:5432/driverapp_feedback_db
+NOTIFICATION_DB_URL=jdbc:postgresql://postgres:5432/driverapp_notification_db
+BOOKING_MONGODB_URI=mongodb://mongodb:27017/driverapp_booking_db
+PAYMENT_MONGODB_URI=mongodb://mongodb:27017/driverapp_payment_db
+```
+
 ### Chạy toàn bộ backend với Docker
 
-Tại thư mục `backend`, tạo file `.env.pod`. Xem các biến trong [docker-compose.yml](docker-compose.yml) để cấu hình database, RabbitMQ, MinIO và `OTP_CHALLENGE_SECRET`.
+Từ thư mục `backend`, dùng file `.env.pod` đã tạo ở trên.
 
 ```bash
 docker compose --env-file .env.pod up -d --build
@@ -177,13 +238,13 @@ OSRM cần dữ liệu bản đồ `bookingservice/osrm/data/hanoi.osrm` và cá
 
 ### Chạy các service Java trên máy local
 
-Chuẩn bị file `.env` trong `backend` với `SPRING_PROFILES_ACTIVE=dev`. Đối chiếu tên biến trong [docker-compose.yml](docker-compose.yml) và cấu hình `application-dev.yaml` của từng dịch vụ để đặt địa chỉ truy cập từ máy host. Khởi động hạ tầng bằng lệnh dưới đây; thêm `osrm` khi đã chuẩn bị dữ liệu bản đồ.
+Dùng file `.env` đã tạo ở trên. Nếu cơ sở dữ liệu nằm ngoài Compose, sửa URL theo địa chỉ truy cập từ máy host. Khởi động hạ tầng bằng lệnh dưới đây. Thêm `osrm` khi đã chuẩn bị dữ liệu bản đồ.
 
 ```bash
 docker compose up -d postgres mongodb minio rabbitmq elasticsearch redis aimatchingservice
 ```
 
-Nếu dùng PostgreSQL do Compose khởi động, đổi cổng trong bốn biến `*_DB_URL` của `.env` từ `5432` sang `5433` và dùng thông tin đăng nhập của container. Chạy Java 21. Từ thư mục `backend`, nạp biến trong **mỗi terminal** trước khi chạy Maven. Dùng file `.env` do bạn quản lý, với giá trị được quote theo cú pháp shell khi cần.
+Chạy Java 21. Từ thư mục `backend`, nạp biến trong **mỗi terminal** trước khi chạy Maven. Dùng file `.env` do bạn quản lý, với giá trị được quote theo cú pháp shell khi cần.
 
 ```bash
 set -a
