@@ -39,15 +39,42 @@ Nếu Gateway chạy trên máy khác, dùng cổng khác hoặc Metro chạy qu
 EXPO_PUBLIC_API_URL=http://192.168.1.10:8080
 ```
 
-## Chạy bản web bằng Docker
+## Chạy bằng Docker Compose
 
-Sau khi Gateway sẵn sàng, chạy từ thư mục chứa `docker-compose.yml`:
+Chạy các lệnh trong thư mục `mobile`, nơi có `docker-compose.yml`. Khởi động Spring Cloud Gateway nếu cần đăng nhập vào ứng dụng hoặc dùng các chức năng gọi API.
+
+### Bản web
 
 ```bash
-docker compose up -d --build
+docker compose up -d --build mobile-web
 ```
 
 Mở `http://localhost:8088` hoặc dùng địa chỉ LAN của máy chủ khi truy cập từ thiết bị khác. Đặt `MOBILE_WEB_PORT` trong `.env` nếu cần đổi cổng web, chẳng hạn khi Metro đang dùng cổng `8088`. Cấu hình `MOBILE_FE_ORIGIN` phía backend khớp với origin của trang web, gồm giao thức, host và cổng. Nếu thay đổi `EXPO_PUBLIC_API_URL`, chạy lại lệnh Compose trên để build lại bản web.
+
+### Expo Go trên điện thoại (máy chủ Linux)
+
+Compose dùng `node_modules` của dự án. Chạy `npm ci` trên máy chủ với Node.js 24 nếu chưa cài dependency hoặc khi `package-lock.json` thay đổi. Metro tự chọn IP LAN nhờ mạng host.
+
+#### Đăng nhập Expo lần đầu
+
+```bash
+docker compose run --rm mobile-expo-go ./node_modules/.bin/expo login --browser
+```
+
+Giữ terminal mở và mở link Expo in ra trong trình duyệt trên chính máy chạy Docker. Chọn **Continue with Google** nếu tài khoản Expo của bạn dùng Google. Phiên đăng nhập được lưu trong volume `expo-go-session` và dùng lại khi container được tạo lại.
+
+#### Khởi động Metro và mở app
+
+Cả bản web và Metro mặc định dùng cổng `8088`. Nếu bản web đang chạy, dừng nó bằng `docker compose stop mobile-web`. Nếu container Expo chạy thủ công trước đó đang giữ cổng, dừng nó bằng `docker stop mobile-expo-go`. Để chạy cả hai, đặt `MOBILE_EXPO_PORT=8089` trong `.env`.
+
+```bash
+docker compose up -d mobile-expo-go
+docker compose logs -f mobile-expo-go
+```
+
+Kết nối điện thoại vào cùng mạng Wi-Fi, đăng nhập Expo Go bằng cùng tài khoản Expo rồi quét mã QR trong log. Nếu app mở được nhưng không gọi được API, kiểm tra [địa chỉ Gateway](#kết-nối-gateway) từ điện thoại.
+
+Dừng Metro bằng `docker compose stop mobile-expo-go`. Dừng bản web bằng `docker compose stop mobile-web`.
 
 ## Thông báo thời gian thực
 

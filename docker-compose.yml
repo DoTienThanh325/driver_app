@@ -8,3 +8,20 @@ services:
     ports:
       - "${MOBILE_WEB_PORT:-8088}:80"
     restart: unless-stopped
+
+  mobile-expo-go:
+    profiles: [expo-go]
+    image: node:24-bookworm-slim
+    network_mode: host
+    working_dir: /app
+    environment:
+      BROWSER: none
+    volumes:
+      - .:/app
+      - expo-go-session:/root/.expo
+    stdin_open: true
+    tty: true
+    command: ["./node_modules/.bin/expo", "start", "--go", "--lan", "--port", "${MOBILE_EXPO_PORT:-8088}"]
+
+volumes:
+  expo-go-session:
