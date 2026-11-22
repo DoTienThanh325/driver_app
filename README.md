@@ -177,7 +177,7 @@ OSRM cần dữ liệu bản đồ `bookingservice/osrm/data/hanoi.osrm` và cá
 
 ### Chạy các service Java trên máy local
 
-Sao chép `.env.example` thành `.env` trong `backend` và điền giá trị thật. Khởi động hạ tầng bằng lệnh dưới đây; thêm `osrm` khi đã chuẩn bị dữ liệu bản đồ.
+Chuẩn bị file `.env` trong `backend` với `SPRING_PROFILES_ACTIVE=dev`. Đối chiếu tên biến trong [mẫu Compose](.env.pod.example) và cấu hình `application-dev.yaml` của từng dịch vụ để đặt địa chỉ truy cập từ máy host. Khởi động hạ tầng bằng lệnh dưới đây; thêm `osrm` khi đã chuẩn bị dữ liệu bản đồ.
 
 ```bash
 docker compose up -d postgres mongodb minio rabbitmq elasticsearch redis aimatchingservice
