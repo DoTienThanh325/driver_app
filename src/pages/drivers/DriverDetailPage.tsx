@@ -23,11 +23,15 @@ import { ReasonModal } from '../../components/ReasonModal';
 import { extractErrorMessage, formatDateTime } from '../../utils/format';
 import type { DocumentImagePair, VehicleDetail } from '../../types';
 
+const hasValidPair = (
+  pair?: DocumentImagePair | null
+): pair is DocumentImagePair => Boolean(pair && (pair.front || pair.back));
+
 const DocumentPairSection: React.FC<{ title: string; pair?: DocumentImagePair | null }> = ({
   title,
   pair,
 }) => {
-  if (!pair || (!pair.front && !pair.back)) return null;
+  if (!hasValidPair(pair)) return null;
   return (
     <Card size="small" title={title} style={{ marginBottom: 16 }}>
       <Image.PreviewGroup>
@@ -190,7 +194,9 @@ export const DriverDetailPage: React.FC = () => {
         <DocumentPairSection title="Căn cước công dân (CCCD)" pair={data.idCard} />
         <DocumentPairSection title="Bằng lái xe máy" pair={data.licenseMotorbike} />
         <DocumentPairSection title="Bằng lái ô tô" pair={data.licenseCar} />
-        <DocumentPairSection title="Bằng lái xe" pair={data.license} />
+        {!hasValidPair(data.licenseMotorbike) && !hasValidPair(data.licenseCar) && (
+          <DocumentPairSection title="Bằng lái xe" pair={data.license} />
+        )}
 
         <Divider titlePlacement="start">Phương tiện đăng ký</Divider>
         {vehicles.length === 0 ? (

@@ -12,7 +12,8 @@ Giao diện web quản trị (**Admin Portal**) được xây dựng bằng **Re
   - Tự động refresh token đơn luồng khi gặp `401` và đồng bộ đăng xuất giữa các tab trình duyệt.
 - **Tổng quan (`/`):** Thống kê nhanh số lượng hồ sơ tài xế, đăng ký kinh doanh và báo cáo vi phạm đang chờ xử lý.
 - **Duyệt đăng ký tài xế (`/drivers`, `/drivers/:driverId`):**
-  - Danh sách gọn các tài xế `PENDING` và trang chi tiết đầy đủ ảnh CCCD, bằng lái xe máy/ô tô, cà vẹt, biển số xe (hỗ trợ phóng to).
+  - Danh sách tài xế `PENDING` và trang chi tiết có ảnh CCCD, bằng lái, cà vẹt và biển số xe với chức năng phóng to.
+  - Trang chi tiết ưu tiên ảnh bằng lái xe máy và ô tô. Ảnh bằng lái từ hồ sơ cũ được hiển thị khi cả hai loại bằng lái đều thiếu ảnh.
   - Duyệt (`APPROVED`) hoặc từ chối kèm lý do (`REJECTED`).
 - **Duyệt đăng ký kinh doanh (`/businesses`, `/businesses/:userId`):**
   - Lọc theo trạng thái `PENDING | ACCEPTED | REJECTED | BANNED`.
@@ -27,7 +28,9 @@ Giao diện web quản trị (**Admin Portal**) được xây dựng bằng **Re
 
 ```text
 admin_fe/
-├── .env.example              # Mẫu biến môi trường (VITE_API_BASE_URL)
+├── Dockerfile                # Build frontend bằng Node.js, phục vụ qua Nginx
+├── docker-compose.yml        # Cấu hình dịch vụ web và cổng truy cập
+├── nginx.conf                 # Phục vụ SPA, hỗ trợ mở trực tiếp URL trang con
 ├── index.html                # HTML gốc của ứng dụng
 ├── package.json              # Danh sách thư viện và script chạy/build
 └── src/
@@ -76,21 +79,38 @@ admin_fe/
 
 ## 4. Hướng dẫn chạy local
 
-### Yêu cầu backend
+### Yêu cầu
+
+- Node.js 24 và npm. Nếu chạy bằng container, cần Docker và Docker Compose.
+
+### Backend
 1. Chạy **Eureka Server** (`:8761`), **API Gateway** (`:8080`), **User Service** (`:8081`), **Driver Service** (`:8082`), **Booking Service** (`:8083`), **Feedback Service** (`:8085`).
 2. Bật biến môi trường `AUTH_EXPOSE_OTP=true` trên `userservice` để API login trả về mã OTP cho frontend xử lý ngầm.
-3. Tài khoản admin mặc định (seed sẵn): SĐT `0900000001` (hoặc `0900000002`), mật khẩu `admin123`.
+3. Dùng tài khoản có vai trò `ADMIN`.
 
 ### Chạy frontend
 ```bash
 cd admin_fe
-cp .env.example .env
-npm install
+npm ci
 npm run dev
 ```
 Ứng dụng chạy mặc định tại `http://localhost:5173`.
 
-### Build kiểm tra production
+Frontend mặc định gọi Gateway tại `http://localhost:8080`. Nếu Gateway dùng địa chỉ khác, tạo tệp `.env` trong thư mục dự án và đặt `VITE_API_BASE_URL` thành URL mà trình duyệt có thể truy cập. Git bỏ qua cả `.env` và `.env.example`.
+
+### Kiểm tra và xem bản build
 ```bash
+npm run lint
 npm run build
+npm run preview
 ```
+
+## Chạy Admin Web bằng Docker
+
+Chạy từ thư mục `admin_fe` sau khi Gateway đã sẵn sàng:
+
+```bash
+VITE_API_BASE_URL=http://localhost:8080 docker compose up -d --build
+```
+
+Mở `http://localhost:5173`. Có thể đổi cổng máy chủ bằng `ADMIN_FE_PORT`. Đặt `VITE_API_BASE_URL` thành URL Gateway mà trình duyệt có thể truy cập. Biến này được nhúng lúc build, nên cần build lại image khi đổi URL. Cấu hình `ADMIN_FE_ORIGIN` phía backend khớp origin của trang web.
