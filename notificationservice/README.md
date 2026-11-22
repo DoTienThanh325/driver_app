@@ -20,11 +20,11 @@ Dịch vụ này hoạt động theo mô hình **hướng sự kiện (Event-Dri
 
 ### `TripNotificationListener` (Queue: `trip.notification.queue`)
 - Lắng nghe các sự kiện cập nhật vòng đời chuyến đi từ `bookingservice`:
-  - Tài xế đã nhận chuyến (`ACCEPTED`).
+  - Tài xế đã nhận chuyến (`DRIVER_ASSIGNED`).
   - Tài xế đang trên đường đến điểm đón (`DRIVER_ARRIVING`).
   - Chuyến đi bắt đầu di chuyển (`IN_PROGRESS`).
-  - Chuyến đi hoàn tất (`COMPLETED`).
-- Tự động sinh thông báo cho cả Khách hàng (`customerId`) và Tài xế (`driverId`).
+  - Chuyến đi hoàn tất (`COMPLETED`) hoặc bị hủy (`CANCELLED`).
+- Listener tạo thông báo cho khách hàng (`customerId`). Nội dung thay đổi tùy chuyến chở khách hay giao món.
 - Sử dụng bảng `processed_events` để kiểm tra chống gửi trùng lặp thông báo nếu sự kiện được retry.
 
 ---
@@ -65,7 +65,12 @@ Database PostgreSQL: `driverapp_notification_db`
 
 ## Hướng Dẫn Chạy
 
+Từ thư mục gốc backend, chuẩn bị hạ tầng và file `.env` theo [hướng dẫn chạy backend](../README.md#cấu-hình-và-chạy-backend). Dùng Java 21 và profile `dev`. Docker Compose dùng profile `pod`.
+
 ```bash
+set -a
+. ./.env
+set +a
 cd notificationservice
 ./mvnw spring-boot:run
 ```

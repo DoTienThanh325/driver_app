@@ -80,6 +80,14 @@ Service này sử dụng **MongoDB** làm cơ sở dữ liệu chính, **Elastic
 
 ---
 
+#### Tra cứu chuyến đi đang hoạt động
+
+- `GET /api/trips/driver/current` dùng JWT của tài xế. Phản hồi `200` có hai trường `currentTrip` và `queuedTrip`, mỗi trường có thể là `null`.
+- `GET /api/trips/{tripId}/counterparty` trả tên và số điện thoại của bên còn lại. Phía khách còn nhận loại phương tiện và điểm đánh giá trung bình của tài xế nếu có. Trả `204` khi chưa có tài xế, `403` khi người gọi không thuộc chuyến và `404` khi chuyến không tồn tại.
+- Cả hai API trả `Cache-Control: no-store`.
+
+Booking dùng `AI_MATCHING_URL` để gọi dịch vụ xếp hạng và `OSRM_URL` để gọi bộ định tuyến. Xem [AI Matching](../aimatchingservice/README.md) và [chuẩn bị dữ liệu bản đồ](osrm/README.md).
+
 ### 2. Tìm Kiếm Món Ăn Bằng Elasticsearch (`/api/bookings/foods/search`)
 
 Tích hợp **Elasticsearch 9.0** giúp tìm kiếm món ăn cực nhanh với khả năng hiểu tiếng Việt không dấu/có dấu, sắp xếp theo khoảng cách địa lý và tự động gợi ý từ khóa.
@@ -155,13 +163,17 @@ bookingservice/src/main/java/com/driverapp/bookingservice/
 
 ## Cách Chạy Dịch Vụ
 
+Từ thư mục gốc backend, chuẩn bị hạ tầng và file `.env` theo [hướng dẫn chạy backend](../README.md#cấu-hình-và-chạy-backend). Dùng Java 21 và profile `dev`. Docker Compose dùng profile `pod`.
+
 ```bash
+set -a
+. ./.env
+set +a
 cd bookingservice
 ./mvnw spring-boot:run
 ```
 *(Yêu cầu MongoDB tại `:27017`, RabbitMQ tại `:5672`, Elasticsearch tại `:9200` và Eureka Server `:8761` đang hoạt động)*.
 
+## Timeout và giới hạn tài nguyên
 
-## Timeout, request limit và circuit breaker
-
-Xem [hướng dẫn cấu hình resilience](../RESILIENCE_CONFIGURATION.md) để biết ngưỡng mặc định, biến môi trường, lỗi 429/503/504, kiểm thử Redis/HTTP và rollback. Với local demo OTP, đặt `AUTH_EXPOSE_OTP=true`; production cần SmsSender thật.
+Xem timeout của Elasticsearch, OSRM và các thiết lập resilience trong [application.yaml](src/main/resources/application.yaml).

@@ -1,0 +1,20 @@
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_DEFAULT_ZONE}
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${JWT_ISSUER_URI:http://localhost:8081}
+          jwk-set-uri: ${JWT_JWK_SET_URI}
+  datasource:
+    url: ${FEEDBACK_DB_URL}
+    username: ${FEEDBACK_DB_USERNAME}
+    password: ${FEEDBACK_DB_PASSWORD}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}

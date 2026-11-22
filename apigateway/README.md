@@ -22,7 +22,7 @@
 | `/api/drivers/**`, `/api/vehicles/**` | `lb://driverservice` | Hồ sơ tài xế, thẩm định hồ sơ, phương tiện, availability |
 | `/api/trips/**`, `/api/bookings/**`, `/api/businesses/**`, `/api/business-documents/**` | `lb://bookingservice` | Đặt chuyến, nhận cuốc, nhà hàng, món ăn, đăng ký kinh doanh |
 | `/api/payments/**`, `/api/vouchers/**` | `lb://paymentservice` | Thanh toán VietQR Napas, đổi trả trước, STK tài xế, voucher |
-| `/api/notifications/**` | `lb://notificationservice` | Tạo thông báo và truy vấn thông báo |
+| `/api/notifications/**` | `lb://notificationservice` | Tạo thông báo |
 | `/api/feedback/**`, `/api/feedbacks/**`, `/api/complaints/**` | `lb://feedbackservice` | Đánh giá sao tài xế và khiếu nại sự cố chuyến đi |
 
 ---
@@ -40,7 +40,9 @@ Cấu hình trong `SecurityConfig.java`:
 | `POST` | `/api/vehicles`, `/api/vehicles/**` | `ROLE_CUSTOMER`, `ROLE_DRIVER` | Đăng ký thêm phương tiện mới (kèm bằng lái xe tương ứng) |
 | `*` | `/api/bookings/foods`, `/api/bookings/restaurants/**` | `ROLE_BUSINESS` | Quản lý quán ăn và thực đơn món ăn |
 | `PATCH` | `/api/trips/status` | `ROLE_DRIVER` | Tài xế cập nhật tiến trình cuốc xe |
-| `PATCH` | `/api/trips/*/cancel` | `ROLE_CUSTOMER` | Khách hàng hủy cuốc xe |
+| `PATCH` | `/api/trips/*/cancel` | `CUSTOMER`, `DRIVER` tại Gateway | Booking chỉ cho khách sở hữu cuốc hủy khi chưa có tài xế |
+| `GET` | `/api/trips/driver/current` | `DRIVER` | Xem chuyến hiện tại và chuyến tiếp theo đã nhận |
+| `GET` | `/api/trips/*/counterparty` | `CUSTOMER`, `DRIVER` | Booking xác minh người gọi thuộc chuyến |
 | `*` | `/api/trips` | `ROLE_CUSTOMER`, `ROLE_DRIVER` | Đặt cuốc hoặc nhận cuốc xe |
 | `POST` | `/api/businesses/registration` | `ROLE_CUSTOMER` | Đăng ký mở quán ăn / nhà hàng |
 | `*` | `/api/businesses/*/review` | `ROLE_ADMIN` | Quản trị viên duyệt hồ sơ nhà hàng |
@@ -76,13 +78,17 @@ Khi kết nối ứng dụng điện thoại (Android / iOS) tới API Gateway:
 
 ## Hướng Dẫn Chạy
 
+Từ thư mục gốc backend, chuẩn bị hạ tầng và file `.env` theo [hướng dẫn chạy backend](../README.md#cấu-hình-và-chạy-backend). Dùng Java 21 và profile `dev`. Docker Compose dùng profile `pod`.
+
 ```bash
+set -a
+. ./.env
+set +a
 cd apigateway
 ./mvnw spring-boot:run
 ```
 *(Cần khởi động `eureka` và `userservice` trước để Gateway đăng ký và tải bộ khóa JWKS thành công)*.
 
+## Timeout và giới hạn tài nguyên
 
-## Timeout, request limit và circuit breaker
-
-Xem [hướng dẫn cấu hình resilience](../RESILIENCE_CONFIGURATION.md) để biết ngưỡng mặc định, biến môi trường, lỗi 429/503/504, kiểm thử Redis/HTTP và rollback. Với local demo OTP, đặt `AUTH_EXPOSE_OTP=true`; production cần SmsSender thật.
+Xem timeout mặc định của HTTP client, timeout từng route và cấu hình Redis trong [application.yaml](src/main/resources/application.yaml).

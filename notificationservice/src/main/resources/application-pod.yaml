@@ -1,0 +1,22 @@
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_DEFAULT_ZONE}
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${JWT_ISSUER_URI}
+          jwk-set-uri: ${JWT_JWK_SET_URI}
+  datasource:
+    url: ${NOTIFICATION_DB_URL}
+    username: ${NOTIFICATION_DB_USERNAME}
+    password: ${NOTIFICATION_DB_PASSWORD}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:rabbitmq}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
+websocket:
+  allowed-origins: ${WS_ALLOWED_ORIGINS}

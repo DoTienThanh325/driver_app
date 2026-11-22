@@ -1,5 +1,6 @@
 package com.driverapp.bookingservice.service.impl;
 
+import com.driverapp.bookingservice.client.DriverRatingClient;
 import com.driverapp.bookingservice.client.DriverServiceClient;
 import com.driverapp.bookingservice.client.NotificationClient;
 import com.driverapp.bookingservice.client.UserServiceClient;
@@ -10,7 +11,9 @@ import com.driverapp.bookingservice.dto.request.FoodOrderItemRequest;
 import com.driverapp.bookingservice.dto.request.UpdateTripStatusRequest;
 import com.driverapp.bookingservice.dto.response.AcceptTripResponse;
 import com.driverapp.bookingservice.dto.response.CreateTripResponse;
+import com.driverapp.bookingservice.dto.response.DriverCurrentTripResponse;
 import com.driverapp.bookingservice.dto.response.DriverTripResponse;
+import com.driverapp.bookingservice.dto.response.TripCounterpartyResponse;
 import com.driverapp.bookingservice.dto.response.UserInfoResponse;
 import com.driverapp.bookingservice.models.Food;
 import com.driverapp.bookingservice.models.FoodOption;
@@ -39,6 +42,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -59,6 +63,7 @@ public class TripServiceImpl implements TripService {
         private final MatchingOfferRepository matchingOfferRepository;
         private final com.driverapp.bookingservice.repository.MatchingOfferLogRepository matchingOfferLogRepository;
         private final UserServiceClient userServiceClient;
+        private final DriverRatingClient driverRatingClient;
 
 
         @Override
@@ -154,6 +159,7 @@ public class TripServiceImpl implements TripService {
                                 .tripStatus(TripStatus.REQUESTED.name())
                                 .paymentMethod("PAY_DIRECTLY")
                                 .totalAmount(totalAmt)
+                                .shippingType(saved.getShippingType())
                                 .pickupAddress(saved.getPickUpAddress())
                                 .dropoffAddress(saved.getDestinationAddress())
                                 .build());
@@ -173,8 +179,9 @@ public class TripServiceImpl implements TripService {
 
                 // ── BƯỚC 1: Kiểm tra cuốc gối đầu (Back-to-Back) & tính khả dụng của tài xế ──
                 // Kiểm tra xem lượt nhận này có phải là cuốc gối đầu (Back-to-Back) không
-                boolean isB2B = matchingOfferRepository.findByTripIdAndStatus(tripId, MatchingOfferStatus.PENDING)
-                                .map(o -> Boolean.TRUE.equals(o.getBackToBack()))
+                var pendingOffer = matchingOfferRepository.findFirstByTripIdAndDriverIdAndStatusOrderByCreatedAtDesc(
+                                tripId, driverUserId, MatchingOfferStatus.PENDING);
+                boolean isB2B = pendingOffer.map(o -> Boolean.TRUE.equals(o.getBackToBack()))
                                 .orElse(false);
 
                 // Nếu KHÔNG phải cuốc gối đầu (tài xế thông thường) thì bắt buộc tài xế phải đang AVAILABLE
@@ -210,8 +217,7 @@ public class TripServiceImpl implements TripService {
                 }
 
                 // ── Phase 2: Cập nhật MatchingOffer sau khi tài xế nhận chuyến thành công ──
-                matchingOfferRepository.findByTripIdAndStatus(tripId, MatchingOfferStatus.PENDING)
-                                .ifPresent(offer -> {
+                pendingOffer.ifPresent(offer -> {
                                         offer.setStatus(MatchingOfferStatus.ACCEPTED);
                                         offer.setUpdatedAt(LocalDateTime.now());
                                         matchingOfferRepository.save(offer);
@@ -244,6 +250,7 @@ public class TripServiceImpl implements TripService {
                                 .driverId(driverUserId.toString())
                                 .tripStatus("DRIVER_ASSIGNED")
                                 .totalAmount(totalAmt)
+                                .shippingType(updated.getShippingType())
                                 .pickupAddress(updated.getPickUpAddress())
                                 .dropoffAddress(updated.getDestinationAddress())
                                 .build());
@@ -304,8 +311,8 @@ public class TripServiceImpl implements TripService {
                                         .customerId(updatedTrip.getCustomerId() != null ? updatedTrip.getCustomerId().toString() : null)
                                         .driverId(driverUserId.toString())
                                         .tripStatus("COMPLETED")
-                                        .paymentMethod("PAY_DIRECTLY")
                                         .totalAmount(totalAmtUpdated)
+                                        .shippingType(updatedTrip.getShippingType())
                                         .pickupAddress(updatedTrip.getPickUpAddress())
                                         .dropoffAddress(updatedTrip.getDestinationAddress())
                                         .build());
@@ -317,6 +324,7 @@ public class TripServiceImpl implements TripService {
                                         .driverId(driverUserId.toString())
                                         .tripStatus(newStatus.name())
                                         .totalAmount(totalAmtUpdated)
+                                        .shippingType(updatedTrip.getShippingType())
                                         .pickupAddress(updatedTrip.getPickUpAddress())
                                         .dropoffAddress(updatedTrip.getDestinationAddress())
                                         .build());
@@ -402,6 +410,7 @@ public class TripServiceImpl implements TripService {
                                 .customerId(cancelledTrip.getCustomerId() != null ? cancelledTrip.getCustomerId().toString() : null)
                                 .driverId(cancelledTrip.getDriverId() != null ? cancelledTrip.getDriverId().toString() : null)
                                 .tripStatus("CANCELLED")
+                                .shippingType(cancelledTrip.getShippingType())
                                 .pickupAddress(cancelledTrip.getPickUpAddress())
                                 .dropoffAddress(cancelledTrip.getDestinationAddress())
                                 .build());
@@ -425,6 +434,52 @@ public class TripServiceImpl implements TripService {
                                 trip.getTotalFoodPrice(),
                                 trip.getStatus() != null ? trip.getStatus().name() : null
                 );
+        }
+
+        @Override
+        public DriverCurrentTripResponse getDriverCurrentTrips(UUID driverId) {
+                List<Trip> active = tripRepository.findByDriverIdAndStatusInOrderByCreatedAtAscIdAsc(
+                                driverId, List.of(TripStatus.DRIVER_ASSIGNED, TripStatus.DRIVER_ARRIVING, TripStatus.IN_PROGRESS));
+                Trip current = active.stream()
+                                .min(Comparator.comparingInt(trip -> switch (trip.getStatus()) {
+                                        case IN_PROGRESS -> 0;
+                                        case DRIVER_ARRIVING -> 1;
+                                        default -> Boolean.TRUE.equals(trip.getBackToBack()) ? 3 : 2;
+                                }))
+                                .orElse(null);
+                Trip queued = active.stream()
+                                .filter(trip -> trip != current && trip.getStatus() == TripStatus.DRIVER_ASSIGNED
+                                                && Boolean.TRUE.equals(trip.getBackToBack()))
+                                .findFirst().orElse(null);
+
+                return new DriverCurrentTripResponse(
+                                current == null ? null : DriverCurrentTripResponse.TripSummary.from(current),
+                                queued == null ? null : DriverCurrentTripResponse.TripSummary.from(queued));
+        }
+
+        @Override
+        public TripCounterpartyResponse getTripCounterparty(String tripId, UUID userId) {
+                Trip trip = getTripById(tripId);
+                boolean isCustomer = userId.equals(trip.getCustomerId());
+                if (!isCustomer && !userId.equals(trip.getDriverId())) {
+                        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn không tham gia chuyến đi này");
+                }
+
+                UUID counterpartyId = isCustomer ? trip.getDriverId() : trip.getCustomerId();
+                if (counterpartyId == null) {
+                        return null;
+                }
+
+                UserInfoResponse profile = userServiceClient.getUserInfo(counterpartyId);
+                if (profile == null || !counterpartyId.equals(profile.userId())) {
+                        throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Không tải được thông tin liên hệ");
+                }
+                return new TripCounterpartyResponse(
+                        isCustomer ? TripCounterpartyResponse.Role.DRIVER : TripCounterpartyResponse.Role.CUSTOMER,
+                        profile.username(),
+                        profile.phoneNumber(),
+                        isCustomer ? trip.getVehicleType() : null,
+                        isCustomer ? driverRatingClient.getAverageRating(counterpartyId) : null);
         }
 
         @Override

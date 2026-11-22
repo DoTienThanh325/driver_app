@@ -1,28 +1,18 @@
 server:
   port: ${BOOKING_SERVICE_PORT:8083}
-
 spring:
   application:
     name: bookingservice
-
   elasticsearch:
-    uris: ${ELASTICSEARCH_URIS:http://localhost:9200}
     connection-timeout: ${ES_CONNECT_TIMEOUT:500ms}
     socket-timeout: ${ES_SOCKET_TIMEOUT:1500ms}
-
   mongodb:
-    uri: ${MONGODB_URI:mongodb://localhost:27017/driverapp_booking_db}
     representation:
       uuid: standard
-
   rabbitmq:
     publisher-confirm-type: correlated
     publisher-returns: true
     connection-timeout: 2s
-    host: ${RABBITMQ_HOST:localhost}
-    port: ${RABBITMQ_PORT:5672}
-    username: ${RABBITMQ_USERNAME:guest}
-    password: ${RABBITMQ_PASSWORD:guest}
     listener:
       simple:
         retry:
@@ -30,33 +20,15 @@ spring:
           initial-interval: 2000ms
           max-retries: ${RABBIT_LISTENER_MAX_RETRIES:3}
           multiplier: 2.0
-
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          jwk-set-uri: ${JWT_JWK_SET_URI:http://localhost:8081/.well-known/jwks.json}
-          issuer-uri: ${JWT_ISSUER_URI:http://localhost:8081}
-
   servlet:
     multipart:
       max-file-size: 5MB
       max-request-size: 26MB
-
 eureka:
-  client:
-    service-url:
-      defaultZone: ${EUREKA_DEFAULT_ZONE:http://localhost:8761/eureka/}
   instance:
     prefer-ip-address: ${EUREKA_PREFER_IP_ADDRESS:true}
-
 storage:
-  endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}
-  public-endpoint: ${STORAGE_PUBLIC_ENDPOINT:http://localhost:9000}
-  access-key: ${STORAGE_ACCESS_KEY:minioadmin}
-  secret-key: ${STORAGE_SECRET_KEY:minioadmin}
   bucket: ${STORAGE_BUCKET:business-documents}
-
 services:
   notification:
     base-url: ${NOTIFICATION_SERVICE_URL:http://notificationservice}
@@ -66,15 +38,11 @@ services:
     base-url: ${USER_SERVICE_URL:http://userservice}
   payment:
     base-url: ${PAYMENT_SERVICE_URL:http://paymentservice}
-  osrm:
-    url: ${OSRM_URL:http://localhost:5000}
-  ai-matching:
-    url: ${AI_MATCHING_URL:http://localhost:8087}
-
+  feedback:
+    base-url: ${FEEDBACK_SERVICE_URL:http://feedbackservice}
 matching:
   strategy: ${MATCHING_STRATEGY:AI_MODEL}
   shadow-logging: ${MATCHING_SHADOW_LOGGING:true}
-
 management:
   endpoints:
     web:
@@ -83,7 +51,6 @@ management:
   endpoint:
     health:
       show-details: never
-
 resilience:
   http:
     enabled: ${HTTP_RESILIENCE_ENABLED:true}

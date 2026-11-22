@@ -6,14 +6,18 @@ import com.driverapp.bookingservice.dto.request.UpdateTripStatusRequest;
 import com.driverapp.bookingservice.dto.response.AcceptTripResponse;
 import com.driverapp.bookingservice.dto.response.CreateTripResponse;
 import com.driverapp.bookingservice.dto.response.CustomerTripCountDto;
+import com.driverapp.bookingservice.dto.response.DriverCurrentTripResponse;
 import com.driverapp.bookingservice.dto.response.DriverTripResponse;
+import com.driverapp.bookingservice.dto.response.TripCounterpartyResponse;
 import com.driverapp.bookingservice.models.Trip;
 import com.driverapp.bookingservice.models.enums.TripStatus;
 import com.driverapp.bookingservice.service.TripService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
@@ -136,6 +140,23 @@ public class TripController {
     ) {
         UUID driverUserId = UUID.fromString(jwt.getSubject());
         return tripService.getDriverTripHistory(driverUserId, status, page, size);
+    }
+
+    @GetMapping("/driver/current")
+    public ResponseEntity<DriverCurrentTripResponse> getDriverCurrentTrips(@AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(tripService.getDriverCurrentTrips(UUID.fromString(jwt.getSubject())));
+    }
+
+    @GetMapping("/{tripId}/counterparty")
+    public ResponseEntity<TripCounterpartyResponse> getTripCounterparty(
+            @PathVariable String tripId,
+            @AuthenticationPrincipal Jwt jwt) {
+        var counterparty = tripService.getTripCounterparty(tripId, UUID.fromString(jwt.getSubject()));
+        var cacheControl = CacheControl.noStore();
+        return counterparty == null
+                ? ResponseEntity.noContent().cacheControl(cacheControl).build()
+                : ResponseEntity.ok().cacheControl(cacheControl).body(counterparty);
     }
 
     @GetMapping("/{tripId}")

@@ -21,5 +21,7 @@ public interface TripRepository extends MongoRepository<Trip, String> {
 
     Page<Trip> findByCustomerIdOrderByCreatedAtDesc(UUID customerId, Pageable pageable);
 
+    List<Trip> findByDriverIdAndStatusInOrderByCreatedAtAscIdAsc(UUID driverId, Collection<TripStatus> statuses);
+
     Page<Trip> findByDriverIdAndStatusIn(UUID driverId, Collection<TripStatus> statuses, Pageable pageable);
 }

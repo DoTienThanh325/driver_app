@@ -1,10 +1,14 @@
 package com.driverapp.driverservice.storage;
 
+import io.minio.BucketExistsArgs;
 import io.minio.GetPresignedObjectUrlArgs;
+import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
+import io.minio.SetBucketPolicyArgs;
 import io.minio.Http.Method;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -35,6 +39,33 @@ public class DriverImageStorage {
         this.client = client;
         this.publicClient = publicClient;
         this.bucket = bucket;
+    }
+
+    @PostConstruct
+    public void initBucket() {
+        try {
+            boolean found = client.bucketExists(BucketExistsArgs.builder().bucket(bucket).build());
+            if (!found) {
+                client.makeBucket(MakeBucketArgs.builder().bucket(bucket).build());
+                log.info("Created MinIO bucket: {}", bucket);
+            }
+            // Thiết lập chính sách download công khai cho bucket tài liệu tài xế
+            String policy = "{\n" +
+                    "  \"Version\": \"2012-10-17\",\n" +
+                    "  \"Statement\": [\n" +
+                    "    {\n" +
+                    "      \"Effect\": \"Allow\",\n" +
+                    "      \"Principal\": {\"AWS\": [\"*\"]},\n" +
+                    "      \"Action\": [\"s3:GetBucketLocation\", \"s3:GetObject\"],\n" +
+                    "      \"Resource\": [\"arn:aws:s3:::" + bucket + "/*\", \"arn:aws:s3:::" + bucket + "\"]\n" +
+                    "    }\n" +
+                    "  ]\n" +
+                    "}";
+            client.setBucketPolicy(SetBucketPolicyArgs.builder().bucket(bucket).config(policy).build());
+            log.info("Configured download policy for MinIO bucket: {}", bucket);
+        } catch (Exception e) {
+            log.warn("Could not ensure bucket {} policy: {}", bucket, e.getMessage());
+        }
     }
 
     // ─────────────────────────────────── PUBLIC UPLOAD METHODS

@@ -1,5 +1,6 @@
 package com.driverapp.bookingservice.event;
 
+import com.driverapp.bookingservice.models.enums.ShippingType;
 import lombok.*;
 import java.math.BigDecimal;
 
@@ -14,6 +15,7 @@ public class TripEventPayload {
     private String tripStatus;        // DRIVER_ASSIGNED, IN_PROGRESS, COMPLETED, CANCELLED
     private String paymentMethod;     // CASH, PAY_NOW, PAY_AFTER
     private BigDecimal totalAmount;
+    private ShippingType shippingType;
     private String pickupAddress;
     private String dropoffAddress;
 }

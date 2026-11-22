@@ -14,6 +14,7 @@ public class TripEventPayload {
     private String tripStatus;
     private String paymentMethod;
     private BigDecimal totalAmount;
+    private String shippingType;
     private String pickupAddress;
     private String dropoffAddress;
 }

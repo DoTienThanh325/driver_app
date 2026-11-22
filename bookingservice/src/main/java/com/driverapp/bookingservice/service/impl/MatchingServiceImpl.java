@@ -14,6 +14,7 @@ import com.driverapp.bookingservice.models.MatchingOfferLog;
 import com.driverapp.bookingservice.models.MatchingSession;
 import com.driverapp.bookingservice.models.Trip;
 import com.driverapp.bookingservice.models.enums.MatchingOfferStatus;
+import com.driverapp.bookingservice.models.enums.ShippingType;
 import com.driverapp.bookingservice.models.enums.TripStatus;
 import com.driverapp.bookingservice.publisher.MatchingEventPublisher;
 import com.driverapp.bookingservice.repository.MatchingOfferLogRepository;
@@ -398,13 +399,6 @@ public class MatchingServiceImpl implements MatchingService {
         session.setUpdatedAt(LocalDateTime.now());
         matchingSessionRepository.save(session);
 
-        // Push thông báo đến App tài xế
-        String notifMsg = candidate.isBackToBack()
-                ? String.format("⚡ Cuốc gối đầu! Khách cách điểm trả của bạn %.1f phút. Bạn có %ds để nhận cuốc.",
-                        candidate.getEtaMinutes(), OFFER_TIMEOUT_SECONDS)
-                : String.format("Khách cách bạn %.1f phút. Bạn có %ds để nhận cuốc.",
-                        candidate.getEtaMinutes(), OFFER_TIMEOUT_SECONDS);
-
         // Persist the timer before optional notification delivery. Failure is retried by RabbitMQ.
         if (!Boolean.TRUE.equals(savedOffer.getTimeoutScheduled())) {
             matchingEventPublisher.scheduleOfferTimeout(tripId, savedOffer.getId(), targetRank);
@@ -412,10 +406,13 @@ public class MatchingServiceImpl implements MatchingService {
             matchingOfferRepository.save(savedOffer);
         }
         if (!Boolean.TRUE.equals(savedOffer.getNotificationSent())) {
-        notificationClient.createNotification(new CreateNotificationRequest(
-                candidate.isBackToBack() ? "Có cuốc xe gối đầu mới!" : "Có cuốc xe mới!",
-                notifMsg,
-                candidate.getDriverId()));
+            String title = candidate.isBackToBack() ? "Có cuốc xe gối đầu mới" : "Có cuốc xe mới";
+            String route = describeRoute(trip);
+            String message = route == null ? title + "." : title + route + ".";
+            notificationClient.createNotification(new CreateNotificationRequest(
+                    title,
+                    message + " Bạn có " + OFFER_TIMEOUT_SECONDS + " giây để nhận chuyến.",
+                    candidate.getDriverId()));
             savedOffer.setNotificationSent(true);
             matchingOfferRepository.save(savedOffer);
         }
@@ -610,8 +607,24 @@ public class MatchingServiceImpl implements MatchingService {
             log.warn("[Matching] Trip {} → NO_DRIVER_FOUND. Gửi thông báo cho khách hàng.", tripId);
             notificationClient.createNotification(new CreateNotificationRequest(
                     "Không tìm được tài xế",
-                    "Rất tiếc, các tài xế lân cận hiện đang bận hoặc không phản hồi sau nhiều vòng tìm kiếm. Vui lòng thử lại sau.",
+                    noDriverMessage(updated),
                     updated.getCustomerId()));
         }
     }
+
+    private String noDriverMessage(Trip trip) {
+        String route = describeRoute(trip);
+        String subject = ShippingType.FOOD_DELIVERY.equals(trip.getShippingType()) ? "Đơn giao món" : "Chuyến đi";
+        return subject + (route == null ? " của bạn" : route) + ": chưa tìm thấy tài xế phù hợp.";
+    }
+
+    private String describeRoute(Trip trip) {
+        String pickup = trip.getPickUpAddress();
+        String dropoff = trip.getDestinationAddress();
+        if (pickup == null || pickup.isBlank() || dropoff == null || dropoff.isBlank()) {
+            return null;
+        }
+        return " từ " + pickup.strip() + " tới " + dropoff.strip();
+    }
+
 }

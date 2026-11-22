@@ -10,7 +10,8 @@ import java.util.UUID;
 
 public interface MatchingOfferRepository extends MongoRepository<MatchingOffer, String> {
 
-    Optional<MatchingOffer> findByTripIdAndStatus(String tripId, MatchingOfferStatus status);
+    Optional<MatchingOffer> findFirstByTripIdAndDriverIdAndStatusOrderByCreatedAtDesc(
+            String tripId, UUID driverId, MatchingOfferStatus status);
 
     List<MatchingOffer> findByTripIdAndStatusIn(String tripId, List<MatchingOfferStatus> statuses);
 

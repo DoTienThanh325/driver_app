@@ -81,13 +81,17 @@ Database PostgreSQL: `driverapp_user_db`
 
 ## Hướng Dẫn Chạy
 
+Từ thư mục gốc backend, chuẩn bị hạ tầng và file `.env` theo [hướng dẫn chạy backend](../README.md#cấu-hình-và-chạy-backend). Dùng Java 21 và profile `dev`. Docker Compose dùng profile `pod`.
+
 ```bash
+set -a
+. ./.env
+set +a
 cd userservice
 ./mvnw spring-boot:run
 ```
 *(Cần PostgreSQL và RabbitMQ đang hoạt động trước khi chạy service)*.
 
+## Timeout và giới hạn tài nguyên
 
-## Timeout, request limit và circuit breaker
-
-Xem [hướng dẫn cấu hình resilience](../RESILIENCE_CONFIGURATION.md) để biết ngưỡng mặc định, biến môi trường, lỗi 429/503/504, kiểm thử Redis/HTTP và rollback. Với local demo OTP, đặt `AUTH_EXPOSE_OTP=true`; production cần SmsSender thật.
+Xem timeout của Redis, PostgreSQL và các thiết lập resilience trong [application.yaml](src/main/resources/application.yaml).

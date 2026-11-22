@@ -78,6 +78,9 @@ public class SecurityConfig {
                                                 .pathMatchers(HttpMethod.PATCH, "/api/trips/status").hasRole("DRIVER")
                                                 .pathMatchers(HttpMethod.PATCH, "/api/trips/{tripId}/cancel")
                                                 .hasAnyRole("CUSTOMER", "DRIVER")
+                                                .pathMatchers(HttpMethod.GET, "/api/trips/driver/current").hasRole("DRIVER")
+                                                .pathMatchers(HttpMethod.GET, "/api/trips/*/counterparty")
+                                                .hasAnyRole("CUSTOMER", "DRIVER")
                                                 .pathMatchers("/api/trips").hasAnyRole("CUSTOMER", "DRIVER")
                                                 .pathMatchers(HttpMethod.GET,
                                                                 "/api/businesses/registration/user/*",

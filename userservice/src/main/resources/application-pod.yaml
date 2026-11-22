@@ -1,0 +1,26 @@
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_DEFAULT_ZONE}
+spring:
+  datasource:
+    url: ${USER_DB_URL}
+    username: ${USER_DB_USERNAME}
+    password: ${USER_DB_PASSWORD}
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:rabbitmq}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
+app:
+  jwt:
+    issuer: ${JWT_ISSUER_URI}
+  otp:
+    challenge-secret: ${OTP_CHALLENGE_SECRET}
+resilience:
+  auth:
+    expose-otp: ${AUTH_EXPOSE_OTP:false}

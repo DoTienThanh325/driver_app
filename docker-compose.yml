@@ -1,66 +1,162 @@
-version: '3.8'
+x-java-service: &java-service
+  restart: unless-stopped
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+
+x-java-build: &java-build
+  context: .
+  dockerfile: Dockerfile
+
+x-pod: &pod
+  SPRING_PROFILES_ACTIVE: pod
+
+x-discovery: &discovery
+  EUREKA_DEFAULT_ZONE: ${EUREKA_DEFAULT_ZONE:-http://eureka:8761/eureka/}
+
+x-jwt: &jwt
+  JWT_ISSUER_URI: ${JWT_ISSUER_URI:-http://localhost:8080}
+  JWT_JWK_SET_URI: ${JWT_JWK_SET_URI:-http://userservice:8081/.well-known/jwks.json}
+
+x-rabbitmq: &rabbitmq
+  RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-driverapp}
+  RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-driverapp123}
+
+x-storage: &storage
+  STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:-minioadmin}
+  STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:-minioadmin}
+  STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-http://minio:9000}
+  STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-http://localhost:9000}
 
 services:
-  minio:
-    image: cgr.dev/chainguard/minio:latest
-    container_name: minio
+  # ============================================================================
+  # CƠ SỞ DỮ LIỆU & HẠ TẦNG (INFRASTRUCTURE)
+  # ============================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: driverapp-postgres
     ports:
-      - "9000:9000"   # API endpoint (S3)
-      - "9001:9001"   # Web Console
+      - "5433:5432"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres123}
+      POSTGRES_DB: postgres
     volumes:
-      - minio_data:/data
-    command: server /data --console-address ":9001"
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-postgres.sql:/docker-entrypoint-initdb.d/init-postgres.sql:ro
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
-  rabbitmq:
-    image: rabbitmq:3.13-management-alpine
-    container_name: driverapp-rabbitmq
-    restart: unless-stopped
+  mongodb:
+    image: mongo:7.0
+    container_name: driverapp-mongodb
     ports:
-      - "5672:5672"     # AMQP port
-      - "15672:15672"   # Management Web UI
-    environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
+      - "27017:27017"
     volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:9.0.0
-    container_name: driverapp-elasticsearch
+      - mongo_data:/data/db
     restart: unless-stopped
-    ports:
-      - "9200:9200"
-      - "9300:9300"
-    environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-    volumes:
-      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7.2-alpine
     container_name: driver-redis
-    restart: unless-stopped
     ports:
       - "6379:6379"
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: driverapp-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-driverapp}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-driverapp123}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.0.0
+    container_name: driverapp-elasticsearch
+    ports:
+      - "9200:9200"
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=4s"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  minio-init:
+    image: alpine:latest
+    container_name: driverapp-minio-init
+    volumes:
+      - minio_data:/data
+    entrypoint: >
+      /bin/sh -c "
+      mkdir -p /data/driver-documents /data/business-documents &&
+      chown -R 65532:65532 /data &&
+      chmod -R 777 /data &&
+      echo 'MinIO buckets initialized successfully.' &&
+      exit 0;
+      "
+    restart: "no"
+
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    container_name: minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${STORAGE_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${STORAGE_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
 
   osrm:
     image: osrm/osrm-backend:latest
     container_name: osrm-backend
-    restart: unless-stopped
+    profiles: [routing]
     ports:
       - "5000:5000"
     volumes:
-      - ./bookingservice/osrm/data:/data
+      - ./bookingservice/osrm/data:/data:ro
     command: osrm-routed --algorithm mld /data/hanoi.osrm
+    restart: unless-stopped
 
   aimatchingservice:
     build:
@@ -73,7 +169,173 @@ services:
     environment:
       - MODEL_PATH=app/models/lgbm_acceptance_model.pkl
 
+  # ============================================================================
+  # CÁC SERVICE BACKEND CHÍNH (SPRING BOOT & GATEWAY)
+  # ============================================================================
+  eureka:
+    <<: *java-service
+    container_name: driverapp-eureka
+    build:
+      <<: *java-build
+      args:
+        SERVICE: eureka
+    ports:
+      - "8761:8761"
+    environment: *pod
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8761/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  userservice:
+    <<: *java-service
+    container_name: driverapp-userservice
+    build:
+      <<: *java-build
+      args:
+        SERVICE: userservice
+    environment:
+      <<: [*pod, *discovery, *rabbitmq]
+      JWT_ISSUER_URI: ${JWT_ISSUER_URI:-http://localhost:8080}
+      OTP_CHALLENGE_SECRET: ${OTP_CHALLENGE_SECRET:-student-local-secret-key-32chars-min-length-12345}
+      USER_DB_URL: ${USER_DB_URL:-jdbc:postgresql://postgres:5432/driverapp_user_db}
+      USER_DB_USERNAME: ${USER_DB_USERNAME:-postgres}
+      USER_DB_PASSWORD: ${USER_DB_PASSWORD:-postgres123}
+      AUTH_EXPOSE_OTP: ${AUTH_EXPOSE_OTP:-true}
+    depends_on:
+      eureka:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8081/.well-known/jwks.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  driverservice:
+    <<: *java-service
+    container_name: driverapp-driverservice
+    build:
+      <<: *java-build
+      args:
+        SERVICE: driverservice
+    environment:
+      <<: [*pod, *discovery, *jwt, *rabbitmq, *storage]
+      DRIVER_DB_URL: ${DRIVER_DB_URL:-jdbc:postgresql://postgres:5432/driverapp_driver_db}
+      DRIVER_DB_USERNAME: ${DRIVER_DB_USERNAME:-postgres}
+      DRIVER_DB_PASSWORD: ${DRIVER_DB_PASSWORD:-postgres123}
+    depends_on:
+      userservice:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+
+  bookingservice:
+    <<: *java-service
+    container_name: driverapp-bookingservice
+    build:
+      <<: *java-build
+      args:
+        SERVICE: bookingservice
+    environment:
+      <<: [*pod, *discovery, *jwt, *rabbitmq, *storage]
+      BOOKING_MONGODB_URI: ${BOOKING_MONGODB_URI:-mongodb://mongodb:27017/driverapp_booking_db}
+      OSRM_URL: ${OSRM_URL:-http://osrm:5000}
+    depends_on:
+      userservice:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      mongodb:
+        condition: service_healthy
+      aimatchingservice:
+        condition: service_started
+
+  paymentservice:
+    <<: *java-service
+    container_name: driverapp-paymentservice
+    build:
+      <<: *java-build
+      args:
+        SERVICE: paymentservice
+    environment:
+      <<: [*pod, *discovery, *jwt, *rabbitmq]
+      PAYMENT_MONGODB_URI: ${PAYMENT_MONGODB_URI:-mongodb://mongodb:27017/driverapp_payment_db}
+    depends_on:
+      userservice:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+
+  feedbackservice:
+    <<: *java-service
+    container_name: driverapp-feedbackservice
+    build:
+      <<: *java-build
+      args:
+        SERVICE: feedbackservice
+    environment:
+      <<: [*pod, *discovery, *jwt, *rabbitmq]
+      FEEDBACK_DB_URL: ${FEEDBACK_DB_URL:-jdbc:postgresql://postgres:5432/driverapp_feedback_db}
+      FEEDBACK_DB_USERNAME: ${FEEDBACK_DB_USERNAME:-postgres}
+      FEEDBACK_DB_PASSWORD: ${FEEDBACK_DB_PASSWORD:-postgres123}
+    depends_on:
+      userservice:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  notificationservice:
+    <<: *java-service
+    container_name: driverapp-notificationservice
+    build:
+      <<: *java-build
+      args:
+        SERVICE: notificationservice
+    environment:
+      <<: [*pod, *discovery, *jwt, *rabbitmq]
+      NOTIFICATION_DB_URL: ${NOTIFICATION_DB_URL:-jdbc:postgresql://postgres:5432/driverapp_notification_db}
+      NOTIFICATION_DB_USERNAME: ${NOTIFICATION_DB_USERNAME:-postgres}
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:-postgres123}
+      WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:-http://localhost:8088}
+    depends_on:
+      userservice:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  apigateway:
+    <<: *java-service
+    container_name: driverapp-apigateway
+    build:
+      <<: *java-build
+      args:
+        SERVICE: apigateway
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    environment:
+      <<: [*pod, *discovery, *jwt]
+      ADMIN_FE_ORIGIN: ${ADMIN_FE_ORIGIN:-http://localhost:5173}
+      MOBILE_FE_ORIGIN: ${MOBILE_FE_ORIGIN:-http://localhost:8088}
+    depends_on:
+      userservice:
+        condition: service_healthy
+
 volumes:
+  postgres_data:
+  mongo_data:
   minio_data:
   rabbitmq_data:
   es_data:

@@ -1,6 +1,8 @@
 package com.driverapp.bookingservice.storage;
 
 import io.minio.BucketExistsArgs;
+import io.minio.GetPresignedObjectUrlArgs;
+import io.minio.Http.Method;
 import io.minio.ListObjectsArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
@@ -19,6 +21,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -129,6 +132,21 @@ public class FoodImageStorage {
 
     public void validate(MultipartFile file) {
         detectFormat(file);
+    }
+
+    /** Lấy presigned URL để đọc ảnh món ăn (hết hạn 10 phút) */
+    public String signedReadUrl(String objectUrl) {
+        try {
+            return publicClient.getPresignedObjectUrl(
+                    GetPresignedObjectUrlArgs.builder()
+                            .method(Method.GET)
+                            .bucket(bucket)
+                            .object(keyOf(objectUrl))
+                            .expiry(10, TimeUnit.MINUTES)
+                            .build());
+        } catch (Exception e) {
+            throw new ObjectStorageException("Could not create food image view URL", e);
+        }
     }
 
     private ImageFormat detectFormat(MultipartFile file) {

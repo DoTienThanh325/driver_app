@@ -97,6 +97,10 @@ Cho phép cả khách hàng (`ROLE_CUSTOMER`) và tài xế (`ROLE_DRIVER`) tạ
 
 ---
 
+## API điểm tài xế nội bộ
+
+`GET /internal/driver-ratings/{driverId}` trả trường `averageRating` cho Booking Service khi hiển thị thông tin tài xế.
+
 ## Cơ Sở Dữ Liệu & Flyway Migration
 
 Database PostgreSQL: `driverapp_feedback_db`
@@ -109,9 +113,16 @@ Khởi tạo schema qua file migration:
 
 ---
 
+Các migration tiếp theo gồm `V2__add_complaint_resolution.sql` cho xử lý khiếu nại và `V3__create_restaurant_and_food_feedback_tables.sql` cho đánh giá nhà hàng và món ăn.
+
 ## Hướng Dẫn Chạy
 
+Từ thư mục gốc backend, chuẩn bị hạ tầng và file `.env` theo [hướng dẫn chạy backend](../README.md#cấu-hình-và-chạy-backend). Dùng Java 21 và profile `dev`. Docker Compose dùng profile `pod`.
+
 ```bash
+set -a
+. ./.env
+set +a
 cd feedbackservice
 ./mvnw spring-boot:run
 ```

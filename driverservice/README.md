@@ -20,6 +20,8 @@
 
 ---
 
+Đặt `STORAGE_PUBLIC_ENDPOINT` thành URL MinIO mà thiết bị client truy cập được để mở các liên kết có chữ ký. Xem mẫu [`.env.example`](../.env.example) và [`.env.pod.example`](../.env.pod.example).
+
 ## Danh Sách Endpoint Hiện Có
 
 ### 1. Đăng Ký & Bổ Sung Hồ Sơ Tài Xế
@@ -137,7 +139,12 @@ PostgreSQL Database: `driverapp_driver_db`
 
 ## Hướng Dẫn Chạy
 
+Từ thư mục gốc backend, chuẩn bị hạ tầng và file `.env` theo [hướng dẫn chạy backend](../README.md#cấu-hình-và-chạy-backend). Dùng Java 21 và profile `dev`. Docker Compose dùng profile `pod`.
+
 ```bash
+set -a
+. ./.env
+set +a
 cd driverservice
 ./mvnw spring-boot:run
 ```

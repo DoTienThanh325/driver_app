@@ -1,26 +1,16 @@
 server:
   port: 8082
-
 spring:
   application:
     name: driverservice
-
   datasource:
     hikari:
       connection-timeout: ${DB_POOL_TIMEOUT_MS:500}
       maximum-pool-size: ${DB_POOL_SIZE:20}
       data-source-properties:
         socketTimeout: ${DB_SOCKET_TIMEOUT_SECONDS:2}
-        options: "-c statement_timeout=2000 -c lock_timeout=1000"
-    url: jdbc:postgresql://localhost:5432/driverapp_driver_db
-    username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:12345khongcho}
-
+        options: -c statement_timeout=2000 -c lock_timeout=1000
   rabbitmq:
-    host: ${RABBITMQ_HOST:localhost}
-    port: ${RABBITMQ_PORT:5672}
-    username: ${RABBITMQ_USERNAME:guest}
-    password: ${RABBITMQ_PASSWORD:guest}
     listener:
       simple:
         retry:
@@ -28,56 +18,32 @@ spring:
           initial-interval: 2000ms
           max-retries: ${RABBIT_LISTENER_MAX_RETRIES:3}
           multiplier: 2.0
-
   jpa:
     hibernate:
       ddl-auto: update
     open-in-view: false
-
   flyway:
     enabled: true
     locations: classpath:db/migration
     validate-on-migrate: false
-
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
       connect-timeout: ${REDIS_CONNECT_TIMEOUT:200ms}
       timeout: ${REDIS_COMMAND_TIMEOUT:300ms}
       lettuce:
         shutdown-timeout: 200ms
-
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: http://localhost:8081
-          jwk-set-uri: http://localhost:8081/.well-known/jwks.json
-  
   servlet:
     multipart:
       max-file-size: 15MB
       max-request-size: 50MB
-
 eureka:
-  client:
-    service-url:
-      defaultZone: ${EUREKA_DEFAULT_ZONE:http://localhost:8761/eureka/}
   instance:
     prefer-ip-address: ${EUREKA_PREFER_IP_ADDRESS:true}
-
 storage:
-  endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}
-  public-endpoint: ${STORAGE_PUBLIC_ENDPOINT:http://localhost:9000}
-  access-key: ${STORAGE_ACCESS_KEY:minioadmin}
-  secret-key: ${STORAGE_SECRET_KEY:minioadmin}
   bucket: ${STORAGE_BUCKET:driver-documents}
-
 services:
   user:
     base-url: ${USER_SERVICE_URL:http://userservice}
-
 management:
   endpoints:
     web:
@@ -86,7 +52,6 @@ management:
   endpoint:
     health:
       show-details: never
-
 resilience:
   http:
     enabled: ${HTTP_RESILIENCE_ENABLED:true}

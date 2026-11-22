@@ -4,7 +4,10 @@ import com.driverapp.paymentservice.event.DomainEvent;
 import com.driverapp.paymentservice.event.PaymentCompleteFailedPayload;
 import com.driverapp.paymentservice.event.TripEventPayload;
 import com.driverapp.paymentservice.models.ProcessedEvent;
+import com.driverapp.paymentservice.models.enums.PaymentMethod;
+import com.driverapp.paymentservice.models.enums.TripPaymentStatus;
 import com.driverapp.paymentservice.repository.ProcessedEventRepository;
+import com.driverapp.paymentservice.repository.TripPaymentRepository;
 import com.driverapp.paymentservice.service.TripPaymentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +21,7 @@ import org.springframework.stereotype.Component;
 public class TripCompletedEventListener {
 
     private final TripPaymentService tripPaymentService;
+    private final TripPaymentRepository tripPaymentRepository;
     private final ProcessedEventRepository processedEventRepository;
     private final RabbitTemplate rabbitTemplate;
 
@@ -29,12 +33,16 @@ public class TripCompletedEventListener {
         }
 
         TripEventPayload payload = event.getPayload();
-        if ("PAY_DIRECTLY".equalsIgnoreCase(payload.getPaymentMethod())
-                || "PAY_AFTER".equalsIgnoreCase(payload.getPaymentMethod())) {
-            log.info("[Payment] Chốt thanh toán PAY_DIRECTLY cho tripId={}, số tiền={}",
-                    payload.getTripId(), payload.getTotalAmount());
-            tripPaymentService.completePayDirectlyTripPayment(payload.getTripId());
-        }
+        tripPaymentRepository.findByTripId(payload.getTripId()).ifPresent(payment -> {
+            if (payment.getMethod() == PaymentMethod.PAY_DIRECTLY && payment.getStatus() == TripPaymentStatus.PENDING) {
+                log.info("[Payment] Chốt thanh toán PAY_DIRECTLY cho tripId={}, số tiền={}",
+                        payload.getTripId(), payment.getFinalAmount());
+                tripPaymentService.completePayDirectlyTripPayment(payload.getTripId());
+            } else {
+                log.info("[Payment] Chuyến đi tripId={} có phương thức thanh toán là {} (status={}), không tự động hoàn tất thanh toán",
+                        payload.getTripId(), payment.getMethod(), payment.getStatus());
+            }
+        });
 
         processedEventRepository.save(ProcessedEvent.builder()
                 .eventId(event.getEventId())
@@ -49,22 +57,23 @@ public class TripCompletedEventListener {
     @RabbitListener(queues = "trip.payment-complete.dlq")
     public void handlePaymentFailureDlq(DomainEvent<TripEventPayload> event) {
         TripEventPayload payload = event.getPayload();
-        if (!"PAY_DIRECTLY".equalsIgnoreCase(payload.getPaymentMethod())
-                && !"PAY_AFTER".equalsIgnoreCase(payload.getPaymentMethod())) {
-            return;
-        }
+        tripPaymentRepository.findByTripId(payload.getTripId()).ifPresent(payment -> {
+            if (payment.getMethod() != PaymentMethod.PAY_DIRECTLY) {
+                return;
+            }
 
-        log.error("[SAGA #2] Chốt thanh toán PAY_DIRECTLY thất bại sau maxRetry cho tripId={}. Phát event cảnh báo!",
-                payload.getTripId());
+            log.error("[SAGA #2] Chốt thanh toán PAY_DIRECTLY thất bại sau maxRetry cho tripId={}. Phát event cảnh báo!",
+                    payload.getTripId());
 
-        PaymentCompleteFailedPayload failedPayload = PaymentCompleteFailedPayload.builder()
-                .tripId(payload.getTripId())
-                .customerId(payload.getCustomerId())
-                .amount(payload.getTotalAmount())
-                .paymentMethod("PAY_DIRECTLY")
-                .reason("Không thể tự động chốt thanh toán PAY_DIRECTLY sau 3 lần retry.")
-                .build();
+            PaymentCompleteFailedPayload failedPayload = PaymentCompleteFailedPayload.builder()
+                    .tripId(payload.getTripId())
+                    .customerId(payload.getCustomerId())
+                    .amount(payload.getTotalAmount())
+                    .paymentMethod("PAY_DIRECTLY")
+                    .reason("Không thể tự động chốt thanh toán PAY_DIRECTLY sau 3 lần retry.")
+                    .build();
 
-        rabbitTemplate.convertAndSend("saga.compensating.exchange", "payment.complete.failed", failedPayload);
+            rabbitTemplate.convertAndSend("saga.compensating.exchange", "payment.complete.failed", failedPayload);
+        });
     }
 }

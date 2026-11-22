@@ -1,0 +1,31 @@
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_DEFAULT_ZONE}
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${JWT_ISSUER_URI}
+          jwk-set-uri: ${JWT_JWK_SET_URI}
+  mongodb:
+    uri: ${BOOKING_MONGODB_URI}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:rabbitmq}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
+  elasticsearch:
+    uris: ${ELASTICSEARCH_URIS:http://elasticsearch:9200}
+storage:
+  endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}
+  public-endpoint: ${STORAGE_PUBLIC_ENDPOINT}
+  access-key: ${STORAGE_ACCESS_KEY}
+  secret-key: ${STORAGE_SECRET_KEY}
+  bucket: ${STORAGE_BUCKET:business-documents}
+services:
+  osrm:
+    url: ${OSRM_URL:http://osrm:5000}
+  ai-matching:
+    url: ${AI_MATCHING_URL:http://aimatchingservice:8087}

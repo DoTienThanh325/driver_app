@@ -219,6 +219,26 @@ public class FoodServiceImpl implements FoodService {
         return -1;
     }
 
+    /**
+     * Chuyển s3://bucket/key → presigned HTTP URL để client có thể xem ảnh.
+     * Nếu URL đã là http/https (ảnh legacy hoặc URL công khai) thì giữ nguyên.
+     * Nếu chuyển đổi thất bại thì trả null thay vì ném exception để không làm vỡ response.
+     */
+    private String toPublicUrl(String imageUrl) {
+        if (imageUrl == null || imageUrl.isBlank()) {
+            return null;
+        }
+        if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
+            return imageUrl;
+        }
+        try {
+            return foodImageStorage.signedReadUrl(imageUrl);
+        } catch (Exception e) {
+            log.warn("Không thể tạo presigned URL cho ảnh món ăn: {}", imageUrl, e);
+            return null;
+        }
+    }
+
     // ------------------------------------------------------------------ HELPER
     /** Lấy restaurantId từ đơn kinh doanh đã được duyệt của user */
     private String getOwnRestaurantId(UUID userId) {
@@ -287,14 +307,14 @@ public class FoodServiceImpl implements FoodService {
             if (food.getOptions() != null && !food.getOptions().isEmpty()) {
                 minPrice = food.getOptions().stream().mapToDouble(FoodOption::getPrice).min().orElse(0.0);
                 maxPrice = food.getOptions().stream().mapToDouble(FoodOption::getPrice).max().orElse(0.0);
-                thumbnailUrl = food.getOptions().get(0).getImageUrl();
+                thumbnailUrl = toPublicUrl(food.getOptions().get(0).getImageUrl());
             }
 
             List<FoodListResponse.OptionItem> optionItems = food.getOptions() == null ? Collections.emptyList() :
                     food.getOptions().stream().map(opt -> FoodListResponse.OptionItem.builder()
                             .size(opt.getSize())
                             .price(opt.getPrice())
-                            .imageUrl(opt.getImageUrl())
+                            .imageUrl(toPublicUrl(opt.getImageUrl()))
                             .build()
                     ).toList();
 
@@ -355,7 +375,7 @@ public class FoodServiceImpl implements FoodService {
                 food.getOptions().stream().map(opt -> FoodDetailResponse.OptionItem.builder()
                         .size(opt.getSize())
                         .price(opt.getPrice())
-                        .imageUrl(opt.getImageUrl())
+                        .imageUrl(toPublicUrl(opt.getImageUrl()))
                         .build()
                 ).toList();
 

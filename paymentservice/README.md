@@ -19,6 +19,8 @@
 - **Khi tài xế nhận cuốc:** Sự kiện `trip.driver-assigned` cập nhật `driverId` vào `TripPayment` nhưng **vẫn giữ nguyên phương thức `PAY_DIRECTLY`**.
 - **Cơ chế SAGA Rollback:** Nếu quá trình tạo thanh toán mặc định gặp lỗi (sau khi retry qua Dead Letter Queue), event bù trừ `trip.payment-init.failed` sẽ được gửi về `bookingservice` để tự động xóa chuyến đi và báo lỗi cho khách.
 
+Khi nhận sự kiện hoàn tất chuyến đi qua `trip.payment-complete.queue`, listener tự động chốt thanh toán `PAY_DIRECTLY` đang ở trạng thái `PENDING`. Thanh toán `PAY_BEFORE` đi theo luồng xác nhận của tài xế.
+
 #### `PATCH /api/payments/trip/{tripId}/pay-before`
 Khách hàng (`ROLE_CUSTOMER`) chuyển đổi phương thức thanh toán sang trả trước (**`PAY_BEFORE`**) sau khi tài xế đã nhận chuyến:
 - **Điều kiện:** Chuyến đi đã có tài xế nhận (`driverId != null`).
@@ -92,7 +94,12 @@ Khách hàng xem danh sách voucher áp dụng cho một nhà hàng cụ thể.
 
 ## Cách chạy
 
+Từ thư mục gốc backend, chuẩn bị hạ tầng và file `.env` theo [hướng dẫn chạy backend](../README.md#cấu-hình-và-chạy-backend). Dùng Java 21 và profile `dev`. Docker Compose dùng profile `pod`.
+
 ```bash
+set -a
+. ./.env
+set +a
 cd paymentservice
 ./mvnw spring-boot:run
 ```
