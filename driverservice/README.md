@@ -20,7 +20,7 @@
 
 ---
 
-Đặt `STORAGE_PUBLIC_ENDPOINT` thành URL MinIO mà thiết bị client truy cập được để mở các liên kết có chữ ký. Xem mẫu [`.env.pod.example`](../.env.pod.example).
+Đặt `STORAGE_PUBLIC_ENDPOINT` thành URL MinIO mà thiết bị client truy cập được để mở các liên kết có chữ ký.
 
 ## Danh Sách Endpoint Hiện Có
 

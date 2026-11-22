@@ -7,7 +7,6 @@ docs/
 !/document/README.md
 .env
 .env.*
-!.env.pod.example
 AGENTS.md
 
 # Scripts & Automation

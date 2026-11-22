@@ -162,7 +162,7 @@ Compose khởi động PostgreSQL và MongoDB. Khi volume PostgreSQL được kh
 
 ### Chạy toàn bộ backend với Docker
 
-Tại thư mục `backend`, sao chép `.env.pod.example` thành `.env.pod` và điền credential của database, RabbitMQ, MinIO và `OTP_CHALLENGE_SECRET`.
+Tại thư mục `backend`, tạo file `.env.pod`. Xem các biến trong [docker-compose.yml](docker-compose.yml) để cấu hình database, RabbitMQ, MinIO và `OTP_CHALLENGE_SECRET`.
 
 ```bash
 docker compose --env-file .env.pod up -d --build
@@ -177,7 +177,7 @@ OSRM cần dữ liệu bản đồ `bookingservice/osrm/data/hanoi.osrm` và cá
 
 ### Chạy các service Java trên máy local
 
-Chuẩn bị file `.env` trong `backend` với `SPRING_PROFILES_ACTIVE=dev`. Đối chiếu tên biến trong [mẫu Compose](.env.pod.example) và cấu hình `application-dev.yaml` của từng dịch vụ để đặt địa chỉ truy cập từ máy host. Khởi động hạ tầng bằng lệnh dưới đây; thêm `osrm` khi đã chuẩn bị dữ liệu bản đồ.
+Chuẩn bị file `.env` trong `backend` với `SPRING_PROFILES_ACTIVE=dev`. Đối chiếu tên biến trong [docker-compose.yml](docker-compose.yml) và cấu hình `application-dev.yaml` của từng dịch vụ để đặt địa chỉ truy cập từ máy host. Khởi động hạ tầng bằng lệnh dưới đây; thêm `osrm` khi đã chuẩn bị dữ liệu bản đồ.
 
 ```bash
 docker compose up -d postgres mongodb minio rabbitmq elasticsearch redis aimatchingservice
