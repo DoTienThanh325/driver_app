@@ -409,3 +409,24 @@ test('subscribeMessages delivers realtime trip updates immediately and unsubscri
   });
   assert.equal(received.length, 1);
 });
+
+test('DRIVER_OFFER_UPDATED notifies subscribeMessages without appearing in UI inbox or notification center', async () => {
+  const { store, connections, delivered } = inbox();
+  await store.setSession(session());
+  const received = [];
+  store.subscribeMessages((item) => received.push(item));
+
+  connections[0].onMessage({
+    id: 'offer-trip-1:1:1-PENDING',
+    type: 'DRIVER_OFFER_UPDATED',
+    title: 'Cập nhật lời mời chuyến đi',
+    content: 'Trạng thái lời mời: PENDING',
+    data: { offerId: 'trip-1:1:1', tripId: 'trip-1', status: 'PENDING' },
+  });
+
+  assert.equal(received.length, 1);
+  assert.equal(received[0].type, 'DRIVER_OFFER_UPDATED');
+  assert.equal(store.getSnapshot().items.length, 0);
+  assert.equal(store.getSnapshot().unreadCount, 0);
+  assert.deepEqual(delivered, []);
+});

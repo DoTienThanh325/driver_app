@@ -129,7 +129,12 @@ export class NotificationStore {
 
   receive(value) {
     const item = normalizeNotification(value);
-    if (!item || this.snapshot.items.some((existing) => existing.id === item.id)) return;
+    if (!item) return;
+    if (item.type === 'DRIVER_OFFER_UPDATED') {
+      this.messageListeners.forEach((listener) => listener(item));
+      return;
+    }
+    if (this.snapshot.items.some((existing) => existing.id === item.id)) return;
     const userId = this.snapshot.userId;
     this.update({ items: [item, ...this.snapshot.items].slice(0, MAX_NOTIFICATIONS) });
     this.persist();

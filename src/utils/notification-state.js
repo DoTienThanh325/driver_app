@@ -67,7 +67,7 @@ export function restoreNotifications(raw) {
     const seen = new Set();
     return parsed.flatMap((value) => {
       const item = normalizeNotification(value);
-      if (!item || seen.has(item.id)) return [];
+      if (!item || item.type === 'DRIVER_OFFER_UPDATED' || seen.has(item.id)) return [];
       seen.add(item.id);
       return [{
         ...item,

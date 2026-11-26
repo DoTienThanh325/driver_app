@@ -302,7 +302,7 @@ export default function DriverScreen() {
     }
   }, [isAvailable, activeTripStatus, queuedTripId, currentTripsStatus]);
 
-  // Quét cuốc xe mới từ AI Matching: dùng WebSocket khi connected, chỉ fallback polling chậm khi mất WS
+  // Quét cuốc xe mới từ AI Matching: dùng WebSocket khi connected, chỉ fallback polling khi mất WS
   useEffect(() => {
     if (!isAvailable || currentTripsStatus === 'loading') return;
     if (queuedTripId || (activeTripStatus && activeTripStatus !== TRIP_STATUS.IN_PROGRESS)) return;
@@ -315,7 +315,7 @@ export default function DriverScreen() {
 
     const offerInterval = setInterval(() => {
       void fetchOffers();
-    }, 10000);
+    }, 2500);
 
     return () => {
       clearInterval(offerInterval);
@@ -354,6 +354,11 @@ export default function DriverScreen() {
         return;
       }
 
+      if (msg?.type === 'GENERAL' && /cuốc xe/i.test(msg?.title || '')) {
+        void fetchOffers();
+        return;
+      }
+
       if (msg?.type?.startsWith('TRIP_') && msg?.data?.tripId) {
         const msgTripId = String(msg.data.tripId);
         if (
@@ -379,7 +384,7 @@ export default function DriverScreen() {
       };
     }
 
-    const interval = setInterval(refresh, 10000);
+    const interval = setInterval(refresh, 3000);
     return () => {
       clearInterval(interval);
       currentTripsRequestRef.current += 1;

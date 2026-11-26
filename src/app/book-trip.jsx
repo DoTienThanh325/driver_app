@@ -962,7 +962,7 @@ export default function BookTripScreen() {
     let isMounted = true;
     const unsubscribe = subscribeMessages(async (msg) => {
       const eventTripId = msg?.data?.tripId;
-      const nextStatus = msg?.data?.tripStatus;
+      const nextStatus = msg?.data?.tripStatus || msg?.data?.status;
       if (!eventTripId || String(eventTripId) !== String(tripId) || !nextStatus) return;
 
       // Đổi trạng thái & giao diện ngay lập tức khi nhận frame WebSocket
@@ -1037,7 +1037,7 @@ export default function BookTripScreen() {
       };
     }
 
-    const fallbackInterval = setInterval(syncTripStatus, 10000);
+    const fallbackInterval = setInterval(syncTripStatus, 2500);
     return () => {
       isMounted = false;
       clearInterval(fallbackInterval);
