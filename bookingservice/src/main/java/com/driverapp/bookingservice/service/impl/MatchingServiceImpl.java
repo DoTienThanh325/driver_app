@@ -412,7 +412,7 @@ public class MatchingServiceImpl implements MatchingService {
             String message = route == null ? title + "." : title + route + ".";
             notificationClient.createNotification(new CreateNotificationRequest(
                     title,
-                    message + " Bạn có " + OFFER_TIMEOUT_SECONDS + " giây để nhận chuyến.",
+                    message,
                     candidate.getDriverId()));
             matchingEventPublisher.publishDriverOfferUpdated(DriverOfferEventPayload.builder()
                     .offerId(savedOffer.getId())

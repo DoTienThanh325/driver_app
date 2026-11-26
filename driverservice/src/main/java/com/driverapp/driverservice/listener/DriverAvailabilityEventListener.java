@@ -29,13 +29,16 @@ public class DriverAvailabilityEventListener {
     @RabbitListener(queues = "driver.availability-update.queue")
     @Transactional
     public void handleTripStatusChanged(DomainEvent<TripEventPayload> event) {
+        if (event == null || event.getEventId() == null) {
+            return;
+        }
         if (processedEventRepository.existsById(event.getEventId())) {
             log.info("[Deduplication] Bỏ qua event đã xử lý: {}", event.getEventId());
             return;
         }
 
         TripEventPayload payload = event.getPayload();
-        if (payload.getDriverId() == null) {
+        if (payload == null || payload.getDriverId() == null || payload.getTripStatus() == null) {
             return;
         }
 
@@ -74,7 +77,15 @@ public class DriverAvailabilityEventListener {
      */
     @RabbitListener(queues = "driver.availability-update.dlq")
     public void handleAvailabilityUpdateFailure(DomainEvent<TripEventPayload> event) {
-        TripEventPayload payload = event.getPayload();
+        TripEventPayload payload = event != null ? event.getPayload() : null;
+        if (payload == null || payload.getTripId() == null || payload.getDriverId() == null
+                || !"DRIVER_ASSIGNED".equals(payload.getTripStatus())) {
+            log.warn("[SAGA #3] Bỏ qua DLQ message không phải DRIVER_ASSIGNED: eventType={}, tripId={}",
+                    event != null ? event.getEventType() : null,
+                    payload != null ? payload.getTripId() : null);
+            return;
+        }
+
         log.error("[SAGA #3] Phát hiện thất bại cập nhật availability sau maxRetry cho tripId={}, driverId={}. Phát compensating event!",
                 payload.getTripId(), payload.getDriverId());
 
