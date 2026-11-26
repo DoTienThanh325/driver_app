@@ -3,6 +3,7 @@ package com.driverapp.paymentservice.service.impl;
 import com.driverapp.paymentservice.client.BookingServiceClient;
 import com.driverapp.paymentservice.dto.request.ClaimVoucherRequest;
 import com.driverapp.paymentservice.dto.request.CreateVoucherRequest;
+import com.driverapp.paymentservice.dto.response.AdminVoucherResponse;
 import com.driverapp.paymentservice.dto.response.UserVoucherResponse;
 import com.driverapp.paymentservice.dto.response.VoucherItemResponse;
 import com.driverapp.paymentservice.models.UserVoucher;
@@ -263,6 +264,22 @@ public class VoucherServiceImpl implements VoucherService {
                         .restaurantId(v.getRestaurantId())
                         .expiredAt(v.getExpiredAt())
                         .quantity(quantityMap.getOrDefault(v.getId(), 1))
+                        .build())
+                .toList();
+    }
+
+    @Override
+    public List<AdminVoucherResponse> getAllVouchersByProviderType(VoucherProviderType providerType) {
+        return voucherRepository.findByProviderTypeOrderByCreatedAtDesc(providerType).stream()
+                .map(v -> AdminVoucherResponse.builder()
+                        .id(v.getId())
+                        .discount(v.getDiscount())
+                        .maxDiscount(v.getMaxDiscount())
+                        .minValue(v.getMinValue())
+                        .type(v.getType())
+                        .providerType(v.getProviderType())
+                        .expiredAt(v.getExpiredAt())
+                        .createdAt(v.getCreatedAt())
                         .build())
                 .toList();
     }

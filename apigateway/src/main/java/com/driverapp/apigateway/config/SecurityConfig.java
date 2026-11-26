@@ -104,6 +104,7 @@ public class SecurityConfig {
                                                 .pathMatchers(HttpMethod.POST, "/api/vouchers", "/api/vouchers/**")
                                                 .hasAnyRole("ADMIN", "BUSINESS")
                                                 .pathMatchers(HttpMethod.GET, "/api/vouchers/app").hasRole("CUSTOMER")
+                                                .pathMatchers(HttpMethod.GET, "/api/vouchers/admin/**").hasRole("ADMIN")
                                                 .pathMatchers(HttpMethod.GET, "/api/vouchers/restaurants/*")
                                                 .hasAnyRole("CUSTOMER", "BUSINESS")
                                                 .pathMatchers(HttpMethod.POST, "/api/payments/trip").hasRole("CUSTOMER")

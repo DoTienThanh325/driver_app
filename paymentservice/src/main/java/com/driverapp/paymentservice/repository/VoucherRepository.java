@@ -20,4 +20,7 @@ public interface VoucherRepository extends MongoRepository<Voucher, String> {
         /** Lấy voucher của một Nhà hàng cụ thể còn hạn */
         List<Voucher> findByProviderTypeAndRestaurantIdAndExpiredAtAfter(
                         VoucherProviderType providerType, String restaurantId, LocalDateTime now);
+
+        /** Lấy toàn bộ voucher theo providerType (dành cho Admin), sắp xếp mới nhất */
+        List<Voucher> findByProviderTypeOrderByCreatedAtDesc(VoucherProviderType providerType);
 }

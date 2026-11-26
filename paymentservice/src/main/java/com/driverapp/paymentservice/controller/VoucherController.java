@@ -2,8 +2,10 @@ package com.driverapp.paymentservice.controller;
 
 import com.driverapp.paymentservice.dto.request.ClaimVoucherRequest;
 import com.driverapp.paymentservice.dto.request.CreateVoucherRequest;
+import com.driverapp.paymentservice.dto.response.AdminVoucherResponse;
 import com.driverapp.paymentservice.dto.response.UserVoucherResponse;
 import com.driverapp.paymentservice.dto.response.VoucherItemResponse;
+import com.driverapp.paymentservice.models.enums.VoucherProviderType;
 import com.driverapp.paymentservice.models.enums.VoucherType;
 import com.driverapp.paymentservice.service.VoucherService;
 import jakarta.validation.Valid;
@@ -85,5 +87,14 @@ public class VoucherController {
     @GetMapping("/my-vouchers")
     public List<UserVoucherResponse> getMyVouchers(@AuthenticationPrincipal Jwt jwt) {
         return voucherService.getMyVouchers(jwt);
+    }
+
+    /**
+     * GET /api/vouchers/admin/app
+     * Admin xem toàn bộ danh sách voucher hệ thống (providerType = APP)
+     */
+    @GetMapping("/admin/app")
+    public List<AdminVoucherResponse> getAllAppVouchersForAdmin() {
+        return voucherService.getAllVouchersByProviderType(VoucherProviderType.APP);
     }
 }

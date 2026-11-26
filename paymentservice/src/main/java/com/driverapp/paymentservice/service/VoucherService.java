@@ -2,8 +2,10 @@ package com.driverapp.paymentservice.service;
 
 import com.driverapp.paymentservice.dto.request.ClaimVoucherRequest;
 import com.driverapp.paymentservice.dto.request.CreateVoucherRequest;
+import com.driverapp.paymentservice.dto.response.AdminVoucherResponse;
 import com.driverapp.paymentservice.dto.response.UserVoucherResponse;
 import com.driverapp.paymentservice.dto.response.VoucherItemResponse;
+import com.driverapp.paymentservice.models.enums.VoucherProviderType;
 import com.driverapp.paymentservice.models.enums.VoucherType;
 import java.util.List;
 import java.util.Map;
@@ -23,5 +25,8 @@ public interface VoucherService {
 
     /** 4. Khách hàng xem danh sách voucher đã nhận */
     List<UserVoucherResponse> getMyVouchers(Jwt jwt);
+
+    /** 5. Admin xem toàn bộ danh sách voucher theo providerType */
+    List<AdminVoucherResponse> getAllVouchersByProviderType(VoucherProviderType providerType);
 }
 
