@@ -168,3 +168,18 @@ export interface AdminUserStatusResponse {
   banReason: string | null;
   bannedAt: string | null;
 }
+
+export type VoucherType = 'FOOD' | 'TRANSIT';
+export type VoucherProviderType = 'APP' | 'RESTAURANT';
+
+export interface CreateVoucherRequest {
+  discount: number;
+  maxDiscount: number;
+  minValue: number;
+  type: VoucherType;
+  expiredAt: string;
+}
+
+export interface CreateVoucherResponse {
+  message: string;
+}

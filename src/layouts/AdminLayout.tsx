@@ -4,6 +4,7 @@ import { Avatar, Button, Layout, Menu, Space, Typography } from 'antd';
 import {
   CarOutlined,
   DashboardOutlined,
+  GiftOutlined,
   LogoutOutlined,
   ShopOutlined,
   UserOutlined,
@@ -23,6 +24,7 @@ export const AdminLayout: React.FC = () => {
     if (location.pathname.startsWith('/drivers')) return '/drivers';
     if (location.pathname.startsWith('/businesses')) return '/businesses';
     if (location.pathname.startsWith('/reports')) return '/reports';
+    if (location.pathname.startsWith('/vouchers')) return '/vouchers';
     return '/';
   }, [location.pathname]);
 
@@ -96,6 +98,11 @@ export const AdminLayout: React.FC = () => {
               key: '/reports',
               icon: <WarningOutlined />,
               label: 'Xử lý báo cáo',
+            },
+            {
+              key: '/vouchers',
+              icon: <GiftOutlined />,
+              label: 'Voucher hệ thống',
             },
           ]}
         />
