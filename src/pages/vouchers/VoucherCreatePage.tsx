@@ -1,7 +1,6 @@
 import React from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Alert,
   Button,
   Card,
   Col,
@@ -20,7 +19,7 @@ import { GiftOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import { voucherApi } from '../../api/voucherApi';
 import { MOBILE_COLORS } from '../../theme/themeConfig';
-import type { CreateVoucherRequest, VoucherType } from '../../types';
+import type { CreateVoucherRequest, SystemVoucherItem, VoucherType } from '../../types';
 
 const { Title, Text } = Typography;
 
@@ -32,12 +31,6 @@ interface VoucherFormValues {
   expiredAt: Dayjs;
 }
 
-interface CreatedVoucherRecord extends CreateVoucherRequest {
-  key: string;
-  providerType: 'APP';
-  createdAt: string;
-}
-
 function formatVnd(value?: number | null): string {
   if (typeof value !== 'number' || Number.isNaN(value)) return '0 đ';
   return `${value.toLocaleString('vi-VN')} đ`;
@@ -45,23 +38,25 @@ function formatVnd(value?: number | null): string {
 
 export const VoucherCreatePage: React.FC = () => {
   const [form] = Form.useForm<VoucherFormValues>();
-  const [createdList, setCreatedList] = React.useState<CreatedVoucherRecord[]>([]);
+  const queryClient = useQueryClient();
 
   const watchedValues = Form.useWatch([], form);
 
+  const {
+    data: systemVouchers = [],
+    isLoading: isLoadingVouchers,
+    isFetching: isFetchingVouchers,
+    refetch: refetchVouchers,
+  } = useQuery({
+    queryKey: ['system-vouchers'],
+    queryFn: () => voucherApi.getAppVouchers(),
+  });
+
   const createMutation = useMutation({
     mutationFn: (payload: CreateVoucherRequest) => voucherApi.createAppVoucher(payload),
-    onSuccess: (res, payload) => {
+    onSuccess: (res) => {
       message.success(res.message || 'Tạo voucher thành công');
-      setCreatedList((prev) => [
-        {
-          ...payload,
-          key: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          providerType: 'APP',
-          createdAt: dayjs().format('DD/MM/YYYY HH:mm:ss'),
-        },
-        ...prev,
-      ]);
+      queryClient.invalidateQueries({ queryKey: ['system-vouchers'] });
       form.resetFields();
     },
     onError: (err: unknown) => {
@@ -96,38 +91,13 @@ export const VoucherCreatePage: React.FC = () => {
   return (
     <Space orientation="vertical" size="large" style={{ width: '100%' }}>
       <div>
-        <Space align="center" size="small">
-          <Title level={3} style={{ margin: 0 }}>
-            Phát hành Voucher hệ thống
-          </Title>
-          <Tag color="cyan" style={{ fontWeight: 600 }}>
-            providerType: APP
-          </Tag>
-        </Space>
+        <Title level={3} style={{ margin: 0 }}>
+          Phát hành Voucher hệ thống
+        </Title>
         <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
           Tạo mã giảm giá toàn sàn áp dụng cho dịch vụ đặt xe (TRANSIT) hoặc giao đồ ăn (FOOD).
         </Text>
       </div>
-
-      <Alert
-        type="info"
-        showIcon
-        title="Quy tắc phát hành Voucher hệ thống (APP)"
-        description={
-          <ul style={{ margin: '4px 0 0 18px', padding: 0 }}>
-            <li>
-              Hệ thống tự động gán <strong>voucherProviderType = APP</strong> dựa trên quyền{' '}
-              <Tag>ADMIN</Tag>.
-            </li>
-            <li>
-              Nếu <strong>Đơn tối thiểu = 0 đ</strong>, mọi khách hàng mới đều có thể nhận tối thiểu 1 voucher.
-            </li>
-            <li>
-              Nếu <strong>Đơn tối thiểu &gt; 0 đ</strong>, số lượt nhận phụ thuộc vào số chuyến đi đã hoàn thành của khách hàng.
-            </li>
-          </ul>
-        }
-      />
 
       <Row gutter={[20, 20]}>
         <Col xs={24} lg={14}>
@@ -318,11 +288,25 @@ export const VoucherCreatePage: React.FC = () => {
         </Col>
       </Row>
 
-      <Card title={`Voucher APP vừa phát hành trong phiên (${createdList.length})`}>
-        <Table<CreatedVoucherRecord>
-          dataSource={createdList}
-          pagination={{ pageSize: 5 }}
-          locale={{ emptyText: 'Chưa có voucher nào được phát hành trong phiên này' }}
+      <Card
+        title={`Danh sách voucher hệ thống (${systemVouchers.length})`}
+        extra={
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => refetchVouchers()}
+            loading={isFetchingVouchers}
+            size="small"
+          >
+            Làm mới
+          </Button>
+        }
+      >
+        <Table<SystemVoucherItem>
+          rowKey="id"
+          dataSource={systemVouchers}
+          loading={isLoadingVouchers}
+          pagination={{ pageSize: 10 }}
+          locale={{ emptyText: 'Chưa có voucher hệ thống nào' }}
           columns={[
             {
               title: 'Nhà phát hành',
@@ -359,8 +343,22 @@ export const VoucherCreatePage: React.FC = () => {
               render: (val: string) => dayjs(val).format('DD/MM/YYYY HH:mm'),
             },
             {
+              title: 'Trạng thái',
+              dataIndex: 'expiredAt',
+              key: 'status',
+              render: (val: string) => {
+                const isExpired = dayjs(val).isBefore(dayjs());
+                return (
+                  <Tag color={isExpired ? 'default' : 'green'}>
+                    {isExpired ? 'Hết hạn' : 'Còn hạn'}
+                  </Tag>
+                );
+              },
+            },
+            {
               title: 'Thời điểm tạo',
               dataIndex: 'createdAt',
+              render: (val: string) => (val ? dayjs(val).format('DD/MM/YYYY HH:mm:ss') : '—'),
             },
           ]}
         />

@@ -183,3 +183,14 @@ export interface CreateVoucherRequest {
 export interface CreateVoucherResponse {
   message: string;
 }
+
+export interface SystemVoucherItem {
+  id: string;
+  discount: number;
+  maxDiscount: number;
+  minValue: number;
+  type: VoucherType;
+  providerType: VoucherProviderType;
+  expiredAt: string;
+  createdAt: string;
+}

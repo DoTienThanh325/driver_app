@@ -1,9 +1,14 @@
 import { httpClient } from './httpClient';
-import type { CreateVoucherRequest, CreateVoucherResponse } from '../types';
+import type { CreateVoucherRequest, CreateVoucherResponse, SystemVoucherItem } from '../types';
 
 export const voucherApi = {
   async createAppVoucher(payload: CreateVoucherRequest): Promise<CreateVoucherResponse> {
     const { data } = await httpClient.post<CreateVoucherResponse>('/api/vouchers', payload);
+    return data;
+  },
+
+  async getAppVouchers(): Promise<SystemVoucherItem[]> {
+    const { data } = await httpClient.get<SystemVoucherItem[]>('/api/vouchers/admin/app');
     return data;
   },
 };
