@@ -27,6 +27,16 @@ public class NotificationRabbitMQConfig {
     }
 
     @Bean
+    public Queue driverOfferNotificationQueue() {
+        return QueueBuilder.durable("trip.driver-offer.queue").build();
+    }
+
+    @Bean
+    public Binding driverOfferNotificationBinding(Queue driverOfferNotificationQueue, TopicExchange tripTopicExchange) {
+        return BindingBuilder.bind(driverOfferNotificationQueue).to(tripTopicExchange).with("trip.offer-updated");
+    }
+
+    @Bean
     public MessageConverter jsonMessageConverter() {
         return new JacksonJsonMessageConverter("com.driverapp.*");
     }

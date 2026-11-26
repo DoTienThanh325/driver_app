@@ -1,6 +1,9 @@
 package com.driverapp.bookingservice.publisher;
 
+import com.driverapp.bookingservice.config.rabbitmq.BookingRabbitMQConfig;
 import com.driverapp.bookingservice.config.rabbitmq.MatchingRabbitMQConfig;
+import com.driverapp.bookingservice.event.DomainEvent;
+import com.driverapp.bookingservice.event.DriverOfferEventPayload;
 import com.driverapp.bookingservice.event.OfferTimeoutPayload;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +36,20 @@ public class MatchingEventPublisher {
     public void scheduleRound(String tripId, int round) {
         sendConfirmed("matching.round.exchange", "delay",
                 new com.driverapp.bookingservice.event.MatchingRoundRequest(tripId, round));
+    }
+
+    public void publishDriverOfferUpdated(DriverOfferEventPayload payload) {
+        try {
+            DomainEvent<DriverOfferEventPayload> event = DomainEvent.of(
+                    "trip.offer-updated",
+                    "bookingservice",
+                    payload
+            );
+            rabbitTemplate.convertAndSend(BookingRabbitMQConfig.TRIP_TOPIC_EXCHANGE, "trip.offer-updated", event);
+        } catch (Exception e) {
+            log.warn("[Matching] Không thể phát sự kiện offer-updated cho offerId={}: {}",
+                    payload.getOfferId(), e.getMessage());
+        }
     }
 
     private void sendConfirmed(String exchange, String key, Object payload) {

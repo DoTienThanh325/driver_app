@@ -7,6 +7,7 @@ import com.driverapp.bookingservice.dto.ai.DriverScoringRequest;
 import com.driverapp.bookingservice.dto.ai.DriverScoringResponse;
 import com.driverapp.bookingservice.dto.request.CreateNotificationRequest;
 import com.driverapp.bookingservice.dto.response.NearbyDriverDto;
+import com.driverapp.bookingservice.event.DriverOfferEventPayload;
 import com.driverapp.bookingservice.event.OfferTimeoutPayload;
 import com.driverapp.bookingservice.event.TripEventPayload;
 import com.driverapp.bookingservice.models.MatchingOffer;
@@ -413,6 +414,13 @@ public class MatchingServiceImpl implements MatchingService {
                     title,
                     message + " Bạn có " + OFFER_TIMEOUT_SECONDS + " giây để nhận chuyến.",
                     candidate.getDriverId()));
+            matchingEventPublisher.publishDriverOfferUpdated(DriverOfferEventPayload.builder()
+                    .offerId(savedOffer.getId())
+                    .tripId(tripId)
+                    .driverId(candidate.getDriverId().toString())
+                    .status("PENDING")
+                    .backToBack(candidate.isBackToBack())
+                    .build());
             savedOffer.setNotificationSent(true);
             matchingOfferRepository.save(savedOffer);
         }
@@ -464,7 +472,16 @@ public class MatchingServiceImpl implements MatchingService {
         // Atomic: Cập nhật Offer -> EXPIRED
         Query query = new Query(Criteria.where("id").is(offerId).and("status").is(MatchingOfferStatus.PENDING));
         Update update = new Update().set("status", MatchingOfferStatus.EXPIRED).set("updatedAt", LocalDateTime.now());
-        mongoTemplate.findAndModify(query, update, FindAndModifyOptions.options().returnNew(true), MatchingOffer.class);
+        MatchingOffer expired = mongoTemplate.findAndModify(query, update, FindAndModifyOptions.options().returnNew(true), MatchingOffer.class);
+        if (expired != null && expired.getDriverId() != null) {
+            matchingEventPublisher.publishDriverOfferUpdated(DriverOfferEventPayload.builder()
+                    .offerId(offerId)
+                    .tripId(tripId)
+                    .driverId(expired.getDriverId().toString())
+                    .status("EXPIRED")
+                    .backToBack(Boolean.TRUE.equals(expired.getBackToBack()))
+                    .build());
+        }
 
         // Cập nhật nhãn isAccepted = 0 cho bản ghi log (Quá hạn 25s)
         if (shadowLogging) {

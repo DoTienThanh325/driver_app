@@ -54,7 +54,7 @@ services:
     image: mongo:7.0
     container_name: driverapp-mongodb
     ports:
-      - "27017:27017"
+      - "27018:27017"
     volumes:
       - mongo_data:/data/db
     restart: unless-stopped
@@ -309,7 +309,7 @@ services:
       NOTIFICATION_DB_URL: ${NOTIFICATION_DB_URL:-jdbc:postgresql://postgres:5432/driverapp_notification_db}
       NOTIFICATION_DB_USERNAME: ${NOTIFICATION_DB_USERNAME:-postgres}
       NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:-postgres123}
-      WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:-http://localhost:8088}
+      WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:-*}
     depends_on:
       userservice:
         condition: service_healthy

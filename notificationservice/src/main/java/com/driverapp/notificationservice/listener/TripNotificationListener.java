@@ -58,6 +58,7 @@ public class TripNotificationListener {
             case "IN_PROGRESS" -> delivery ? "tài xế đang giao món." : "chuyến đi đã bắt đầu.";
             case "COMPLETED" -> delivery ? "đơn món đã được giao." : "chuyến đi đã hoàn thành.";
             case "CANCELLED" -> delivery ? "đơn giao món đã bị hủy." : "chuyến đi đã bị hủy.";
+            case "NO_DRIVER_FOUND" -> delivery ? "chưa tìm thấy tài xế giao món." : "chưa tìm thấy tài xế phù hợp.";
             default -> null;
         };
         if (update == null) {

@@ -97,6 +97,10 @@ Mỗi service là một ứng dụng độc lập sử dụng **Java 21**, **Spr
    - **Khởi tạo tự động**: Khi khách tạo cuốc xe, hệ thống tự động sinh bản ghi thanh toán mặc định `PAY_DIRECTLY` (tiền mặt / thanh toán trực tiếp).
    - **Chuyển đổi sang `PAY_BEFORE`**: Sau khi tài xế nhận chuyến, khách hàng có thể chuyển sang trả trước. Hệ thống tự động lấy STK ngân hàng của tài xế và sinh mã ảnh **VietQR Napas 24/7** có hiệu lực trong 15 phút.
 
+8. **Thông báo & Đồng bộ Realtime qua WebSocket (STOMP)**:
+   - `notificationservice` mở endpoint `/ws/notifications` (hỗ trợ cả thuần WebSocket cho Mobile và SockJS cho Web), xác thực JWT ở cả HTTP handshake (`Authorization: Bearer ...` hoặc `?token=...`) lẫn STOMP `CONNECT` frame.
+   - Các sự kiện vòng đời chuyến đi (`DRIVER_ASSIGNED`, `DRIVER_ARRIVING`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`, `NO_DRIVER_FOUND`) và sự kiện lời mời cuốc xe tài xế (`trip.offer-updated`: `PENDING`, `EXPIRED`) được đẩy từ RabbitMQ qua WebSocket tới `/user/{userId}/queue/notifications` để client cập nhật giao diện tức thì.
+
 ---
 
 ## Danh mục Dịch vụ & Cổng Mặc định
@@ -111,7 +115,7 @@ Mỗi service là một ứng dụng độc lập sử dụng **Java 21**, **Spr
 | **paymentservice** | `8084` | Spring Boot, MongoDB (`driverapp_payment_db`), RabbitMQ | Tự động tạo thanh toán `PAY_DIRECTLY`, VietQR `PAY_BEFORE`, STK tài xế, voucher |
 | **feedbackservice** | `8085` | Spring Boot, PostgreSQL (`driverapp_feedback_db`) | Đánh giá sao tài xế, tạo khiếu nại báo cáo vi phạm chuyến đi |
 | **aimatchingservice** | `8087` | Python, FastAPI, LightGBM | Xếp hạng tài xế và gợi ý món ăn |
-| **notificationservice** | `8086` | Spring Boot, PostgreSQL (`driverapp_notification_db`), RabbitMQ | Nhận event và lưu trữ thông báo cho người dùng (hết hạn sau 15p) |
+| **notificationservice** | `8086` | Spring Boot, PostgreSQL (`driverapp_notification_db`), RabbitMQ, WebSocket (STOMP) | Lưu trữ thông báo và đẩy sự kiện chuyến đi / offer tài xế realtime qua WebSocket |
 
 ---
 
@@ -151,6 +155,7 @@ Mỗi service là một ứng dụng độc lập sử dụng **Java 21**, **Spr
 | `/api/feedbacks`, `/api/feedbacks/**` | `lb://feedbackservice` | `POST` (`ROLE_CUSTOMER`) | Gửi đánh giá sao & nhận xét tài xế |
 | `/api/complaints`, `/api/complaints/**` | `lb://feedbackservice` | `POST` (`CUSTOMER`, `DRIVER`) | Gửi báo cáo vi phạm / khiếu nại chuyến đi |
 | `/api/notifications/**` | `lb://notificationservice` | `POST` (Internal/Authenticated) | Tạo thông báo |
+| `/ws/notifications/**` | `lb://notificationservice` | `WebSocket / STOMP` (`permitAll` ở Gateway, xác thực JWT tại Notification Service) | Kết nối WebSocket realtime nhận thông báo chuyến đi & lời mời cuốc xe |
 
 ---
 
@@ -248,7 +253,7 @@ Trên điện thoại cùng mạng, cập nhật URL API Gateway thành `http://
 
 Compose dùng file env để nội suy và chỉ truyền các biến được khai báo cho mỗi container. Giữ các file có giá trị thật ngoài Git. Khi dùng volume RabbitMQ hoặc MinIO đã có dữ liệu, chọn credential phù hợp với tài khoản trên volume đó. Với RabbitMQ, dùng tài khoản có quyền truy cập qua mạng container.
 
-Gateway mặc định ở `http://localhost:8080`; Eureka Dashboard ở `http://localhost:8761` trên máy host. `JWT_ISSUER_URI` phải giống nhau ở User Service và các service xác thực token. Khi đổi domain hoặc cổng phía client, cập nhật `ADMIN_FE_ORIGIN`, `MOBILE_FE_ORIGIN`, `WS_ALLOWED_ORIGINS` và URL Gateway dùng để build frontend. `STORAGE_PUBLIC_ENDPOINT` phải là URL MinIO mà trình duyệt hoặc điện thoại có thể truy cập. Tạo bucket `driver-documents` và `business-documents` nếu chúng chưa tồn tại.
+Gateway mặc định ở `http://localhost:8080`; Eureka Dashboard ở `http://localhost:8761` trên máy host. `JWT_ISSUER_URI` phải giống nhau ở User Service và các service xác thực token. Khi đổi domain hoặc cổng phía client, cập nhật `ADMIN_FE_ORIGIN`, `MOBILE_FE_ORIGIN`, `WS_ALLOWED_ORIGINS` (mặc định `*` để thiết bị di động qua IP LAN kết nối được WebSocket) và URL Gateway dùng để build frontend. `STORAGE_PUBLIC_ENDPOINT` phải là URL MinIO mà trình duyệt hoặc điện thoại có thể truy cập. Tạo bucket `driver-documents` và `business-documents` nếu chúng chưa tồn tại.
 
 OSRM cần dữ liệu bản đồ `bookingservice/osrm/data/hanoi.osrm` và các tệp MLD liên quan. Bật bằng `docker compose --env-file .env.pod --profile routing up -d` sau khi chuẩn bị bản đồ. Có thể đặt `OSRM_URL` để dùng một máy chủ định tuyến riêng.
 
@@ -326,3 +331,23 @@ backend/
 ## Cấu hình timeout và OTP
 
 Xem timeout và giới hạn tài nguyên trong cấu hình của [Gateway](apigateway/src/main/resources/application.yaml), [Booking](bookingservice/src/main/resources/application.yaml) và [User](userservice/src/main/resources/application.yaml). Với demo OTP trên máy local, dùng `AUTH_EXPOSE_OTP=true`. Khi triển khai production, cấu hình dịch vụ gửi SMS.
+
+---
+
+## Kiểm thử (Unit & Integration Tests)
+
+Chạy các bộ test kịch bản chính bằng Maven Wrapper (không cần DB/RabbitMQ thật):
+
+```bash
+# Payment Service (kịch bản thanh toán PAY_DIRECTLY, PAY_BEFORE VietQR, Voucher, SAGA DLQ)
+cd paymentservice && bash ./mvnw test -Dtest="PaymentFlowScenariosTest,VoucherFlowScenariosTest"
+
+# Notification Service (WebSocket STOMP End-to-End, Lifecycle, Trip & Driver Offer Listeners)
+cd notificationservice && bash ./mvnw test -Dtest="DriverOfferNotificationListenerTest,TripNotificationListenerTest,WebSocketNotificationTest,WebSocketLifecycleScenariosTest,WebSocketStompFlowIntegrationTest"
+
+# Booking Service (Matching & Recovery)
+cd bookingservice && bash ./mvnw test -Dtest=MatchingRecoveryTest
+
+# API Gateway (Security & Resilience)
+cd apigateway && bash ./mvnw test -Dtest=TripGatewaySecurityResilienceTest
+```

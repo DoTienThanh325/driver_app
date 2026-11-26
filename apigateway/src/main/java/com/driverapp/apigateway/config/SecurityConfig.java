@@ -53,6 +53,7 @@ public class SecurityConfig {
                                 .authorizeExchange(exchange -> exchange
                                                 .pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                                                 .pathMatchers(HttpMethod.GET, "/.well-known/jwks.json").permitAll()
+                                                .pathMatchers("/ws/notifications/**").permitAll()
                                                 .pathMatchers(
                                                                 HttpMethod.POST,
                                                                 "/api/auth/register",
