@@ -21,6 +21,7 @@ export class NotificationStore {
     this.onNewNotification = onNewNotification;
     this.snapshot = initialSnapshot();
     this.listeners = new Set();
+    this.messageListeners = new Set();
     this.session = null;
     this.epoch = 0;
     this.connection = 0;
@@ -31,6 +32,12 @@ export class NotificationStore {
   subscribe = (listener) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  };
+
+  /** @param {(item: import('../utils/notification-state').NotificationItem) => void} listener */
+  subscribeMessages = (listener) => {
+    this.messageListeners.add(listener);
+    return () => this.messageListeners.delete(listener);
   };
 
   getSnapshot = () => this.snapshot;
@@ -126,6 +133,7 @@ export class NotificationStore {
     const userId = this.snapshot.userId;
     this.update({ items: [item, ...this.snapshot.items].slice(0, MAX_NOTIFICATIONS) });
     this.persist();
+    this.messageListeners.forEach((listener) => listener(item));
     this.onNewNotification?.(item, () => this.active && this.snapshot.userId === userId);
   }
 

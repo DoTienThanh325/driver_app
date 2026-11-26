@@ -1,16 +1,5 @@
 services:
-  mobile-web:
-    build:
-      context: .
-      args:
-        EXPO_PUBLIC_API_URL: ${EXPO_PUBLIC_API_URL:-}
-        EXPO_PUBLIC_NOTIFICATION_WS_URL: ${EXPO_PUBLIC_NOTIFICATION_WS_URL:-}
-    ports:
-      - "${MOBILE_WEB_PORT:-8088}:80"
-    restart: unless-stopped
-
   mobile-expo-go:
-    profiles: [expo-go]
     image: node:24-bookworm-slim
     network_mode: host
     working_dir: /app

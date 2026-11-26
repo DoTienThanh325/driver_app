@@ -21,6 +21,7 @@ import { ThemedView } from '@/components/themed-view';
 import { WebView } from 'react-native-webview';
 import { Image } from 'react-native';
 import { useTripCounterparty } from '@/hooks/use-trip-counterparty';
+import { useNotifications } from '@/providers/notification-provider';
 import { paymentService, PAYMENT_METHOD, PAYMENT_STATUS } from '@/services/payment.service';
 import { SubHeader } from '@/components/ui/sub-header';
 import * as Location from 'expo-location';
@@ -193,6 +194,8 @@ function formatSearchTime(totalSeconds) {
 export default function BookTripScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
+  const { status: wsStatus, subscribeMessages } = useNotifications();
+  const [paymentRefreshTick, setPaymentRefreshTick] = useState(0);
   // Điểm đón (Pickup)
   const [pickUpAddress, setPickUpAddress] = useState(DEFAULT_LOCATIONS.HO_GUOM.name);
   const [pickUpCoords, setPickUpCoords] = useState({
@@ -721,7 +724,7 @@ export default function BookTripScreen() {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [activeTrip?.id, activeTrip?.driverId, activeTrip?.status, params.preferredPayMethod]);
+  }, [activeTrip?.id, activeTrip?.driverId, activeTrip?.status, params.preferredPayMethod, paymentRefreshTick]);
 
   // Xử lý khi khách hàng chọn phương thức thanh toán (Tiền mặt hoặc Chuyển khoản VietQR)
   const handleSelectPayMethod = async (method) => {
@@ -951,18 +954,32 @@ export default function BookTripScreen() {
     }
   }, [driverLocation?.latitude, driverLocation?.longitude]);
 
-  // Polling trạng thái chuyến đi nếu đang trong tiến trình tìm/nhận tài xế hoặc đang theo dõi thanh toán
+  // Cập nhật trạng thái chuyến đi tức thì qua WebSocket Notification (thay thế polling 2s)
   useEffect(() => {
-    if (!activeTrip?.id) return;
+    const tripId = activeTrip?.id;
+    if (!tripId) return;
 
-    // Tiếp tục polling ngay cả khi COMPLETED để nhận kết quả thanh toán khi tài xế bấm xác nhận
-    const isFinished = [TRIP_STATUS.CANCELLED, TRIP_STATUS.NO_DRIVER_FOUND].includes(activeTrip.status);
-    if (isFinished) return;
+    let isMounted = true;
+    const unsubscribe = subscribeMessages(async (msg) => {
+      const eventTripId = msg?.data?.tripId;
+      const nextStatus = msg?.data?.tripStatus;
+      if (!eventTripId || String(eventTripId) !== String(tripId) || !nextStatus) return;
 
-    const interval = setInterval(async () => {
+      // Đổi trạng thái & giao diện ngay lập tức khi nhận frame WebSocket
+      setActiveTrip((prev) => {
+        if (!prev || String(prev.id) !== String(tripId)) return prev;
+        if (prev.status === nextStatus) return prev;
+        return { ...prev, status: nextStatus };
+      });
+
+      if (nextStatus === TRIP_STATUS.DRIVER_ASSIGNED || nextStatus === TRIP_STATUS.COMPLETED) {
+        setPaymentRefreshTick((t) => t + 1);
+      }
+
+      // Đồng bộ lại 1 lần để lấy đầy đủ driverId, backToBack...
       try {
-        const updated = await tripService.getTripById(activeTrip.id);
-        if (updated) {
+        const updated = await tripService.getTripById(tripId);
+        if (isMounted && updated) {
           setActiveTrip((prev) => {
             if (
               prev?.id === updated.id &&
@@ -974,41 +991,99 @@ export default function BookTripScreen() {
             return updated;
           });
         }
+      } catch {
+        // Bỏ qua nếu lỗi mạng tạm thời
+      }
+    });
 
-        // Cập nhật vị trí GPS realtime của tài xế từ Redis
-        const currentDriverId = updated?.driverId || activeTrip.driverId;
-        const currentStatus = updated?.status || activeTrip.status;
-        if (
-          currentDriverId &&
-          [TRIP_STATUS.DRIVER_ASSIGNED, TRIP_STATUS.DRIVER_ARRIVING, TRIP_STATUS.IN_PROGRESS].includes(currentStatus)
-        ) {
-          try {
-            const loc = await tripService.getDriverLocation(currentDriverId);
-            if (loc?.latitude && loc?.longitude) {
-              setDriverLocation((prev) => {
-                const newLat = Number(loc.latitude);
-                const newLng = Number(loc.longitude);
-                if (prev?.latitude === newLat && prev?.longitude === newLng) {
-                  return prev;
-                }
-                return {
-                  latitude: newLat,
-                  longitude: newLng,
-                  heading: Number(loc.heading) || 0,
-                  speed: Number(loc.speed) || 0,
-                };
-              });
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, [activeTrip?.id, subscribeMessages]);
+
+  // Đồng bộ 1 lần khi mới vào / WebSocket vừa reconnect, và chỉ fallback polling chậm khi mất WebSocket
+  useEffect(() => {
+    if (!activeTrip?.id) return;
+    const isFinished = [TRIP_STATUS.CANCELLED, TRIP_STATUS.NO_DRIVER_FOUND].includes(activeTrip.status);
+    if (isFinished) return;
+
+    let isMounted = true;
+    const syncTripStatus = async () => {
+      try {
+        const updated = await tripService.getTripById(activeTrip.id);
+        if (isMounted && updated) {
+          setActiveTrip((prev) => {
+            if (
+              prev?.id === updated.id &&
+              prev?.status === updated.status &&
+              prev?.driverId === updated.driverId
+            ) {
+              return prev;
             }
-          } catch {}
+            return updated;
+          });
         }
-
       } catch {
         // Bỏ qua lỗi mạng tạm thời
       }
-    }, 2000);
+    };
 
-    return () => clearInterval(interval);
-  }, [activeTrip?.id, activeTrip?.status]);
+    syncTripStatus();
+
+    if (wsStatus === 'connected') {
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    const fallbackInterval = setInterval(syncTripStatus, 10000);
+    return () => {
+      isMounted = false;
+      clearInterval(fallbackInterval);
+    };
+  }, [activeTrip?.id, activeTrip?.status, wsStatus]);
+
+  // Chỉ polling tọa độ GPS tài xế khi đã có tài xế nhận cuốc
+  useEffect(() => {
+    const driverId = activeTrip?.driverId;
+    const status = activeTrip?.status;
+    if (
+      !driverId ||
+      ![TRIP_STATUS.DRIVER_ASSIGNED, TRIP_STATUS.DRIVER_ARRIVING, TRIP_STATUS.IN_PROGRESS].includes(status)
+    ) {
+      return;
+    }
+
+    let isMounted = true;
+    const fetchDriverLocation = async () => {
+      try {
+        const loc = await tripService.getDriverLocation(driverId);
+        if (isMounted && loc?.latitude && loc?.longitude) {
+          setDriverLocation((prev) => {
+            const newLat = Number(loc.latitude);
+            const newLng = Number(loc.longitude);
+            if (prev?.latitude === newLat && prev?.longitude === newLng) {
+              return prev;
+            }
+            return {
+              latitude: newLat,
+              longitude: newLng,
+              heading: Number(loc.heading) || 0,
+              speed: Number(loc.speed) || 0,
+            };
+          });
+        }
+      } catch {}
+    };
+
+    fetchDriverLocation();
+    const interval = setInterval(fetchDriverLocation, 2000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [activeTrip?.driverId, activeTrip?.status]);
 
   // Hành động đặt chuyến
   const handleCreateTrip = async () => {

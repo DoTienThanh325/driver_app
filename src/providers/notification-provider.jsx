@@ -10,7 +10,8 @@ import { getTokenClaims } from '../utils/notification-state';
 import { notificationService } from '../services/notification.service';
 
 /** @type {React.Context<(import('../services/notification-store').NotificationSnapshot & {
- * markRead: (id?: string) => void
+ * markRead: (id?: string) => void,
+ * subscribeMessages: (listener: (item: import('../utils/notification-state').NotificationItem) => void) => () => void
  * }) | null>} */
 const NotificationContext = createContext(null);
 
@@ -69,7 +70,7 @@ export function NotificationProvider({ children }) {
   }, [store]);
 
   return (
-    <NotificationContext.Provider value={{ ...snapshot, markRead: store.markRead }}>
+    <NotificationContext.Provider value={{ ...snapshot, markRead: store.markRead, subscribeMessages: store.subscribeMessages }}>
       {children}
     </NotificationContext.Provider>
   );

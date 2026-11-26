@@ -381,3 +381,31 @@ test('refresh 5xx preserves credentials; 401/403 invalidate them', async () => {
     assert.equal(storage.getRevision(), status >= 500 ? 0 : 1);
   }
 });
+
+test('subscribeMessages delivers realtime trip updates immediately and unsubscribes cleanly', async () => {
+  const { store, connections } = inbox();
+  await store.setSession(session());
+  const received = [];
+  const unsubscribe = store.subscribeMessages((item) => received.push(item));
+
+  connections[0].onMessage({
+    id: 'evt-trip-1',
+    type: 'TRIP_DRIVER_ASSIGNED',
+    title: 'Cập nhật chuyến đi',
+    content: 'Tài xế đã nhận chuyến',
+    data: { tripId: 'trip-99', tripStatus: 'DRIVER_ASSIGNED' },
+  });
+  assert.equal(received.length, 1);
+  assert.equal(received[0].data.tripId, 'trip-99');
+  assert.equal(received[0].data.tripStatus, 'DRIVER_ASSIGNED');
+
+  unsubscribe();
+  connections[0].onMessage({
+    id: 'evt-trip-2',
+    type: 'TRIP_COMPLETED',
+    title: 'Cập nhật chuyến đi',
+    content: 'Chuyến đi đã hoàn thành',
+    data: { tripId: 'trip-99', tripStatus: 'COMPLETED' },
+  });
+  assert.equal(received.length, 1);
+});

@@ -98,16 +98,31 @@ EXPO_PUBLIC_NOTIFICATION_WS_URL=ws://192.168.1.10:8086/ws/notifications
 
 ## Cấu trúc dự án
 
-| Đường dẫn | Nội dung |
-| --- | --- |
-| `src/app/` | Màn hình và cấu hình điều hướng Expo Router. Nhóm `(tabs)` chứa các tab chính, gồm tab Tài xế và Nhà hàng theo vai trò. |
-| `src/components/`, `src/styles/` | Thành phần giao diện dùng lại và kiểu trình bày theo màn hình. |
-| `src/hooks/`, `src/providers/` | Logic nghiệp vụ và trạng thái dùng chung. |
-| `src/services/`, `src/services/storage/` | Client API, tích hợp dịch vụ backend và lưu trữ cục bộ. |
-| `src/constants/api.js` | Cấu hình URL Gateway. |
-| `src/utils/` | Tiện ích xử lý ảnh, địa chỉ và thông báo. |
-| `app.json`, `app.config.js` | Cấu hình Expo và cấu hình xuất bản web cho Docker. |
-| `tests/` | Kiểm thử luồng thông báo. |
+```text
+mobile/
+├── assets/                     # Tài nguyên tĩnh (expo.icon/, images/ cho icon, splash screen, mock)
+├── document/                   # Tài liệu kỹ thuật và kế hoạch (LOGIN_PLAN.md, PROJECT_STRUCTURE.md)
+├── src/
+│   ├── app/                    # Màn hình và điều hướng Expo Router (_layout.jsx)
+│   │   └── (tabs)/             # Các tab chính (Trang chủ, Hoạt động, Khuyến mãi, Tài khoản, Tài xế, Nhà hàng)
+│   ├── components/             # Thành phần giao diện dùng lại (themed-text, themed-view)
+│   │   ├── notifications/      # Chuông thông báo (notification-bell.jsx)
+│   │   └── ui/                 # Modal, thẻ món ăn, bản đồ chọn điểm, voucher, upload ảnh...
+│   ├── constants/              # Cấu hình API Gateway (api.js), theme (theme.js), ngân hàng (vietnam-banks.js)
+│   ├── hooks/                  # Custom hooks nghiệp vụ (auth, tài xế, nhà hàng, ngân hàng, theme...)
+│   ├── providers/              # Context provider dùng chung (notification-provider.jsx)
+│   ├── services/               # Client API, tích hợp dịch vụ backend và đồng bộ offline
+│   │   └── storage/            # Lưu trữ cục bộ (token, thông tin người dùng, offline cache)
+│   ├── styles/
+│   │   └── screens/            # StyleSheet tách riêng theo từng màn hình
+│   ├── utils/                  # Tiện ích xử lý ảnh, địa chỉ, geocoding, điều hướng, thông báo, lỗi
+│   └── global.css              # CSS toàn cục
+├── tests/                      # Kiểm thử luồng thông báo (notifications.test.mjs)
+├── app.json, app.config.js     # Cấu hình Expo và xuất bản web
+├── docker-compose.yml          # Cấu hình chạy bản web và Expo Go bằng Docker
+├── Dockerfile, nginx.conf      # Build image và cấu hình Nginx cho bản web
+└── .env.example                # Mẫu biến môi trường (EXPO_PUBLIC_API_URL, EXPO_PUBLIC_NOTIFICATION_WS_URL)
+```
 
 ## Kiểm tra mã nguồn
 

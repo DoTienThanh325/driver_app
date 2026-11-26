@@ -90,19 +90,28 @@ export function startNotificationTransport({
           }
         },
         onStompError: (frame) => {
+          if (typeof __DEV__ !== 'undefined' && __DEV__) {
+            console.warn('[WS STOMP Error]', frame.headers?.message, frame.body);
+          }
           authenticationError = /auth|jwt|token|denied|unauthorized/i.test(
             `${frame.headers?.message || ''} ${frame.body || ''}`,
           );
           void failed();
         },
         onWebSocketError: (event) => {
+          if (typeof __DEV__ !== 'undefined' && __DEV__) {
+            console.warn('[WS Socket Error]', event?.message || event);
+          }
           authenticationError = /401|403|unauthorized|forbidden/i.test(event.message || '');
           void failed();
         },
         onWebSocketClose: () => { void failed(); },
       });
       client.activate();
-    } catch {
+    } catch (err) {
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.warn('[WS Transport Error]', err);
+      }
       if (valid()) {
         closeClient();
         onStatus('reconnecting');

@@ -25,6 +25,7 @@ import { getDriverTripAction } from '@/utils/driver-trip-actions';
 import { reverseGeocodeCoords } from '@/utils/geocoding';
 import { driverStyles as styles } from '@/styles/screens/driver.styles';
 import { NotificationBell } from '@/components/notifications/notification-bell';
+import { useNotifications } from '@/providers/notification-provider';
 
 // Vị trí mặc định tài xế quanh trung tâm Hà Nội để dễ dàng bắt matching nếu chưa có GPS
 const DEFAULT_DRIVER_COORDS = {
@@ -42,6 +43,7 @@ const activeTripLabels = {
 export default function DriverScreen() {
   const [userProfile, setUserProfile] = useState(null);
   const { isAvailable, isUpdating, toggleAvailability } = useDriverAvailability(true);
+  const { status: wsStatus, subscribeMessages } = useNotifications();
 
   // Tọa độ GPS của tài xế
   const [driverCoords, setDriverCoords] = useState(DEFAULT_DRIVER_COORDS);
@@ -287,32 +289,38 @@ export default function DriverScreen() {
     };
   }, [isAvailable, fetchCurrentDriverLocation]);
 
-  // Quét cuốc xe mới từ AI Matching khi tài xế đang online
-  // Cho phép quét khi chưa có cuốc HOẶC khi đang chở khách (IN_PROGRESS) để nhận cuốc gối đầu
+  const fetchOffers = useCallback(async () => {
+    if (!isAvailable || currentTripsStatus === 'loading') return;
+    if (queuedTripId || (activeTripStatus && activeTripStatus !== TRIP_STATUS.IN_PROGRESS)) return;
+    try {
+      const offers = await tripService.getMyPendingOffers();
+      if (!acceptingOfferRef.current) {
+        setPendingOffers(activeTripStatus ? offers.filter((offer) => offer.backToBack) : offers);
+      }
+    } catch {
+      // Bỏ qua lỗi kết nối tạm thời
+    }
+  }, [isAvailable, activeTripStatus, queuedTripId, currentTripsStatus]);
+
+  // Quét cuốc xe mới từ AI Matching: dùng WebSocket khi connected, chỉ fallback polling chậm khi mất WS
   useEffect(() => {
     if (!isAvailable || currentTripsStatus === 'loading') return;
     if (queuedTripId || (activeTripStatus && activeTripStatus !== TRIP_STATUS.IN_PROGRESS)) return;
 
-    let active = true;
-    const fetchOffers = async () => {
-      try {
-        const offers = await tripService.getMyPendingOffers();
-        if (active && !acceptingOfferRef.current) {
-          setPendingOffers(activeTripStatus ? offers.filter((offer) => offer.backToBack) : offers);
-        }
-      } catch {
-        // Bỏ qua lỗi kết nối tạm thời
-      }
-    };
+    void fetchOffers();
 
-    fetchOffers();
-    const offerInterval = setInterval(fetchOffers, 2500);
+    if (wsStatus === 'connected') {
+      return undefined;
+    }
+
+    const offerInterval = setInterval(() => {
+      void fetchOffers();
+    }, 10000);
 
     return () => {
-      active = false;
       clearInterval(offerInterval);
     };
-  }, [isAvailable, activeTripStatus, queuedTripId, currentTripsStatus]);
+  }, [isAvailable, activeTripStatus, queuedTripId, currentTripsStatus, wsStatus, fetchOffers]);
 
   const refreshCurrentTrips = useCallback(async () => {
     if (currentTripsPendingRef.current === currentTripsRequestRef.current) return;
@@ -331,6 +339,33 @@ export default function DriverScreen() {
     }
   }, []);
 
+  // Lắng nghe sự kiện WebSocket cho offer tài xế & cập nhật chuyến đang chạy
+  useEffect(() => {
+    return subscribeMessages((msg) => {
+      if (msg?.type === 'DRIVER_OFFER_UPDATED' && msg?.data) {
+        const { offerId, tripId, status } = msg.data;
+        if (status === 'PENDING') {
+          void fetchOffers();
+        } else if (['EXPIRED', 'REJECTED', 'ACCEPTED', 'CANCELLED'].includes(status)) {
+          setPendingOffers((prev) =>
+            prev.filter((o) => String(o.offerId) !== String(offerId) && (!tripId || String(o.tripId) !== String(tripId)))
+          );
+        }
+        return;
+      }
+
+      if (msg?.type?.startsWith('TRIP_') && msg?.data?.tripId) {
+        const msgTripId = String(msg.data.tripId);
+        if (
+          (activeTrip?.id && String(activeTrip.id) === msgTripId) ||
+          (queuedTrip?.id && String(queuedTrip.id) === msgTripId)
+        ) {
+          void refreshCurrentTrips();
+        }
+      }
+    });
+  }, [subscribeMessages, fetchOffers, refreshCurrentTrips, activeTrip?.id, queuedTrip?.id]);
+
   useFocusEffect(useCallback(() => {
     if (!userProfile?.id) return;
 
@@ -338,12 +373,18 @@ export default function DriverScreen() {
       if (!statusUpdateRef.current && !acceptingOfferRef.current) void refreshCurrentTrips();
     };
     refresh();
-    const interval = setInterval(refresh, 3000);
+    if (wsStatus === 'connected') {
+      return () => {
+        currentTripsRequestRef.current += 1;
+      };
+    }
+
+    const interval = setInterval(refresh, 10000);
     return () => {
       clearInterval(interval);
       currentTripsRequestRef.current += 1;
     };
-  }, [userProfile?.id, refreshCurrentTrips]));
+  }, [userProfile?.id, wsStatus, refreshCurrentTrips]));
 
   const openCurrentTrip = (trip, payment = false, routeCoords = null) => {
     const { latitude, longitude } = driverCoordsRef.current;
